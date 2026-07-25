@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 13 decisiones registradas al cierre de la Ola 1. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 20 decisiones. WEB-D014 a WEB-D020 son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -68,12 +68,16 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 
 ### 03 — Motor IA
 
-| # | Documento | Estado |
-|---|---|---|
-| 20 | `20_arquitectura_motor_conversacional.md` | no iniciado |
-| 21 | `21_contrato_de_canal_y_presentadores.md` | no iniciado |
-| 22 | `22_grounding_evidencia_y_politica.md` | no iniciado |
-| 23 | `23_runtime_ia_modos_costo_y_degradacion.md` | no iniciado |
+Diseñado desde cero con el usuario, sin consultar `src/agents/` ni el diseño
+de motor anterior (`WEB-D004`). Las siete decisiones de producto están en
+`03_decisiones_producto_web.md` (`WEB-D014` a `WEB-D020`).
+
+| # | Documento | Estado | Notas |
+|---|---|---|---|
+| 20 | `20_arquitectura_motor_conversacional.md` | aprobado | Coordinador determinístico → espacio de trabajo → una sesión con el modelo → verificador. El agente propone; el Core ejecuta. |
+| 21 | `21_contrato_de_canal_y_presentadores.md` | aprobado | Bloques neutrales de canal + prueba de agnosticismo con 7 casos. |
+| 22 | `22_grounding_evidencia_y_politica.md` | aprobado | Invariante de evidencia, procedencia, foco exacto, confirmabilidad y los 4 límites duros. |
+| 23 | `23_runtime_ia_modos_costo_y_degradacion.md` | aprobado | Sustitución de motor prohibida en producción con arranque bloqueado. 4 grados de degradación declarados. |
 
 ### 04 — Módulos
 
@@ -128,7 +132,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 20/57 documentos aprobados o vivos (Olas 1, 2 y 3 completas: gobierno, producto y fundaciones cerrados).**
+**Progreso: 24/57 documentos aprobados o vivos (Olas 1 a 4 completas: gobierno, producto, fundaciones y motor IA cerrados).**
 
 ## 5. Orden de lectura por rol
 
@@ -152,8 +156,8 @@ OLA 0   SANEAMIENTO — completada (ver 53_deuda_tecnica_y_saneamiento.md cuando
 OLA 1   00 01 02 03 04 05         — COMPLETADA (25 de julio de 2026)
 OLA 2   06 07 08 09 10 11         — COMPLETADA (25 de julio de 2026)
 OLA 3   12 13 14 15 16 17 18 19   — COMPLETADA (25 de julio de 2026)
-OLA 4   20 21 22 23               — siguiente. Motor IA, SIN abrir src/agents/
-OLA 5   24 25 26 27
+OLA 4   20 21 22 23               — COMPLETADA (25 de julio de 2026), diseñada con el usuario
+OLA 5   24 25 26 27               — siguiente
 OLA 6   28 29 30 31
 OLA 7   32 33
 OLA 8   34 35 36
