@@ -55,16 +55,16 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 
 ### 02 — Fundaciones
 
-| # | Documento | Estado |
-|---|---|---|
-| 12 | `12_arquitectura_app_web.md` | no iniciado |
-| 13 | `13_modelo_datos_web_v1.md` | no iniciado |
-| 14 | `14_contratos_api_web.md` | no iniciado |
-| 15 | `15_seguridad_autorizacion_y_rls.md` | no iniciado |
-| 16 | `16_design_system_web.md` | no iniciado |
-| 17 | `17_patrones_datos_formularios_y_listados.md` | no iniciado |
-| 18 | `18_accesibilidad_i18n_y_formatos.md` | no iniciado |
-| 19 | `19_observabilidad_y_telemetria_web.md` | no iniciado |
+| # | Documento | Estado | Notas |
+|---|---|---|---|
+| 12 | `12_arquitectura_app_web.md` | aprobado | App Router real: frontera servidor/cliente, rutas interceptadas, dónde vive cada tipo de estado. |
+| 13 | `13_modelo_datos_web_v1.md` | aprobado | Documenta por primera vez las migraciones 042-046. Añade 10 tablas nuevas y 14 enums (migraciones 047-053). |
+| 14 | `14_contratos_api_web.md` | aprobado | Paginación por cursor, filtros server-side, límite de peticiones, CSRF. |
+| 15 | `15_seguridad_autorizacion_y_rls.md` | aprobado | Política RLS-first. 48 de 58 rutas usan service-role hoy; lista blanca + test que falla el build. |
+| 16 | `16_design_system_web.md` | aprobado | 18 primitivas faltantes + 12 componentes de dominio. Elimina el `modal-accessibility-guard`. |
+| 17 | `17_patrones_datos_formularios_y_listados.md` | aprobado | Un solo patrón para fetching, mutaciones, listados, formularios, fechas y dinero. |
+| 18 | `18_accesibilidad_i18n_y_formatos.md` | aprobado | WCAG 2.2 AA verificado. Formatos de moneda, fecha y número. |
+| 19 | `19_observabilidad_y_telemetria_web.md` | aprobado | `trace_id` de extremo a extremo. Alerta si el motor IA sirve con `local_fixture`. |
 
 ### 03 — Motor IA
 
@@ -128,7 +128,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 12/57 documentos aprobados o vivos (Olas 1 y 2 completas: gobierno y producto cerrados).**
+**Progreso: 20/57 documentos aprobados o vivos (Olas 1, 2 y 3 completas: gobierno, producto y fundaciones cerrados).**
 
 ## 5. Orden de lectura por rol
 
@@ -151,8 +151,8 @@ OLA 0   SANEAMIENTO — completada (ver 53_deuda_tecnica_y_saneamiento.md cuando
         evidencia provisional en 03_decisiones_producto_web.md, WEB-D009)
 OLA 1   00 01 02 03 04 05         — COMPLETADA (25 de julio de 2026)
 OLA 2   06 07 08 09 10 11         — COMPLETADA (25 de julio de 2026)
-OLA 3   12 13 14 15 16 17 18 19   — siguiente
-OLA 4   20 21 22 23               — motor IA, sin abrir src/agents/
+OLA 3   12 13 14 15 16 17 18 19   — COMPLETADA (25 de julio de 2026)
+OLA 4   20 21 22 23               — siguiente. Motor IA, SIN abrir src/agents/
 OLA 5   24 25 26 27
 OLA 6   28 29 30 31
 OLA 7   32 33
