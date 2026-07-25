@@ -44,14 +44,14 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 
 ### 01 — Producto
 
-| # | Documento | Estado |
-|---|---|---|
-| 06 | `06_tesis_app_web.md` | no iniciado |
-| 07 | `07_alcance_web_v1.md` | no iniciado |
-| 08 | `08_principios_experiencia_web.md` | no iniciado |
-| 09 | `09_modelo_mental_dinero.md` | no iniciado |
-| 10 | `10_sitemap_rutas_y_navegacion.md` | no iniciado |
-| 11 | `11_confianza_errores_y_reversibilidad.md` | no iniciado |
+| # | Documento | Estado | Notas |
+|---|---|---|---|
+| 06 | `06_tesis_app_web.md` | aprobado | Invierte la tesis de `05c_dashboard.md` §1/§22. Define los 4 trabajos y las 8 condiciones de verdad. |
+| 07 | `07_alcance_web_v1.md` | aprobado | Candado de alcance IN/V1.1/FUERA para los 17 módulos. Invierte 5 exclusiones de `05c` §20. |
+| 08 | `08_principios_experiencia_web.md` | aprobado | 12 principios heredados + 3 nuevos: procedencia, control, reversibilidad. |
+| 09 | `09_modelo_mental_dinero.md` | aprobado | Las 4 capas del dinero, fórmulas y la distinción caja/compromiso/presupuesto. |
+| 10 | `10_sitemap_rutas_y_navegacion.md` | aprobado | Mapa de rutas URL reales. Deroga `30_app_flow.md` §9 (sin historial de navegador). |
+| 11 | `11_confianza_errores_y_reversibilidad.md` | aprobado | Separa reparar respuesta de corregir dinero. Contrato de errores en español. |
 
 ### 02 — Fundaciones
 
@@ -128,7 +128,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 5/57 documentos aprobados o vivos (Ola 1 completa, bloque de gobierno cerrado).**
+**Progreso: 12/57 documentos aprobados o vivos (Olas 1 y 2 completas: gobierno y producto cerrados).**
 
 ## 5. Orden de lectura por rol
 
@@ -150,8 +150,8 @@ documentos en orden de escritura:
 OLA 0   SANEAMIENTO — completada (ver 53_deuda_tecnica_y_saneamiento.md cuando exista;
         evidencia provisional en 03_decisiones_producto_web.md, WEB-D009)
 OLA 1   00 01 02 03 04 05         — COMPLETADA (25 de julio de 2026)
-OLA 2   06 07 08 09 10 11         — siguiente
-OLA 3   12 13 14 15 16 17 18 19
+OLA 2   06 07 08 09 10 11         — COMPLETADA (25 de julio de 2026)
+OLA 3   12 13 14 15 16 17 18 19   — siguiente
 OLA 4   20 21 22 23               — motor IA, sin abrir src/agents/
 OLA 5   24 25 26 27
 OLA 6   28 29 30 31
