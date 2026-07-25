@@ -1,0 +1,37 @@
+{
+  "rect": {
+    "x": 119.5,
+    "y": 200,
+    "w": 207,
+    "h": 40,
+    "text": "Pendientes"
+  },
+  "isPending": true,
+  "hasProtection": true,
+  "hasConfirm": true,
+  "hasEdit": true,
+  "hasReject": true,
+  "hasLogin": false,
+  "cards": [
+    {
+      "x": 272,
+      "y": 477.5,
+      "w": 1103,
+      "h": 255
+    },
+    {
+      "x": 272,
+      "y": 748.5,
+      "w": 1103,
+      "h": 255
+    },
+    {
+      "x": 272,
+      "y": 1019.5,
+      "w": 1103,
+      "h": 255
+    }
+  ],
+  "overflow": false,
+  "text": "M\n\nManzana\n\nTranquilidad financiera\n\nHome\nMovimientos\nPendientes\nMi Dinero\nDeudas\nPagos que vienen\nDescubrimientos\nConfiguracion\nCerrar sesion\nPendientes\n3 por revisar\n\nCosas que Manzana detecto, separadas hasta que tu las confirmes.\n\nTranquilidad asegurada\n\nNada pendiente afecta tu saldo, cajas, deudas o reportes hasta que confirmes, edites o descartes.\n\nRevision en grupo\n\nTienes 3 pendientes por revisar\n\n2 estan completos para confirmar. Los demas quedan aparte para corregirlos sin prisa.\n\nConfirmar completos\nEmail detectado\nHace 2 horas\nNetflix\n\nTarjeta terminada en 4092\n\n- S/ 15.49\n\nAlta seguridad\n\nMovimiento detectado\nDetectado, no registrado\nBajo riesgo\nConfirmar\nEditar\nRechazar\nWhatsApp\nHace 20 horas\nCena con el equipo\n\nManzana detecto gasto, falta confirmar categoria final\n\n- S/ 45.00\n\nFalta categoria\n\nDato incompleto\nFalta categoria\nRevision normal\nCompletar\nEditar\nRechazar\nEmail detectado\nHace 3 dias\nYape de Ana\n\nParece devolucion recibida\n\n+ S/ 120.00\n\nPor confirmar\n\nMovimiento detectado\nSe parece a algo ya registrado\nRevision normal\nConfirmar\nEditar\nRechazar\n\nDeteccion asistida por IA, confirmacion controlada por ti."
+}

@@ -1,0 +1,29 @@
+{
+  "name": "manzana_compromiso_financiero_v1",
+  "language": "es_PE",
+  "category": "UTILITY",
+  "parameter_format": "POSITIONAL",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Tienes un compromiso financiero en Manzana {{1}}. Puedes revisarlo con calma y privacidad.",
+      "example": {
+        "body_text": [["para los próximos días"]]
+      }
+    },
+    {
+      "type": "FOOTER",
+      "text": "Puedes pausar estos avisos en Configuración."
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Ver en Manzana",
+          "url": "https://manzana.website"
+        }
+      ]
+    }
+  ]
+}

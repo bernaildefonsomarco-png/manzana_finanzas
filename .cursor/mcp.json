@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "stitch": {
+      "command": "powershell",
+      "args": [
+        "-NonInteractive",
+        "-NoProfile",
+        "-File",
+        "C:\\Users\\HP\\.stitch-mcp\\start-proxy.ps1"
+      ]
+    }
+  }
+}

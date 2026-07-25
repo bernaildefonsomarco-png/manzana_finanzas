@@ -1,0 +1,24 @@
+{
+  "crons": [
+    {
+      "path": "/api/internal/jobs/recurring-detect",
+      "schedule": "0 13 * * *"
+    },
+    {
+      "path": "/api/internal/jobs/debt-lifecycle",
+      "schedule": "10 13 * * *"
+    },
+    {
+      "path": "/api/internal/jobs/nudges-evaluate",
+      "schedule": "15 13 * * *"
+    },
+    {
+      "path": "/api/internal/jobs/email-capture-health",
+      "schedule": "20 13 * * *"
+    },
+    {
+      "path": "/api/internal/jobs/learning-maintenance",
+      "schedule": "25 13 * * *"
+    }
+  ]
+}

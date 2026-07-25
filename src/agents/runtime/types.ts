@@ -1,0 +1,80 @@
+export const AGENT_NAMES = [
+  "conversational_executive_agent",
+  "data_agent",
+  "email_extraction_agent",
+  "conversation_agent",
+  "correction_agent",
+  "response_agent",
+  "orchestration_planning_agent",
+  "learning_signal_agent",
+  "risk_signal_agent",
+  "dedup_signal_agent",
+  "disclosure_experience_agent",
+  "recurring_signal_agent",
+  "nudge_experience_agent",
+  "insight_experience_agent",
+  "insight_narrator_agent",
+] as const;
+
+export type AgentName = (typeof AGENT_NAMES)[number];
+
+export type RuntimeProvider = "codex" | "api" | "local_fixture";
+
+export type ModelHint = "cheap" | "balanced" | "strong";
+
+export type ToolDefinition = {
+  name: string;
+  description: string;
+  readOnly: boolean;
+  input_schema?: Record<string, unknown>;
+};
+
+export type AgentToolExecutionRequest = {
+  call_id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+};
+
+export type AgentToolExecutor = (
+  request: AgentToolExecutionRequest
+) => Promise<unknown>;
+
+export type ToolCallSummary = {
+  tool_name: string;
+  status: "skipped" | "called" | "failed";
+};
+
+export type AgentRuntimeRequest<TContext> = {
+  agent_name: AgentName;
+  provider: RuntimeProvider;
+  model_hint: ModelHint;
+  context_pack: TContext;
+  tools: ToolDefinition[];
+  output_schema: string;
+  trace_id: string;
+  timeout_ms: number;
+  tool_executor?: AgentToolExecutor;
+  max_tool_rounds?: number;
+};
+
+export type AgentRuntimeResponse<TOutput> = {
+  output: TOutput;
+  confidence: number | null;
+  tool_calls: ToolCallSummary[];
+  runtime: {
+    provider: RuntimeProvider;
+    model_name?: string;
+    latency_ms: number;
+    cost_estimate?: number;
+  };
+  safety: {
+    policy_flags: string[];
+    redaction_applied: boolean;
+  };
+};
+
+export interface AgentRuntime {
+  run<TContext, TOutput>(
+    request: AgentRuntimeRequest<TContext>
+  ): Promise<AgentRuntimeResponse<TOutput>>;
+}

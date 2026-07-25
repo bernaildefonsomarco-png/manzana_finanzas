@@ -1,0 +1,26 @@
+{
+  "name": "manzana_movimiento_por_confirmar_v1",
+  "language": "es_PE",
+  "category": "UTILITY",
+  "parameter_format": "POSITIONAL",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Tienes un movimiento detectado en Manzana que necesita tu revisión. Ábrelo para confirmarlo o descartarlo."
+    },
+    {
+      "type": "FOOTER",
+      "text": "Manzana no registra el movimiento sin tu confirmación."
+    },
+    {
+      "type": "BUTTONS",
+      "buttons": [
+        {
+          "type": "URL",
+          "text": "Revisar movimiento",
+          "url": "https://manzana.website/?view=pending"
+        }
+      ]
+    }
+  ]
+}

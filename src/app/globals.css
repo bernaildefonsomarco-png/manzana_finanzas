@@ -1,0 +1,323 @@
+@import "tailwindcss";
+
+/* ─── Tokens de diseño Manzana — Fase 6 Visual V1 ─── */
+
+:root {
+  /* Colores de fondo */
+  --color-bg-primary:        #F9F8F6;
+  --color-bg-surface:        #F1F4F0;
+  --color-bg-surface-raised: #FFFFFF;
+  --color-bg-discrete:       #EDECEA;
+  --color-bg-inverse:        #2D312E;
+
+  /* Marca */
+  --color-brand-primary:     #316342;
+  --color-brand-hover:       #376847;
+  --color-brand-active:      #1E5031;
+  --color-brand-subtle:      #E1F2E4;
+
+  /* Acento Terracota */
+  --color-accent:            #C96A52;
+  --color-accent-hover:      #B45B44;
+  --color-accent-subtle:     #F5E0DA;
+
+  /* Texto */
+  --color-text-primary:      #191C1A;
+  --color-text-secondary:    #414942;
+  --color-text-muted:        #717971;
+  --color-text-disabled:     #B0AFA9;
+  --color-text-inverse:      #F9F8F6;
+  --color-text-discrete:     #B0AFA9;
+  --color-text-brand:        #4A7C59;
+
+  /* Bordes */
+  --color-border-default:    #E0E3DF;
+  --color-border-strong:     #C1C9BF;
+  --color-border-focus:      #316342;
+  --color-border-error:      #C95252;
+
+  /* Semánticos */
+  --color-success:           #349964;
+  --color-success-subtle:    #D4EDDF;
+  --color-warning:           #E5A93D;
+  --color-warning-subtle:    #FDF0D5;
+  --color-error:             #C95252;
+  --color-error-subtle:      #F9DEDE;
+  --color-info:              #6B9EC5;
+  --color-info-subtle:       #DCECf5;
+
+  /* Deuda */
+  --color-debt:              #7A3E2B;
+  --color-debt-subtle:       #F2E0D8;
+  --color-debt-paid:         #349964;
+
+  /* Progreso */
+  --color-progress-fill:     #4A7C59;
+  --color-progress-low:      #E5A93D;
+  --color-progress-track:    #E5E4E0;
+
+  /* Tipografía */
+  --font-family-heading: "DM Sans", system-ui, sans-serif;
+  --font-family-body:    "Inter", system-ui, sans-serif;
+
+  /* Espaciado — base 4px */
+  --space-0:   0px;
+  --space-1:   4px;
+  --space-2:   8px;
+  --space-3:   12px;
+  --space-4:   16px;
+  --space-5:   20px;
+  --space-6:   24px;
+  --space-8:   32px;
+  --space-10:  40px;
+  --space-12:  48px;
+  --space-16:  64px;
+  --space-20:  80px;
+
+  /* Border radius */
+  --radius-none: 0px;
+  --radius-xs:   2px;
+  --radius-sm:   4px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-xl:   16px;
+  --radius-2xl:  24px;
+  --radius-full: 9999px;
+
+  /* Sombras */
+  --shadow-none: none;
+  --shadow-xs:   0 1px 2px rgba(45,49,46,0.035);
+  --shadow-sm:   0 4px 14px rgba(45,49,46,0.055);
+  --shadow-md:   0 10px 28px rgba(45,49,46,0.075);
+  --shadow-lg:   0 18px 48px rgba(45,49,46,0.12);
+  --shadow-xl:   0 24px 70px rgba(45,49,46,0.16);
+
+  /* Z-index */
+  --z-base:    0;
+  --z-above:   10;
+  --z-sticky:  20;
+  --z-overlay: 30;
+  --z-drawer:  40;
+  --z-modal:   50;
+  --z-toast:   60;
+  --z-tooltip: 70;
+  --z-popover: 80;
+
+  /* Transiciones */
+  --duration-instant: 80ms;
+  --duration-fast:    150ms;
+  --duration-normal:  250ms;
+  --duration-slow:    350ms;
+  --duration-slower:  500ms;
+
+  --ease-default: cubic-bezier(0.2, 0, 0, 1);
+  --ease-enter:   cubic-bezier(0.0, 0.0, 0.2, 1);
+  --ease-exit:    cubic-bezier(0.4, 0.0, 1, 1);
+  --ease-spring:  cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Layout */
+  --sidebar-width:      240px;
+  --sidebar-collapsed:  64px;
+  --container-max:      1440px;
+  --content-max:        1200px;
+}
+
+/* ─── Tema Tailwind v4 ─── */
+@theme inline {
+  --color-bg-primary:        var(--color-bg-primary);
+  --color-bg-surface:        var(--color-bg-surface);
+  --color-bg-surface-raised: var(--color-bg-surface-raised);
+  --color-bg-discrete:       var(--color-bg-discrete);
+  --color-bg-inverse:        var(--color-bg-inverse);
+
+  --color-brand:             var(--color-brand-primary);
+  --color-brand-hover:       var(--color-brand-hover);
+  --color-brand-active:      var(--color-brand-active);
+  --color-brand-subtle:      var(--color-brand-subtle);
+
+  --color-accent:            var(--color-accent);
+  --color-accent-hover:      var(--color-accent-hover);
+  --color-accent-subtle:     var(--color-accent-subtle);
+
+  --color-text:              var(--color-text-primary);
+  --color-text-secondary:    var(--color-text-secondary);
+  --color-text-muted:        var(--color-text-muted);
+  --color-text-disabled:     var(--color-text-disabled);
+  --color-text-inverse:      var(--color-text-inverse);
+  --color-text-discrete:     var(--color-text-discrete);
+  --color-text-brand:        var(--color-text-brand);
+
+  --color-border:            var(--color-border-default);
+  --color-border-strong:     var(--color-border-strong);
+  --color-border-focus:      var(--color-border-focus);
+  --color-border-error:      var(--color-border-error);
+
+  --color-success:           var(--color-success);
+  --color-success-subtle:    var(--color-success-subtle);
+  --color-warning:           var(--color-warning);
+  --color-warning-subtle:    var(--color-warning-subtle);
+  --color-error:             var(--color-error);
+  --color-error-subtle:      var(--color-error-subtle);
+  --color-info:              var(--color-info);
+  --color-info-subtle:       var(--color-info-subtle);
+
+  --color-debt:              var(--color-debt);
+  --color-debt-subtle:       var(--color-debt-subtle);
+  --color-debt-paid:         var(--color-debt-paid);
+
+  --font-heading: var(--font-family-heading);
+  --font-body:    var(--font-family-body);
+
+  --radius-xs:   var(--radius-xs);
+  --radius-sm:   var(--radius-sm);
+  --radius-md:   var(--radius-md);
+  --radius-lg:   var(--radius-lg);
+  --radius-xl:   var(--radius-xl);
+  --radius-2xl:  var(--radius-2xl);
+  --radius-full: var(--radius-full);
+
+  --shadow-xs:   var(--shadow-xs);
+  --shadow-sm:   var(--shadow-sm);
+  --shadow-md:   var(--shadow-md);
+  --shadow-lg:   var(--shadow-lg);
+  --shadow-xl:   var(--shadow-xl);
+
+  --ease-default: var(--ease-default);
+  --ease-enter:   var(--ease-enter);
+  --ease-exit:    var(--ease-exit);
+  --ease-spring:  var(--ease-spring);
+}
+
+/* ─── Reset base ─── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  color-scheme: light dark;
+  font-size: 16px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg-primary:        #111512;
+    --color-bg-surface:        #18201A;
+    --color-bg-surface-raised: #202823;
+    --color-bg-discrete:       #303832;
+    --color-bg-inverse:        #F4F7F4;
+
+    --color-brand-primary:     #70BC87;
+    --color-brand-hover:       #85CB99;
+    --color-brand-active:      #5AA972;
+    --color-brand-subtle:      #243B2B;
+
+    --color-accent:            #E08A72;
+    --color-accent-hover:      #EC9A84;
+    --color-accent-subtle:     #462B25;
+
+    --color-text-primary:      #F1F5F1;
+    --color-text-secondary:    #C4CEC5;
+    --color-text-muted:        #98A49A;
+    --color-text-disabled:     #68736A;
+    --color-text-inverse:      #101411;
+    --color-text-discrete:     #AEB8B0;
+    --color-text-brand:        #8DD0A0;
+
+    --color-border-default:    #344039;
+    --color-border-strong:     #506057;
+    --color-border-focus:      #8DD0A0;
+    --color-border-error:      #EF8989;
+
+    --color-success:           #6FCC92;
+    --color-success-subtle:    #1F3A2B;
+    --color-warning:           #F0C063;
+    --color-warning-subtle:    #45371C;
+    --color-error:             #EF8989;
+    --color-error-subtle:      #442526;
+    --color-info:              #8CBCE0;
+    --color-info-subtle:       #223544;
+
+    --color-debt:              #E5A38E;
+    --color-debt-subtle:       #402B25;
+    --color-debt-paid:         #6FCC92;
+    --color-progress-fill:     #70BC87;
+    --color-progress-low:      #F0C063;
+    --color-progress-track:    #344039;
+
+    --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.22);
+    --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.28);
+    --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.34);
+    --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.4);
+    --shadow-xl: 0 24px 70px rgba(0, 0, 0, 0.48);
+  }
+}
+
+body {
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-family-body);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  letter-spacing: 0;
+  min-width: 320px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+button {
+  touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+::selection {
+  background: rgba(49, 99, 66, 0.16);
+  color: var(--color-text-primary);
+}
+
+/* Oculta barras horizontales de chips sin romper scroll tactil. */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Números tabulares en elementos financieros */
+[data-numeric], .tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Focus ring global */
+:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+/* Scroll suave */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}

@@ -1,0 +1,2 @@
+-- Seed local de Supabase.
+-- Las categorias y tags canonicos se insertan desde 003_categories_tags.sql.
