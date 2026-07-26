@@ -102,8 +102,8 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 29 | `29_modulo_captura_sin_friccion.md` | aprobado | Parseo híbrido: reglas primero, modelo solo si hacen falta. Importación de archivos diferida a V1.1. |
 | 30 | `30_modulo_recurrentes_y_pagos_que_vienen.md` | aprobado | Detectar no es activar. Un pago esperado no toca saldos, solo el dinero libre. |
 | 31 | `31_modulo_deudas.md` | aprobado | Conciliación determinista con previsualización. Tarjeta como deuda simple. No cobra ni contacta a nadie. |
-| 32 | `32_modulo_presupuestos_metas_y_limites.md` | no iniciado |
-| 33 | `33_modulo_proyecciones_y_simulacion.md` | no iniciado |
+| 32 | `32_modulo_presupuestos_metas_y_limites.md` | aprobado | **Nuevo.** Un presupuesto no reserva dinero. Ningún tipo bloquea gastos. Superar es información, no fracaso. |
+| 33 | `33_modulo_proyecciones_y_simulacion.md` | aprobado | **Nuevo.** Sin veredictos ni score. Todo supuesto declarado. Único módulo sin comandos de escritura. |
 | 34 | `34_modulo_descubrimientos_e_insights.md` | no iniciado |
 | 35 | `35_modulo_reportes_graficos_y_exportacion.md` | no iniciado |
 | 36 | `36_modulo_memoria_y_aprendizaje.md` | no iniciado |
@@ -143,7 +143,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 34/60 documentos aprobados o vivos (Olas 1 a 6 completas; 8 de los 16 modulos).**
+**Progreso: 36/60 documentos aprobados o vivos (Olas 1 a 7 completas; 10 de los 16 modulos).**
 
 ## 5. Orden de lectura por rol
 
@@ -170,7 +170,7 @@ OLA 3   12 13 14 15 16 17 18 19   — COMPLETADA (25 de julio de 2026)
 OLA 4   20 20b 20c 21 22 23       — COMPLETADA (25 de julio de 2026), disenada con el usuario
 OLA 5   24 25 26 27               — COMPLETADA (26 de julio de 2026)
 OLA 6   28 29 30 31               — COMPLETADA (26 de julio de 2026)
-OLA 7   32 33                     — siguiente. 33 depende de 32
+OLA 7   32 33                     — COMPLETADA (26 de julio de 2026)
 OLA 8   34 35 36
 OLA 9   37 38 39
 OLA 10  40 41
