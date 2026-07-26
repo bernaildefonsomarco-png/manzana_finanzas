@@ -637,6 +637,7 @@ movement_source      + import_confirmed | assistant_confirmed
 | `058` | Gestión de remitentes bancarios y sugerencias | 006, 028 |
 | `059` | Plantillas de movimientos | 006, 007 |
 | `060` | Tipos nuevos de descubrimiento y feedback del usuario | 027, 048 |
+| `061` | Preferencias observadas, lápidas de memoria y auditoría unificada | 002, 044, 054 |
 
 ### 9.1 Migración `057` — confirmabilidad de pendientes
 
@@ -708,6 +709,47 @@ acompañarlo.
 `alter type ... add value` no puede ejecutarse dentro de una transacción en
 PostgreSQL. Esta migración va en su propio archivo, sin envolver, y por eso no
 comparte fichero con la creación del enum ni con el `alter table`.
+
+### 9.5 Migración `061` — memoria gobernable
+
+Requerida por `36_modulo_memoria_y_aprendizaje.md` §4.5. Tres tablas que
+convierten la memoria de algo que existe en algo que el usuario controla:
+
+**`learned_preferences`** — lo que el sistema observó sobre cómo usa la app.
+Distinta de `user_preferences` (migración `002`), que guarda lo que el usuario
+**eligió**. La jerarquía entre ambas es `RUL-MEM-14`: lo declarado gana.
+
+**`memory_tombstones`** — lo que impide reaprender lo olvidado:
+
+```sql
+id, user_id
+scope       memory_scope not null   -- clasificacion | perfil | preferencia
+subject_key text not null
+reason      text null
+created_at  timestamptz not null default now()
+lifted_at   timestamptz null
+lifted_by   text null
+
+-- único cuando la lápida sigue en pie
+create unique index memory_tombstones_active_idx
+  on public.memory_tombstones (user_id, scope, subject_key)
+  where lifted_at is null;
+```
+
+**Por qué una tabla y no una columna.** Sin lápida, olvidar borra una fila y
+el sistema reaprende lo mismo mañana desde los mismos movimientos, que siguen
+ahí. La columna no serviría porque el registro que habría que marcar es
+justamente el que se elimina; la lápida sobrevive a lo que mata.
+
+El índice parcial es el más caliente del módulo: se consulta **en cada intento
+de aprendizaje**, antes de crear cualquier candidato.
+
+**`memory_events`** — auditoría de las cuatro acciones obligatorias sobre las
+tres clases, con el mismo patrón que `user_profile_events` (`054`) y
+`experience_preference_events` (`045`): estado anterior, siguiente, actor e
+idempotencia. Unificada porque, con tres tablas de auditoría distintas,
+responder "qué ha cambiado en lo que sabes de mí" exigiría tres consultas con
+tres formas.
 
 Reglas de migración heredadas y vigentes: cada archivo es idempotente
 (`if not exists`), nunca usa `add constraint if not exists` (no existe en

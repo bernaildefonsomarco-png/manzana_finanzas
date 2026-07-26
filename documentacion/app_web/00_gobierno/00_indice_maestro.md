@@ -106,7 +106,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 33 | `33_modulo_proyecciones_y_simulacion.md` | aprobado | **Nuevo.** Sin veredictos ni score. Los compromisos se descuentan una sola vez. Único módulo sin comandos de escritura. *Corregido en auditoría 26 jul.* |
 | 34 | `34_modulo_descubrimientos_e_insights.md` | aprobado | **Reescritura.** Tres clases: lo declarado funciona el primer día, lo inferido espera. Umbrales por dimensión, nunca globales. Accionable = una herramienta, no un consejo. |
 | 35 | `35_modulo_reportes_graficos_y_exportacion.md` | aprobado | **Nuevo.** El reporte no tiene aritmética propia. Cinco gráficos, cada uno con su decisión. Exportar es una obligación, no una función. |
-| 36 | `36_modulo_memoria_y_aprendizaje.md` | no iniciado |
+| 36 | `36_modulo_memoria_y_aprendizaje.md` | aprobado | **Nuevo.** Tres clases de aprendizaje, tres gobiernos. Ver, corregir, deshacer y olvidar. Olvidar deja lápida. **Cierra `C-08`.** |
 | 37 | `37_modulo_recordatorios_in_app.md` | no iniciado |
 | 38 | `38_modulo_busqueda_y_navegacion_rapida.md` | no iniciado |
 | 39 | `39_modulo_home_resumen_financiero.md` | no iniciado |
@@ -143,7 +143,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 38/60 documentos aprobados o vivos (Olas 1 a 7 completas, Ola 8 en curso; 12 de los 16 modulos).**
+**Progreso: 39/60 documentos aprobados o vivos (Olas 1 a 8 completas; 13 de los 16 modulos).**
 
 ## 5. Orden de lectura por rol
 
