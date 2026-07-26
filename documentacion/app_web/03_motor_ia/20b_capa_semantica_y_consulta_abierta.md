@@ -264,12 +264,67 @@ datos ya traídos, usando el calendario que el modelo conoce.
 |---|---|
 | Opera **solo sobre datos ya cargados o consultados** | Hereda las reglas de acceso y la evidencia |
 | **Sin acceso a base de datos, red ni ficheros** | No hay superficie por donde escapar |
-| Límite de tiempo y memoria | Un cálculo no puede degradar el servicio |
+| Límite de tiempo y volumen | Ver §6.2 |
 | El código queda registrado | "¿Cómo calculaste eso?" tiene respuesta literal |
 | El resultado hereda las referencias de su entrada | La procedencia no se pierde |
 | Todo supuesto del mundo se declara | El usuario ve qué contó como feriado, como viaje, como categoría |
 
-### 6.2 Comprobaciones de sanidad
+### 6.2 Límites de volumen y tiempo
+
+El cálculo opera en memoria, así que tiene tope de cuántas filas recibe.
+
+**En Manzana el tope casi nunca se alcanza**, y conviene saber por qué antes
+de diseñar alrededor de él. No estamos ante una tabla de millones de
+registros: estamos ante los movimientos de una persona.
+
+| Perfil de uso | Movimientos/año | 3 años |
+|---|---|---|
+| Promedio (3/día) | ~1.100 | ~3.300 |
+| Activo (8/día) | ~2.900 | ~8.800 |
+| Muy activo (15/día) | ~5.400 | ~16.000 |
+
+El historial completo de prácticamente cualquier usuario cabe entero. El
+límite es una salvaguarda de borde, no una restricción que el usuario vaya a
+notar.
+
+**La estrategia que hace que casi nunca importe: agregar primero, calcular
+después.** Es un principio de diseño, no solo una protección.
+
+```text
+Mal:   traer los 16.000 movimientos
+       → el sandbox los agrupa por día y luego compara
+       → 16.000 filas moviéndose para producir dos números
+
+Bien:  la consulta trae totales por día (≈1.000 días en 3 años)
+       → el sandbox marca cuáles fueron feriado o puente y compara
+       → 1.000 filas, mismo resultado
+```
+
+El cálculo casi nunca necesita las filas crudas: necesita lo justo para
+aplicar el conocimiento que la base no tiene. Si después el usuario pide
+"¿cuáles fueron esos gastos?", ahí sí se piden los movimientos de esos días
+concretos, que son pocos.
+
+> **Regla: traer lo mínimo necesario para el cálculo, no todo lo que
+> existe.**
+
+**Cuando sí se alcanza el límite**, tres salidas en orden de preferencia:
+
+1. **Reformular agregando en la consulta.** Cubre la mayoría de los casos.
+2. **Acotar y decirlo.** *"Miré los últimos 2 años y no los 5 completos,
+   para responderte rápido. ¿Quieres que revise todo?"* — el usuario decide.
+3. **Decir que no cabe.** Solo si las dos anteriores no aplican.
+
+Lo que **nunca** se hace: responder con una muestra presentándola como el
+total. Analizar 2.000 de 16.000 movimientos y dar el resultado como completo
+es exactamente el fallo que esta arquitectura existe para evitar.
+
+**Límite de tiempo.** Además del volumen hay tope de ejecución. Es más
+probable que se active este que el de volumen, porque el riesgo real no es
+el tamaño de los datos sino que el código generado sea ineficiente. Un
+cálculo que excede su tiempo se corta y no devuelve resultados parciales.
+
+### 6.3 Comprobaciones de sanidad
 
 El riesgo del cálculo libre es una cifra bien formada y mal calculada. Antes
 de emitir:
@@ -283,7 +338,7 @@ de emitir:
 Si una falla, **el resultado no se emite**. Se responde con honestidad y el
 fallo se registra como defecto.
 
-### 6.3 Transparencia
+### 6.4 Transparencia
 
 Todo resultado calculado explica su procedimiento en lenguaje del usuario:
 
@@ -294,6 +349,77 @@ feriado o puente, y comparé el promedio de esos días contra el resto.
 
 Se muestra el procedimiento y los supuestos, no el código. El código queda
 registrado para soporte.
+
+Esto importa más de lo que parece: si "¿de dónde sale esta cifra?" se
+respondiera mostrando un programa, la explicabilidad sería nominal. Un
+procedimiento en lenguaje natural es lo que una persona puede verificar.
+
+## 6b. El sistema aprende de su propio uso
+
+El cálculo aislado no es solo una válvula de escape: es **el mecanismo por el
+que el vocabulario descubre qué le falta**.
+
+### 6b.1 El ciclo
+
+```text
+1. Llega una pregunta que el vocabulario no cubre
+2. El motor la resuelve calculando sobre datos consultados
+3. Se registra qué se calculó
+4. Si ese mismo cálculo se repite en muchos turnos y usuarios
+   → se PROMUEVE a dimensión o medida declarada
+5. A partir de ahí deja de generarse: es rápida, determinista,
+   indexada, probada, y está disponible para todos
+```
+
+Lo que empieza como cálculo improvisado termina siendo parte del vocabulario
+estable. Cada análisis creativo deja algo atrás en vez de reinventarse cada
+vez.
+
+La promoción resuelve además tres problemas de golpe:
+
+| Problema del cálculo generado | Qué pasa al promover |
+|---|---|
+| No es determinista: la misma pregunta puede generar código distinto | Pasa a ser una dimensión fija |
+| Es lento: hay que traer filas y calcular | Se resuelve en el servidor, con índice |
+| No está probado | Entra al conjunto de pruebas como cualquier dimensión |
+
+### 6b.2 El filtro: qué se promueve y qué no
+
+**No todo lo que se usa mucho debe promoverse.** Este es el punto donde el
+ciclo podría deshacer la separación de §2.
+
+| Se promueve | No se promueve |
+|---|---|
+| Lo que **depende de datos del usuario**: frecuencia de comercio, días desde el pago, desviación del propio promedio, relación entre entidades | El **conocimiento del mundo**: feriados, puentes, temporadas, rubros comerciales, estacionalidad |
+
+Si "días de feriado" se usara en el 30% de las preguntas, la tentación sería
+promoverlo a una tabla. **No se hace.** Promoverlo lo congela, exige
+mantenerlo, y obliga a cargar una tabla por país al expandirse — exactamente
+el problema que §2 evita. Ese conocimiento se sigue aportando desde el
+modelo, declarado como supuesto.
+
+La regla en una línea:
+
+> Se promueve lo que le pertenece a la base. Lo que le pertenece al mundo se
+> queda en el modelo, por mucho que se use.
+
+### 6b.3 Qué se mide para decidir
+
+Se registra por cálculo generado: qué agrupación o medida produjo, cuántos
+turnos la usaron, cuántos usuarios distintos, y cuánto costó en tiempo.
+
+Candidato a promoción: un cálculo recurrente, en varios usuarios, sobre datos
+del usuario, y que sea caro de recomputar. Los tres criterios juntos — si
+solo lo pide una persona, o si es trivial de calcular, no compensa ampliar el
+vocabulario.
+
+### 6b.4 La señal de salud
+
+**La proporción de turnos que necesitan cálculo aislado debería bajar con el
+tiempo, no subir.** Si sube, el vocabulario se está quedando corto respecto
+a lo que la gente pregunta, y hay que ampliarlo.
+
+Es la métrica que dice qué construir después sin tener que adivinarlo.
 
 ## 7. Cómo elige el motor
 
@@ -308,9 +434,15 @@ registrado para soporte.
 ```
 
 Se vigila la proporción de turnos que llegan a cada nivel. Si suben las
-consultas, falta algo en el panorama. Si sube el cálculo, puede faltar una
-dimensión. **El uso de los niveles inferiores es un instrumento de medida
-sobre qué construir después.**
+consultas, falta algo en el panorama. Si sube el cálculo, falta vocabulario —
+y el ciclo de §6b convierte esa señal en capacidad permanente.
+
+**El uso de los niveles inferiores es el instrumento que dice qué construir
+después, sin tener que adivinarlo.**
+
+Regla de preferencia: se usa siempre el nivel más alto que alcance. Cada
+nivel hacia abajo es más lento, más caro y menos determinista que el
+anterior.
 
 ## 8. Qué gana el usuario
 
@@ -351,3 +483,14 @@ rubros comerciales ni la estacionalidad.
   sus feriados y temporadas sin cargar datos de ese país. Evidencia: `TEST`.
 - `AC-SEM-11` — Cuando nada alcanza, el motor lo dice y ofrece la
   alternativa más cercana; nunca estima. Evidencia: `TEST` + `USER`.
+- `AC-SEM-12` — Un cálculo que excede su límite de volumen se reformula
+  agregando en la consulta, se acota declarándolo, o se rechaza. **Nunca se
+  responde con una muestra presentada como total.** Evidencia: `TEST`.
+- `AC-SEM-13` — Un cálculo que excede su límite de tiempo se corta sin
+  devolver resultados parciales. Evidencia: `TEST`.
+- `AC-SEM-14` — Se registra cada cálculo generado con su frecuencia de uso y
+  número de usuarios, para alimentar el ciclo de promoción. Evidencia: `METRIC`.
+- `AC-SEM-15` — Ningún conocimiento del mundo se promueve al vocabulario,
+  sea cual sea su frecuencia de uso. Evidencia: `DOC` + revisión.
+- `AC-SEM-16` — La proporción de turnos que requieren cálculo aislado se
+  revisa periódicamente y tiende a bajar. Evidencia: `METRIC`.

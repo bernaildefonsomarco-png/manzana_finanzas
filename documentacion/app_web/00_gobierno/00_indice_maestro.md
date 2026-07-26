@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 27 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 29 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -75,7 +75,7 @@ de motor anterior (`WEB-D004`). Las catorce decisiones de producto están en
 | # | Documento | Estado | Notas |
 |---|---|---|---|
 | 20 | `20_arquitectura_motor_conversacional.md` | aprobado | Coordinador determinístico → espacio de trabajo → una sesión con el modelo → verificador. El agente propone; el Core ejecuta. |
-| 20b | `20b_capa_semantica_y_consulta_abierta.md` | aprobado | **Elimina el techo de expresividad.** Panorama cargado + consulta abierta + cálculo aislado. El conocimiento del mundo lo aporta el modelo, no la base. |
+| 20b | `20b_capa_semantica_y_consulta_abierta.md` | aprobado | **Elimina el techo de expresividad.** Panorama cargado + consulta abierta + cálculo aislado. El conocimiento del mundo lo aporta el modelo. Ciclo de promoción: el vocabulario crece con el uso real. |
 | 20c | `20c_perfil_del_usuario_y_voz.md` | aprobado | Las 4 capas del perfil de la persona, validez temporal, y qué es invariante y qué se adapta en la voz. |
 | 21 | `21_contrato_de_canal_y_presentadores.md` | aprobado | Bloques neutrales de canal + prueba de agnosticismo con 7 casos. |
 | 22 | `22_grounding_evidencia_y_politica.md` | aprobado | Invariante de evidencia, procedencia, foco exacto, confirmabilidad y los 4 límites duros. |
