@@ -293,6 +293,20 @@ deshacer completo por lote.
 
 ## 8. Superficies
 
+**Referencia visual: no existe frame previo.** Ninguna de estas cinco
+superficies está en `docs/fase_6_visual/32_especificacion_hifi.md`, ni en el
+inventario numerado de 151 frames de
+`docs/fase_6_visual/33_stitch_handoff_v1.md` §6.13, ni por tanto en
+`stitch_manzana_v1/`. El motivo no es el corte de `05c` §20 —las categorías
+siempre estuvieron dentro de V1—, sino que el Hi-Fi las trató solo como
+**campo** del formulario de movimiento (`[Select: Categoría]`, §6.3 y
+§21.10) y nunca especificó pantalla para gestionarlas: `SETTINGS` (§13.1)
+tiene Privacidad, Recordatorios, Email y Datos y memoria, y ninguna sección
+de categorías. Tampoco hay frame de reclasificación masiva ni de evidencia
+de clasificación. Los bloques de abajo son la especificación de layout, no
+un boceto de algo ya dibujado; tokens y primitivas salen de
+`16_design_system_web.md`.
+
 ### `SCR-CAT-01` — Gestión de categorías
 
 **Ruta:** `/configuracion/categorias`

@@ -372,6 +372,29 @@ notificaciones hacia ella.
 
 ## 8. Superficies
 
+**Referencia visual:** `docs/fase_6_visual/32_especificacion_hifi.md` §9
+(`DEBTS`), §21.5 (`DEBT_DETAIL`) y §21.11 (`DEBT_CREATE` / `DEBT_EDIT`), con
+sus frames en `stitch_manzana_v1/`; el inventario numerado está en
+`docs/fase_6_visual/33_stitch_handoff_v1.md` §6.13. La cobertura es parcial:
+el listado, el detalle y el alta tienen frame; las operaciones sobre una
+deuda ya creada, no.
+
+| Pantalla | Frame previo |
+|---|---|
+| `SCR-DEUDAS-01` | Sí — `DEBTS_FUNCTIONAL` (85), `DEBTS_EMPTY` (86), `DEBTS_LOADING` (87), `DEBTS_ERROR` (88), `DEBTS_DISCREET` (89) |
+| `SCR-DEUDAS-02` | Sí — `DEBT_DETAIL_ACTIVE` (90), `_PAID` (91), `_EMPTY_HISTORY` (92), `_LOADING` (93), `_ERROR` (94), `_DISCREET` (95) |
+| `SCR-DEUDAS-03` | Sí — `DEBT_CREATE` (96) y `DEBT_EDIT` (97) |
+| `SCR-DEUDAS-04` | **No existe frame propio.** El Hi-Fi solo define el CTA "Registrar pago" en la card (§9.2) y en el detalle (§21.5); la previsualización de la aplicación del pago no está dibujada en ningún frame. |
+| `SCR-DEUDAS-05` | **No existe frame previo.** §21.5 deja el botón "Cerrar o eliminar", pero el diálogo con las dos opciones de `RUL-DEUDAS-13` no está en el inventario; `MODAL_RISK` solo tiene frames para borrar movimiento (140) y ajuste de saldo (141). |
+| `SCR-DEUDAS-06` | **No existe frame previo.** La renegociación no aparece en el Hi-Fi. |
+| `SCR-DEUDAS-07` | **No existe frame previo.** El Hi-Fi trata a la persona como campo de la deuda (§21.5, §21.11), nunca como pantalla de gestión. |
+
+Donde dice que no hay frame, el bloque de abajo es la especificación de
+layout, no un boceto de algo ya dibujado; tokens y primitivas salen de
+`16_design_system_web.md`. El preview rápido `MODAL_DETAIL_QUICK_DEBT` (144,
+§21.8) también pertenece a este módulo aunque §8 no lo declare como pantalla
+propia.
+
 ### `SCR-DEUDAS-01` — Deudas
 
 **Ruta:** `/deudas`

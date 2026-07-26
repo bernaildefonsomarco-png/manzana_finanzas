@@ -294,6 +294,23 @@ solo, con confirmación reforzada.
 
 ## 8. Superficies
 
+**Referencia visual:** `docs/fase_6_visual/32_especificacion_hifi.md` §7
+(`PENDING`) y §21.4 (`PENDING_DETAIL` / `DRAWER_PENDING_DETAIL`), con sus
+frames en `stitch_manzana_v1/`; el inventario numerado está en
+`docs/fase_6_visual/33_stitch_handoff_v1.md` §6.13. Cobertura pantalla por
+pantalla:
+
+| Pantalla | Frame previo |
+|---|---|
+| `SCR-PEND-01` | Sí — `PENDING_FUNCTIONAL` (60), `PENDING_EMPTY` (61), `PENDING_LOADING` (63), `PENDING_ERROR` (64), `PENDING_DISCREET` (65) |
+| `SCR-PEND-02` | Sí — `PENDING_DETAIL_DEFAULT`, `_EDITING`, `_CONFIRMING`, `_REJECTING`, `_ALREADY_REGISTERED`, `_LOADING`, `_ERROR`, `_DISCREET` (66-73) y `DRAWER_PENDING_DETAIL` (151) |
+| `SCR-PEND-03` | Sí — `PENDING_BATCH` (62) y el banner de lote de §21.4 |
+| `SCR-PEND-04` | **No existe frame previo.** El Hi-Fi no contempla pendientes incompletos; `PENDING_DETAIL_EDITING` (67) edita una propuesta ya completa, que es otra cosa. El layout de abajo es especificación, no boceto. |
+
+El preview rápido invocado desde Inicio, `MODAL_DETAIL_QUICK_PENDING` (143,
+§21.8), también pertenece a este módulo aunque §8 no lo declare como
+pantalla propia.
+
 ### `SCR-PEND-01` — Bandeja de pendientes
 
 **Ruta:** `/pendientes`

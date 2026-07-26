@@ -270,6 +270,20 @@ y se puede editar, eliminar y restaurar igual.
 
 ## 8. Superficies
 
+**Referencia visual: no existe frame previo.** Ninguna de estas cinco
+superficies está en `docs/fase_6_visual/32_especificacion_hifi.md`, ni en el
+inventario numerado de 151 frames de
+`docs/fase_6_visual/33_stitch_handoff_v1.md` §6.13, ni por tanto en
+`stitch_manzana_v1/`. La captura del Hi-Fi es el FAB que abre el formulario
+completo (`MOVEMENT_NEW` y `DRAWER_MOVEMENT_NEW`, frames 44-59 y 149-150,
+§6 y §21.10), que es la superficie del módulo `26`: ni `HOME` (§3.1) ni
+`MOVEMENTS` (§4.1) tienen barra de registro rápido, y no hay frame de
+plantillas, de paleta de comandos ni de ayuda de atajos. Es coherente con
+§22: ninguna fuente contemplaba el registro rápido ni las plantillas, así
+que no había nada que dibujar cuando se generaron los frames. Los bloques de
+abajo son la especificación de layout; tokens y primitivas salen de
+`16_design_system_web.md`.
+
 ### `SCR-CAP-01` — Barra de registro rápido
 
 Componente, presente en Inicio y en Movimientos.

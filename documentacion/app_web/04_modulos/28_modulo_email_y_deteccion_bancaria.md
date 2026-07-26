@@ -422,6 +422,31 @@ pipeline solo aplica plantillas determinísticas y lo dice.
 
 ## 8. Superficies
 
+**Referencia visual:** `docs/fase_6_visual/32_especificacion_hifi.md` §13.1
+(sección Email dentro de `SETTINGS`) y §21.11 (`GMAIL_CONNECT` /
+`GMAIL_DISCONNECT`), con sus frames en `stitch_manzana_v1/`; el inventario
+numerado está en `docs/fase_6_visual/33_stitch_handoff_v1.md` §6.13. La
+cobertura es parcial y el reparto importa: **conectar y desconectar el
+correo tienen frame; vigilar bancos, no.**
+
+| Pantalla | Frame previo |
+|---|---|
+| `SCR-EMAIL-01` | Parcial. El estado de conexión sí: `SETTINGS_EMAIL_CONNECTED` (132), `SETTINGS_EMAIL_NOT_CONNECTED` (133), más los modales `GMAIL_CONNECT` (137) y `GMAIL_DISCONNECT` (138). La lista de bancos vigilados por buzón, con remitente y última detección, **no existe en ningún frame**: el Hi-Fi asume un solo Gmail conectado y una fila de estado. |
+| `SCR-EMAIL-02` | **No existe frame previo.** |
+| `SCR-EMAIL-03` | **No existe frame previo.** |
+| `SCR-EMAIL-04` | **No existe frame previo.** |
+| `SCR-EMAIL-05` | **No existe frame previo.** |
+| `SCR-EMAIL-06` | Sí, pero como superficie del módulo `27`: `PENDING_DETAIL_*` (66-73) y `DRAWER_PENDING_DETAIL` (151), §21.4. Los dos añadidos de este módulo —la trazabilidad al correo y el campo de aportar contexto— no están en el frame. |
+
+La ausencia es consistente con §22: la gestión editable de remitentes y la
+detección de remitentes nuevos son adiciones de este módulo que ninguna
+fuente contemplaba, así que no había nada que dibujar cuando se generaron
+los frames. Donde dice que no hay frame, el bloque de abajo es la
+especificación de layout, no un boceto de algo ya dibujado; tokens y
+primitivas salen de `16_design_system_web.md`. El paso de onboarding
+`ONBOARDING_EMAIL_OPT` (frames 19-20, §15) alimenta este módulo aunque
+pertenezca a `44`.
+
 ### `SCR-EMAIL-01` — Correo en configuración
 
 **Ruta:** `/configuracion/correo`

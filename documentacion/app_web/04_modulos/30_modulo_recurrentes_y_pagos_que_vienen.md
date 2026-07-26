@@ -314,6 +314,27 @@ pendiente que el usuario confirma (`RUL-EMAIL-01`).
 
 ## 8. Superficies
 
+**Referencia visual:** `docs/fase_6_visual/32_especificacion_hifi.md` §10
+(`UPCOMING`), §21.6 (`UPCOMING_DETAIL`) y §21.11 (`UPCOMING_CREATE` /
+`UPCOMING_EDIT`), con sus frames en `stitch_manzana_v1/`; el inventario
+numerado está en `docs/fase_6_visual/33_stitch_handoff_v1.md` §6.13. La
+cobertura es parcial:
+
+| Pantalla | Frame previo |
+|---|---|
+| `SCR-REC-01` | Sí — `UPCOMING_FUNCTIONAL` (98), `UPCOMING_EMPTY` (99), `UPCOMING_WITH_SUGGESTED` (100), `UPCOMING_WITH_OVERDUE` (101), `UPCOMING_LOADING` (102), `UPCOMING_ERROR` (103), `UPCOMING_DISCREET` (104) |
+| `SCR-REC-02` | Sí — `UPCOMING_DETAIL_ACTIVE` (105), `_SUGGESTED` (106), `_OVERDUE` (107), `_PAUSED` (108) |
+| `SCR-REC-03` | Sí — `UPCOMING_CREATE` (109) y `UPCOMING_EDIT` (110) |
+| `SCR-REC-04` | **No existe frame propio.** El Hi-Fi solo define la acción "Marcar pagado" en la card (§10.2) y en el detalle (§21.6); el modal con monto editable y el aviso de `RUL-REC-07` no están dibujados. |
+| `SCR-REC-05` | **No existe frame previo.** No hay vista de calendario en el inventario. |
+
+Dos diferencias frente al frame de `SCR-REC-01`, deliberadas: aquí son
+cuatro secciones (esta semana, más adelante, pendientes, sugerencias) y no
+las tres del Hi-Fi (activos, sugeridos, vencidos), y la cabecera muestra lo
+ya apartado. Donde dice que no hay frame, el bloque de abajo es la
+especificación de layout, no un boceto de algo ya dibujado; tokens y
+primitivas salen de `16_design_system_web.md`.
+
 ### `SCR-REC-01` — Pagos que vienen
 
 **Ruta:** `/pagos-que-vienen`
