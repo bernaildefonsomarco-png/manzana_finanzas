@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 29 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 92 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -58,7 +58,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | # | Documento | Estado | Notas |
 |---|---|---|---|
 | 12 | `12_arquitectura_app_web.md` | aprobado | App Router real: frontera servidor/cliente, rutas interceptadas, dónde vive cada tipo de estado. |
-| 13 | `13_modelo_datos_web_v1.md` | aprobado | Documenta por primera vez las migraciones 042-046. Añade 17 tablas y 22 enums (migraciones 047-056), incluidas las del panorama, el perfil y el ciclo de promoción. |
+| 13 | `13_modelo_datos_web_v1.md` | aprobado | Documenta por primera vez las migraciones 042-046. Añade 21 tablas y 24 enums (migraciones 047-063), incluidas las del panorama, el perfil y el ciclo de promoción. |
 | 14 | `14_contratos_api_web.md` | aprobado | Paginación por cursor, filtros server-side, límite de peticiones, CSRF. |
 | 15 | `15_seguridad_autorizacion_y_rls.md` | aprobado | Política RLS-first. 48 de 58 rutas usan service-role hoy; lista blanca + test que falla el build. |
 | 16 | `16_design_system_web.md` | aprobado | 18 primitivas faltantes + 12 componentes de dominio. Elimina el `modal-accessibility-guard`. |
@@ -107,9 +107,9 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 34 | `34_modulo_descubrimientos_e_insights.md` | aprobado | **Reescritura.** Tres clases: lo declarado funciona el primer día, lo inferido espera. Umbrales por dimensión, nunca globales. Accionable = una herramienta, no un consejo. |
 | 35 | `35_modulo_reportes_graficos_y_exportacion.md` | aprobado | **Nuevo.** El reporte no tiene aritmética propia. Cinco gráficos, cada uno con su decisión. Exportar es una obligación, no una función. |
 | 36 | `36_modulo_memoria_y_aprendizaje.md` | aprobado | **Nuevo.** Tres clases de aprendizaje, tres gobiernos. Ver, corregir, deshacer y olvidar. Olvidar deja lápida. **Cierra `C-08`.** |
-| 37 | `37_modulo_recordatorios_in_app.md` | no iniciado |
-| 38 | `38_modulo_busqueda_y_navegacion_rapida.md` | no iniciado |
-| 39 | `39_modulo_home_resumen_financiero.md` | no iniciado |
+| 37 | `37_modulo_recordatorios_in_app.md` | aprobado | **Nuevo.** La fatiga gobierna el correo, no la bandeja. Lo resuelto desaparece solo. **Cierra `C-17`.** |
+| 38 | `38_modulo_busqueda_y_navegacion_rapida.md` | aprobado | **Nuevo.** Búsqueda determinista: sin puntuación que ocultar. Buscar y preguntar se separan con traspaso. **Cierra `C-11`.** |
+| 39 | `39_modulo_home_resumen_financiero.md` | aprobado | **Reescritura.** Invierte la tesis de `05c` §1. El Inicio es el canal de registro. Precedencia declarada, no score. Cierra el bloque de módulos. |
 
 ### 05 — Asistente
 
@@ -143,7 +143,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 39/60 documentos aprobados o vivos (Olas 1 a 8 completas; 13 de los 16 modulos).**
+**Progreso: 42/60 documentos aprobados o vivos. Olas 1 a 9 completas: los 16 modulos estan terminados.**
 
 ## 5. Orden de lectura por rol
 

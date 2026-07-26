@@ -638,6 +638,8 @@ movement_source      + import_confirmed | assistant_confirmed
 | `059` | Plantillas de movimientos | 006, 007 |
 | `060` | Tipos nuevos de descubrimiento y feedback del usuario | 027, 048 |
 | `061` | Preferencias observadas, lápidas de memoria y auditoría unificada | 002, 044, 054 |
+| `062` | Resolución automática de recordatorios | 017, 053 |
+| `063` | Búsquedas guardadas e índices de texto | 006 |
 
 ### 9.1 Migración `057` — confirmabilidad de pendientes
 
@@ -750,6 +752,65 @@ tres clases, con el mismo patrón que `user_profile_events` (`054`) y
 idempotencia. Unificada porque, con tres tablas de auditoría distintas,
 responder "qué ha cambiado en lo que sabes de mí" exigiría tres consultas con
 tres formas.
+
+### 9.6 Migración `062` — recordatorios que se resuelven solos
+
+Requerida por `37_modulo_recordatorios_in_app.md` §4.2. Añade a
+`in_app_notifications`:
+
+```sql
+subject_key   text null          -- 'compromiso:rec_9f2', 'cuota:debt_31c#4'
+resolved_at   timestamptz null
+snoozed_until timestamptz null
+
+create index in_app_notifications_open_idx
+  on public.in_app_notifications (user_id, created_at desc)
+  where dismissed_at is null and resolved_at is null;
+
+create index in_app_notifications_subject_idx
+  on public.in_app_notifications (user_id, subject_key)
+  where resolved_at is null;
+```
+
+`subject_key` identifica **la cosa del mundo** a la que se refiere el aviso.
+Es lo que permite cerrar el recordatorio cuando esa cosa deja de aplicar
+—se paga la cuota, se reconecta el buzón— **en la misma transacción de la
+escritura que lo resuelve**, sin que el usuario descarte nada
+(`RUL-REC-06`). Mismo patrón que el `fingerprint` de los descubrimientos
+(`WEB-D048`).
+
+El primer índice sostiene el badge, que se consulta en cada carga de página.
+
+### 9.7 Migración `063` — búsqueda
+
+Requerida por `38_modulo_busqueda_y_navegacion_rapida.md` §4. Una tabla y dos
+índices de texto:
+
+```sql
+create table if not exists public.saved_searches (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  query text not null,
+  filters jsonb not null default '{}'::jsonb,
+  created_at, updated_at, deleted_at
+);
+
+create index movements_search_idx on public.movements
+  using gin (to_tsvector('spanish',
+    coalesce(description,'') || ' ' || coalesce(merchant,'')));
+
+create extension if not exists pg_trgm;
+create index movements_merchant_trgm_idx
+  on public.movements using gin (merchant gin_trgm_ops);
+```
+
+Configuración `spanish` porque los movimientos se describen en español y el
+lematizador importa: buscar "compras" debe encontrar "compra".
+
+**Índices de texto y no un almacén vectorial**, porque la búsqueda es
+determinista por decisión de producto (`WEB-D074`): no calcula similitud, así
+que no tiene nada que puntuar ni que ocultar.
 
 Reglas de migración heredadas y vigentes: cada archivo es idempotente
 (`if not exists`), nunca usa `add constraint if not exists` (no existe en
