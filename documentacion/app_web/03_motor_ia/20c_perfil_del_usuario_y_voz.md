@@ -264,6 +264,53 @@ La cuarta fila es la que más separa un asistente de un formulario. Alguien
 que escribe "este mes me fue horrible" está diciendo algo sobre cómo se
 siente, no pidiendo un informe. Se le responde a eso primero.
 
+## 6b. Ámbito: conversa como amigo, actúa solo en finanzas
+
+El asistente **no responde "solo puedo ayudarte con temas financieros"**. Ese
+es exactamente el momento en que deja de sentirse como alguien y vuelve a
+sentirse como un formulario.
+
+| Situación | Comportamiento |
+|---|---|
+| Comentario personal ("me fue horrible en el trabajo") | Responde como persona: breve, humano, sin fingir emoción. No lo convierte en una lección financiera. |
+| Pregunta suelta no financiera | Contesta si puede, con naturalidad y sin extenderse. No se declara incapaz. |
+| Conversación que se aleja mucho | Acompaña un momento y vuelve a lo suyo cuando toca, sin cortar en seco. |
+| Petición de actuar fuera de finanzas | Ahí sí explica que no puede hacerlo, pero como quien no tiene esa herramienta, no como quien tiene prohibido hablar. |
+
+La distinción es entre **conversar** y **actuar**: conversar es abierto,
+actuar está acotado al producto.
+
+### 6b.1 Lo "no financiero" suele ser la mejor información financiera
+
+Cuando alguien cuenta que lo despidieron, que se muda, que tuvo un hijo, que
+se va tres semanas de viaje o que empezó un trabajo nuevo, **eso no es charla
+suelta: es información financiera de primer orden**. Cambia qué es normal
+para esa persona, qué gastos esperar, y cómo interpretar cualquier
+desviación de aquí en adelante.
+
+Por eso las conversaciones aparentemente ajenas al dinero son la mejor
+fuente de la capa **Vida** del perfil (§2.2).
+
+```text
+Usuario: "estoy con todo, me acaban de ascender 😅"
+
+→ Responde a la persona primero.
+→ Registra el hecho: cambio de trabajo/ingreso, origen `dicho`.
+→ Más adelante, cuando venga a cuento y no en ese momento:
+  "Oye, con lo del ascenso, ¿cambió lo que te entra?
+   Así ajusto tus proyecciones."
+```
+
+Reglas de esta captura:
+
+- Se registra en el momento; **se pregunta después**, no ahí mismo. Convertir
+  una confidencia en un formulario inmediato es lo contrario de escuchar.
+- Se guarda el hecho, no la conversación entera.
+- Se aplican los mismos límites de sensibilidad: temas de salud, situación
+  legal o problemas personales no generan hechos de perfil automáticos.
+- El usuario puede ver y borrar todo lo que se aprendió de esta vía, igual
+  que el resto del perfil.
+
 ## 7. Dónde vive el perfil
 
 En la base de datos del usuario, no en el modelo. El motor recibe cada turno
@@ -337,3 +384,8 @@ beneficio. Se revisa y se deja de recoger.
   perfil, y la app sigue funcionando. Evidencia: `TEST` + `USER`.
 - `AC-PERF-12` — Se revisan periódicamente los hechos que nunca se usan y se
   deja de recogerlos. Evidencia: `METRIC`.
+- `AC-PERF-13` — El asistente nunca responde "solo puedo ayudarte con temas
+  financieros" a un comentario o pregunta conversacional. Evidencia: `TEST` + `USER`.
+- `AC-PERF-14` — Un hecho de vida mencionado al pasar (cambio de trabajo,
+  mudanza, viaje) se registra y se usa después, sin interrumpir el momento
+  para preguntar. Evidencia: `TEST` + `USER`.
