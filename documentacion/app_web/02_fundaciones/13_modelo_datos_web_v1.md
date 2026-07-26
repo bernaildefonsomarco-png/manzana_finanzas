@@ -90,7 +90,7 @@ pago_recurrente · ajuste
 
 > **Ampliación requerida:** los módulos nuevos introducen dos orígenes que
 > el enum no contempla: `import_confirmed` (importación de archivo,
-> `29_modulo_captura_sin_friccion_e_importacion.md`) y `assistant_confirmed`
+> `29_modulo_captura_sin_friccion.md` §21.1, diferido a V1.1) y `assistant_confirmed`
 > (registro propuesto por el asistente y confirmado por el usuario,
 > `41_asistente_ia_en_la_app.md`). Se añaden en la migración `047`.
 
@@ -253,7 +253,13 @@ id, user_id, budget_id, as_of date, spent numeric(14,2),
 remaining numeric(14,2), pct numeric(5,4), created_at
 ```
 
-### 7.2 Importación y captura — migración `049`
+### 7.2 Importación — migración `049` — **DIFERIDA A V1.1**
+
+> **La importación de archivos se difirió a V1.1** por decisión del usuario
+> el 26 de julio de 2026 (`WEB-D026`). Estas tablas quedan **diseñadas y sin
+> aplicar**: la migración `049` no se ejecuta hasta activar la
+> funcionalidad. Se documentan aquí para que el resto del modelo no le cierre
+> la puerta. Ver `29_modulo_captura_sin_friccion.md` §21.1.
 
 **`import_batches`** — un lote de importación, para poder deshacerlo entero.
 
