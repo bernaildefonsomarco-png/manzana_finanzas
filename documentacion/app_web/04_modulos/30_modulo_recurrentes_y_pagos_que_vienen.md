@@ -4,7 +4,7 @@
 **Bloque:** 04 — Módulos
 **Estado:** V1
 **Fecha:** 26 de julio de 2026
-**Docs fuente:** `docs/fase_2_estrategia/alcance_v1/05i_recurrentes.md` (reutilizado), `docs/fase_4_tecnica/16_modelo_datos.md` §11, `09_modelo_mental_dinero.md`
+**Docs fuente:** `docs/fase_2_estrategia/alcance_v1/05i_recurrentes.md` (reutilizado), `docs/fase_4_tecnica/16_modelo_datos.md` §11, `docs/fase_6_visual/32_especificacion_hifi.md` (parcial), `09_modelo_mental_dinero.md`
 **Documentos que dependen de este:** `24` (cuentas y cajas), `31` (deudas), `33` (proyecciones), `37` (recordatorios), `39` (home)
 
 ---
@@ -669,7 +669,10 @@ internet"* resuelto en un turno.
 `docs/fase_2_estrategia/alcance_v1/05i_recurrentes.md` (tipos, detección,
 naming visible §20.1, estados, vínculo con deudas),
 `docs/fase_4_tecnica/16_modelo_datos.md` §11,
-`docs/fase_3_producto/12_lenguaje_producto.md` §9.1 (regla de "vencido").
+`docs/fase_3_producto/12_lenguaje_producto.md` §9.1 (regla de "vencido"),
+`docs/fase_6_visual/32_especificacion_hifi.md` §10, §21.6 y §21.11 (listado,
+detalle y formulario; no cubre marcar como pagado ni el calendario de
+compromisos).
 
 **Contradicciones que cierra:** ninguna directamente; sostiene
 `RUL-CUENTAS-04` (no doble descuento) desde el lado de los compromisos.

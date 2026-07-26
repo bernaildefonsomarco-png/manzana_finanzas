@@ -4,7 +4,7 @@
 **Bloque:** 04 — Módulos
 **Estado:** V1
 **Fecha:** 26 de julio de 2026
-**Docs fuente:** `docs/fase_2_estrategia/alcance_v1/05h_deudas.md` (reutilizado), `docs/fase_4_tecnica/16_modelo_datos.md` §10, `docs/fase_4_tecnica/20_decisiones_tecnicas.md` F4-D034, migración `043`
+**Docs fuente:** `docs/fase_2_estrategia/alcance_v1/05h_deudas.md` (reutilizado), `docs/fase_4_tecnica/16_modelo_datos.md` §10, `docs/fase_4_tecnica/20_decisiones_tecnicas.md` F4-D034, `docs/fase_6_visual/32_especificacion_hifi.md` (parcial), migración `043`
 **Documentos que dependen de este:** `24` (cajas), `26` (movimientos), `30` (pagos que vienen), `33` (proyecciones), `39` (home)
 
 ---
@@ -765,7 +765,9 @@ ligeras, operaciones, principio de no cobranza),
 `docs/fase_4_tecnica/16_modelo_datos.md` §10 (cinco tablas, ciclo de
 vencimiento, reglas de asignación),
 `docs/fase_4_tecnica/20_decisiones_tecnicas.md` F4-D034 (política de
-conciliación).
+conciliación), `docs/fase_6_visual/32_especificacion_hifi.md` §9, §21.5 y
+§21.11 (listado, detalle y formulario; no cubre registrar pago, cerrar,
+renegociar ni personas).
 
 **Contradicciones que cierra:** ninguna directamente; la migración `043`, que
 este módulo consume, es la que cerró el hallazgo §4.7 de la auditoría

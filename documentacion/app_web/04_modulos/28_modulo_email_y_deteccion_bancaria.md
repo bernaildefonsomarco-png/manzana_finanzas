@@ -4,7 +4,7 @@
 **Bloque:** 04 — Módulos
 **Estado:** V1
 **Fecha:** 26 de julio de 2026
-**Docs fuente:** `docs/fase_2_estrategia/alcance_v1/05d_email_parsing.md`, `docs/fase_4_tecnica/22_decision_email_provider.md`, `docs/fase_4_tecnica/26_auditoria_captura_financiera_externa_v1.md`, `docs/fase_4_tecnica/16_modelo_datos.md` §14
+**Docs fuente:** `docs/fase_2_estrategia/alcance_v1/05d_email_parsing.md`, `docs/fase_4_tecnica/22_decision_email_provider.md`, `docs/fase_4_tecnica/26_auditoria_captura_financiera_externa_v1.md`, `docs/fase_4_tecnica/16_modelo_datos.md` §14, `docs/fase_6_visual/32_especificacion_hifi.md` (parcial)
 **Documentos que dependen de este:** `27` (pendientes), `36` (memoria), `45` (privacidad)
 
 ---
@@ -806,7 +806,10 @@ auto-registro, dedup), `docs/fase_4_tecnica/22_decision_email_provider.md`
 (OAuth, scopes, Limited Use, watch renewal),
 `docs/fase_4_tecnica/26_auditoria_captura_financiera_externa_v1.md` (Gates
 A-F, aislamiento del extractor, brechas §5.2),
-`docs/fase_4_tecnica/16_modelo_datos.md` §14.
+`docs/fase_4_tecnica/16_modelo_datos.md` §14,
+`docs/fase_6_visual/32_especificacion_hifi.md` §13.1 y §21.11 (estado de
+conexión y modales de Gmail; no cubre los bancos vigilados, el remitente
+nuevo, el backfill ni la salud de la detección).
 
 **Contradicciones que cierra:** `C-15` (una cuenta de correo por usuario vs.
 multi-buzón ya implementado). El módulo documenta el contrato multi-buzón

@@ -4,7 +4,7 @@
 **Bloque:** 04 — Módulos
 **Estado:** V1
 **Fecha:** 25 de julio de 2026
-**Docs fuente:** `docs/fase_4_tecnica/16_modelo_datos.md` §8, `docs/fase_2_estrategia/alcance_v1/05d_email_parsing.md`, `docs/fase_4_tecnica/auditoria_integral_arquitectura_ia_conversacional_2026-07-23.md` §4.7 (como diagnóstico)
+**Docs fuente:** `docs/fase_4_tecnica/16_modelo_datos.md` §8, `docs/fase_2_estrategia/alcance_v1/05d_email_parsing.md`, `docs/fase_6_visual/32_especificacion_hifi.md`, `docs/fase_4_tecnica/auditoria_integral_arquitectura_ia_conversacional_2026-07-23.md` §4.7 (como diagnóstico)
 **Documentos que dependen de este:** `28` (email), `29` (importación), `30` (recurrentes), `31` (deudas), `39` (home), `41` (asistente)
 
 ---
@@ -660,6 +660,8 @@ módulo 37 y se ampliará en la fase 2.
 `docs/fase_4_tecnica/16_modelo_datos.md` §8 (tabla, tipos, reglas),
 `docs/fase_2_estrategia/alcance_v1/05d_email_parsing.md` (flujo de
 confirmación, "ya lo registré", revisión batch),
+`docs/fase_6_visual/32_especificacion_hifi.md` §7 y §21.4 (bandeja, detalle
+y lote; no cubre el pendiente incompleto de `SCR-PEND-04`),
 `docs/fase_4_tecnica/auditoria_integral_arquitectura_ia_conversacional_2026-07-23.md`
 §4.7 y §5 (P0.5: pendientes creados como confirmables sin serlo) — usado como
 diagnóstico, no como especificación.
