@@ -88,13 +88,17 @@ corpus anterior usó `23b`.
 
 ### 04 — Módulos
 
-| # | Documento | Estado |
-|---|---|---|
-| 24 | `24_modulo_cuentas_y_cajas.md` | no iniciado |
-| 25 | `25_modulo_categorias_subcategorias_y_etiquetas.md` | no iniciado |
-| 26 | `26_modulo_movimientos.md` | no iniciado |
-| 27 | `27_modulo_pendientes_y_confirmaciones.md` | no iniciado |
-| 28 | `28_modulo_email_y_deteccion_bancaria.md` | no iniciado |
+Siguen la plantilla obligatoria de 22 secciones
+(`01_convenciones_y_plantillas.md` §8). El gate de calidad: alguien que no ha
+leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
+
+| # | Documento | Estado | Notas |
+|---|---|---|---|
+| 24 | `24_modulo_cuentas_y_cajas.md` | aprobado | Las 4 capas del dinero implementables. 15 reglas con ejemplo numérico. Sin excepciones de service-role. |
+| 25 | `25_modulo_categorias_subcategorias_y_etiquetas.md` | aprobado | 12 canónicas + subcategorías + 8 etiquetas. `otros` ≠ `sin clasificar` en datos y UI. |
+| 26 | `26_modulo_movimientos.md` | aprobado | Los 11 tipos guardables (cierra C-05). Cursor, filtros server-side, restauración. |
+| 27 | `27_modulo_pendientes_y_confirmaciones.md` | aprobado | "Todo pendiente nace confirmable o no nace", impuesto por constraint de BD (migración 057). |
+| 28 | `28_modulo_email_y_deteccion_bancaria.md` | no iniciado | |
 | 29 | `29_modulo_captura_sin_friccion_e_importacion.md` | no iniciado |
 | 30 | `30_modulo_recurrentes_y_pagos_que_vienen.md` | no iniciado |
 | 31 | `31_modulo_deudas.md` | no iniciado |
@@ -139,7 +143,7 @@ corpus anterior usó `23b`.
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 26/59 documentos aprobados o vivos (Olas 1 a 4 completas; el bloque de motor IA se amplio con 20b y 20c).**
+**Progreso: 30/60 documentos aprobados o vivos (Olas 1 a 5 completas: gobierno, producto, fundaciones, motor IA y los 4 primeros modulos).**
 
 ## 5. Orden de lectura por rol
 
@@ -164,8 +168,8 @@ OLA 1   00 01 02 03 04 05         — COMPLETADA (25 de julio de 2026)
 OLA 2   06 07 08 09 10 11         — COMPLETADA (25 de julio de 2026)
 OLA 3   12 13 14 15 16 17 18 19   — COMPLETADA (25 de julio de 2026)
 OLA 4   20 20b 20c 21 22 23       — COMPLETADA (25 de julio de 2026), disenada con el usuario
-OLA 5   24 25 26 27               — siguiente
-OLA 6   28 29 30 31
+OLA 5   24 25 26 27               — COMPLETADA (26 de julio de 2026)
+OLA 6   28 29 30 31               — siguiente
 OLA 7   32 33
 OLA 8   34 35 36
 OLA 9   37 38 39

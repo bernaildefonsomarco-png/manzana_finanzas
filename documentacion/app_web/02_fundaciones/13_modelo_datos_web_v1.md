@@ -599,6 +599,35 @@ movement_source      + import_confirmed | assistant_confirmed
 | `054` | Perfil del usuario: hechos, candidatos y auditoría | 001, 045 |
 | `055` | Panorama: patrones, resúmenes mensuales y de conversación | 006, 007, 052, 054 |
 | `056` | Registro de cálculos generados | — |
+| `057` | Confirmabilidad de pendientes | 008 |
+
+### 9.1 Migración `057` — confirmabilidad de pendientes
+
+Requerida por `27_modulo_pendientes_y_confirmaciones.md` §4.2. Añade a
+`pending_items`:
+
+```sql
+confirmable      boolean not null default false
+confirm_command  jsonb null
+```
+
+Con una restricción que traduce a la base la regla "todo pendiente nace
+confirmable o no nace":
+
+```sql
+alter table public.pending_items
+  add constraint pending_items_confirmable_has_command
+  check (
+    status <> 'pending'
+    or confirmable = false
+    or confirm_command is not null
+  );
+```
+
+**Por qué la restricción y no solo código:** el fallo documentado —pendientes
+presentados como confirmables que no podían confirmarse— ocurrió porque nada
+lo impedía estructuralmente. Con esta restricción, la base rechaza el estado
+inválido aunque el código lo intente.
 
 Reglas de migración heredadas y vigentes: cada archivo es idempotente
 (`if not exists`), nunca usa `add constraint if not exists` (no existe en
