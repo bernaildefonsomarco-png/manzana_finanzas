@@ -58,7 +58,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | # | Documento | Estado | Notas |
 |---|---|---|---|
 | 12 | `12_arquitectura_app_web.md` | aprobado | App Router real: frontera servidor/cliente, rutas interceptadas, dónde vive cada tipo de estado. |
-| 13 | `13_modelo_datos_web_v1.md` | aprobado | Documenta por primera vez las migraciones 042-046. Añade 10 tablas nuevas y 14 enums (migraciones 047-053). |
+| 13 | `13_modelo_datos_web_v1.md` | aprobado | Documenta por primera vez las migraciones 042-046. Añade 17 tablas y 22 enums (migraciones 047-056), incluidas las del panorama, el perfil y el ciclo de promoción. |
 | 14 | `14_contratos_api_web.md` | aprobado | Paginación por cursor, filtros server-side, límite de peticiones, CSRF. |
 | 15 | `15_seguridad_autorizacion_y_rls.md` | aprobado | Política RLS-first. 48 de 58 rutas usan service-role hoy; lista blanca + test que falla el build. |
 | 16 | `16_design_system_web.md` | aprobado | 18 primitivas faltantes + 12 componentes de dominio. Elimina el `modal-accessibility-guard`. |

@@ -371,6 +371,162 @@ Tres decisiones de diseño con consecuencias:
 `channel` existe desde el principio con valor `'web'` para que la fase 2 no
 requiera migrar datos.
 
+### 7.5b Perfil del usuario — migración `054`
+
+Requerido por `20c_perfil_del_usuario_y_voz.md`. Es lo que hace que dos
+usuarios con los mismos movimientos no reciban la misma conversación.
+
+**`user_profile_facts`** — un hecho conocido sobre la persona.
+
+```text
+id                  uuid pk
+user_id             uuid not null
+layer               profile_layer not null    -- estilo | vida | vinculo | hilo
+key                 text not null             -- 'cobro_frecuencia', 'trabajo', 'longitud_mensaje'
+value               jsonb not null
+origin              profile_origin not null   -- dicho | observado_confirmado
+validity            profile_validity not null -- permanente | revisable | volatil
+status              profile_status not null   -- vigente | en_duda | suspendido | caducado
+first_seen_at       timestamptz not null default now()
+last_confirmed_at   timestamptz null
+expires_at          timestamptz null
+evidence_refs       text[] not null default '{}'
+created_at, updated_at, deleted_at, metadata
+```
+
+Único por `(user_id, layer, key)` cuando no está borrado: un hecho nuevo
+sobre la misma clave **reemplaza y archiva** al anterior, no se acumula.
+
+Cuatro campos merecen justificación, porque son los que evitan que el perfil
+haga daño:
+
+| Campo | Por qué existe |
+|---|---|
+| `origin` | Distingue lo que el usuario contó de lo que el motor dedujo. Un hecho `observado` sin confirmar **no se guarda aquí** — vive como candidato hasta que se confirma. |
+| `validity` | Lo permanente (cómo escribe) no caduca; lo revisable (su trabajo) se reconfirma; lo volátil (un viaje en curso) caduca solo. |
+| `status` | Ante contradicción pasa a `en_duda`, **no se borra**. Así el usuario puede decir "no, sigue igual" y el hecho se restaura con su historia. |
+| `evidence_refs` | De dónde salió: qué dijo, o qué observó el motor y cuándo lo confirmó. Exigido por el principio de procedencia. |
+
+**`user_profile_candidates`** — lo observado que aún no se confirmó.
+
+```text
+id, user_id, layer, key, proposed_value jsonb,
+evidence_refs text[], observed_at, asked_at timestamptz null,
+ask_count integer not null default 0,
+status candidate_status not null   -- pendiente | confirmado | rechazado | abandonado
+```
+
+`ask_count` implementa la regla de `20c` §3: si el usuario ignora dos veces,
+no se vuelve a preguntar por ese hecho.
+
+**`user_profile_events`** — auditoría de cambios, con el mismo patrón que
+`experience_preference_events` (migración `045`): estado anterior, estado
+siguiente, actor e idempotencia. Necesario porque el usuario puede corregir
+y borrar, y esas acciones deben ser trazables.
+
+### 7.5c Panorama financiero — migración `055`
+
+Requerido por `20b_capa_semantica_y_consulta_abierta.md` §4. Es lo que
+permite que el motor sepa quién eres antes de leer tu mensaje, en ~26k
+tokens estables y cacheables.
+
+**`user_financial_patterns`** — los patrones ya calculados.
+
+```text
+id            uuid pk
+user_id       uuid not null
+kind          pattern_kind not null  -- gasto_tipico | comercio_habitual | ritmo | ingreso_tipico | tendencia
+scope         jsonb not null         -- a qué aplica: categoría, comercio, periodo
+value         jsonb not null         -- el patrón: promedio, mediana, frecuencia, desviación
+sample_size   integer not null
+evidence_refs text[] not null default '{}'
+computed_at   timestamptz not null
+valid_until   timestamptz null
+created_at, updated_at
+```
+
+Se recalculan de forma diferida por un worker, no en el momento de la
+consulta. `sample_size` permite que el motor sepa cuánta confianza merece un
+patrón: "gastas ~S/400 en comida" con 8 movimientos de muestra no es lo
+mismo que con 200.
+
+**`user_monthly_summaries`** — el historial anterior a los 90 días,
+comprimido.
+
+```text
+id             uuid pk
+user_id        uuid not null
+period_month   date not null          -- primer día del mes
+total_spent    numeric(14,2) not null
+total_income   numeric(14,2) not null
+by_category    jsonb not null         -- desglose
+notable        jsonb not null default '[]'  -- hechos del mes: deuda abierta, mes atípico
+movement_count integer not null
+evidence_refs  text[] not null default '{}'
+computed_at    timestamptz not null
+```
+
+Único por `(user_id, period_month)`. Esta tabla es la que hace que el
+historial completo esté presente sin cargarlo: el motor sabe "en marzo del
+año pasado gastaste S/2.100, sobre todo en salidas" sin tener las 90 filas
+de marzo.
+
+**`conversation_summaries`** — la capa Hilo del perfil.
+
+```text
+id              uuid pk
+user_id         uuid not null
+thread_id       uuid not null references assistant_threads(id)
+topics          text[] not null default '{}'
+decisions       jsonb not null default '[]'
+open_items      jsonb not null default '[]'
+ended_as        text null              -- resuelto | a_medias | abandonado
+created_at, updated_at, deleted_at
+```
+
+Regla de contenido, heredada de `20c` §2.4: guarda **de qué se habló, no lo
+que se dijo**. Temas y conclusiones, no transcripción. Y nunca detalle de
+categorías sensibles: guarda "revisó sus gastos de salud", no cuáles.
+
+### 7.5d Registro de cálculos — migración `056`
+
+Requerido por el ciclo de promoción de `20b` §6b. Es lo que convierte el uso
+real del sandbox en una señal sobre qué falta en el vocabulario.
+
+**`generated_computations`**
+
+```text
+id                uuid pk
+signature         text not null        -- forma normalizada del cálculo, no su resultado
+shape             jsonb not null       -- qué agrupación y qué medida produjo
+depends_on        computation_source not null  -- datos_usuario | conocimiento_mundo | mixto
+user_count        integer not null default 0
+turn_count        integer not null default 0
+avg_duration_ms   integer null
+first_seen_at     timestamptz not null
+last_seen_at      timestamptz not null
+status            computation_status not null  -- registrado | candidato | promovido | descartado
+promoted_to       text null            -- nombre de la dimensión o medida resultante
+```
+
+Tres decisiones de diseño con consecuencias:
+
+1. **No guarda datos ni resultados**, solo la *forma* del cálculo. Registrar
+   qué agrupación se hizo no expone nada del usuario; registrar el resultado
+   sí. Esto mantiene la regla de `19_observabilidad_y_telemetria_web.md` §4.1.
+2. **`depends_on` implementa el filtro de promoción** de `20b` §6b.2: solo
+   los cálculos marcados `datos_usuario` pueden llegar a `candidato`. Lo que
+   depende de conocimiento del mundo se registra para medirlo, pero **nunca
+   se promueve** — promoverlo lo congelaría y obligaría a mantener una tabla
+   por país.
+3. **`user_count` es tan importante como `turn_count`.** Un cálculo que una
+   sola persona repite mucho no justifica ampliar el vocabulario; uno que
+   muchas personas piden, sí.
+
+No hay tabla para el vocabulario en sí: las dimensiones y medidas son
+**código**, no datos. La promoción es un cambio de código informado por esta
+tabla, no una fila que se inserta.
+
 ### 7.6 Recordatorios in-app — migración `053`
 
 Se reutiliza la infraestructura existente (`nudge_candidates`,
@@ -412,6 +568,15 @@ export_status        pendiente | procesando | listo | expirado | fallido
 thread_status        activo | archivado
 message_role         usuario | asistente | sistema
 action_status        propuesta | confirmada | descartada | expirada
+
+profile_layer        estilo | vida | vinculo | hilo
+profile_origin       dicho | observado_confirmado
+profile_validity     permanente | revisable | volatil
+profile_status       vigente | en_duda | suspendido | caducado
+candidate_status     pendiente | confirmado | rechazado | abandonado
+pattern_kind         gasto_tipico | comercio_habitual | ritmo | ingreso_tipico | tendencia
+computation_source   datos_usuario | conocimiento_mundo | mixto
+computation_status   registrado | candidato | promovido | descartado
 ```
 
 Ampliación de un enum existente:
@@ -431,6 +596,9 @@ movement_source      + import_confirmed | assistant_confirmed
 | `051` | Reportes guardados y trabajos de exportación | 006 |
 | `052` | Hilos y mensajes del asistente | 006, 042 |
 | `053` | Canal in-app y bandeja de notificaciones | 017, 019, 028 |
+| `054` | Perfil del usuario: hechos, candidatos y auditoría | 001, 045 |
+| `055` | Panorama: patrones, resúmenes mensuales y de conversación | 006, 007, 052, 054 |
+| `056` | Registro de cálculos generados | — |
 
 Reglas de migración heredadas y vigentes: cada archivo es idempotente
 (`if not exists`), nunca usa `add constraint if not exists` (no existe en
@@ -461,6 +629,14 @@ al rol `authenticated` sobre columnas que afecten dinero.** Igual que
 | `assistant_threads` | `(user_id, updated_at desc)` | Listado de hilos |
 | `in_app_notifications` | `(user_id, read_at, created_at desc)` | Contador y bandeja |
 | `export_jobs` | `(user_id, requested_at desc)` | Historial y expiración |
+| `user_profile_facts` | `(user_id, layer, status)` | Cargar el perfil en cada conversación |
+| `user_profile_facts` | `(user_id, expires_at)` donde no es nulo | Caducidad de hechos volátiles |
+| `user_profile_candidates` | `(user_id, status, ask_count)` | Decidir si preguntar |
+| `user_financial_patterns` | `(user_id, kind)` | Armar el panorama |
+| `user_monthly_summaries` | `(user_id, period_month desc)` | Historial comprimido |
+| `conversation_summaries` | `(user_id, updated_at desc)` | Capa Hilo del perfil |
+| `generated_computations` | `(signature)` único | Acumular uso por cálculo |
+| `generated_computations` | `(status, depends_on, user_count desc)` | Detectar candidatos a promoción |
 
 Los índices de las tablas existentes se conservan según
 `16_modelo_datos.md` §18. Se añade uno derivado del cambio de paginación
@@ -478,6 +654,19 @@ Los índices de las tablas existentes se conservan según
 - Proyecciones de uso corriente, que se calculan al vuelo.
 - Presupuestos como dinero apartado.
 - Datos de tarjeta, credenciales bancarias o números de cuenta completos.
+- **Conocimiento del mundo**: feriados, puentes, temporadas, rubros
+  comerciales, estacionalidad. Lo aporta el modelo (`WEB-D021b`). No existe
+  ni existirá una tabla de calendarios ni de clasificación de comercios.
+- **El vocabulario de consulta**: las dimensiones y medidas son código, no
+  filas. `generated_computations` registra el uso para decidir promociones,
+  pero la promoción es un cambio de código.
+- **Resultados ni datos dentro del registro de cálculos**: solo la forma del
+  cálculo. Registrar qué agrupación se hizo no expone nada; registrar el
+  resultado sí.
+- **Hechos de perfil observados sin confirmar** en `user_profile_facts`:
+  viven como candidatos hasta que el usuario los confirma.
+- Transcripciones de conversación en `conversation_summaries`: solo temas y
+  conclusiones.
 
 ## 13. Criterios de aceptación
 
@@ -497,3 +686,17 @@ Los índices de las tablas existentes se conservan según
   capacidades tienen módulo responsable asignado. Evidencia: `DOC`.
 - `AC-DATOS-08` — Cada listado paginado tiene un índice que cubre su orden
   estable. Evidencia: `CODE` + `TEST`.
+- `AC-DATOS-09` — Un hecho de perfil observado no entra en
+  `user_profile_facts` sin confirmación del usuario. Evidencia: `TEST`.
+- `AC-DATOS-10` — Un hecho contradicho pasa a `en_duda` conservando su
+  historia; no se borra ni se sobrescribe en silencio. Evidencia: `TEST`.
+- `AC-DATOS-11` — El panorama completo de un usuario se arma por debajo de su
+  presupuesto de tokens sin importar los años de uso. Evidencia: `TEST` + `METRIC`.
+- `AC-DATOS-12` — `generated_computations` no contiene datos del usuario ni
+  resultados, solo la forma del cálculo. Evidencia: `TEST`.
+- `AC-DATOS-13` — Un cálculo marcado `conocimiento_mundo` nunca alcanza el
+  estado `candidato`. Evidencia: `TEST`.
+- `AC-DATOS-14` — `conversation_summaries` no contiene transcripción ni
+  detalle de categorías sensibles. Evidencia: `TEST` + revisión.
+- `AC-DATOS-15` — Exportar los datos del usuario incluye su perfil completo, y
+  eliminar la cuenta lo elimina. Evidencia: `TEST`.
