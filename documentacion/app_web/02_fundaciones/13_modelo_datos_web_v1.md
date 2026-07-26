@@ -640,6 +640,8 @@ movement_source      + import_confirmed | assistant_confirmed
 | `061` | Preferencias observadas, lápidas de memoria y auditoría unificada | 002, 044, 054 |
 | `062` | Resolución automática de recordatorios | 017, 053 |
 | `063` | Búsquedas guardadas e índices de texto | 006 |
+| `064` | Auditoría de eventos de cuenta | 001 |
+| `065` | Registro de consentimientos | 001, 045 |
 
 ### 9.1 Migración `057` — confirmabilidad de pendientes
 
@@ -811,6 +813,62 @@ lematizador importa: buscar "compras" debe encontrar "compra".
 **Índices de texto y no un almacén vectorial**, porque la búsqueda es
 determinista por decisión de producto (`WEB-D074`): no calcula similitud, así
 que no tiene nada que puntuar ni que ocultar.
+
+### 9.8 Migración `064` — eventos de cuenta
+
+Requerida por `43_auth_y_cuenta.md` §4.3. Auditoría de lo que le pasa a una
+cuenta: creación, verificación, cambios de clave y de correo, cierre de
+sesiones y solicitud de eliminación.
+
+```sql
+create table if not exists public.account_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid null references auth.users(id) on delete set null,
+  kind public.account_event_kind not null,
+  ip_hash text null,
+  user_agent_hash text null,
+  created_at timestamptz not null default now()
+);
+```
+
+**Se guardan hashes, no la IP ni el agente en claro.** Sirven para que el
+usuario reconozca "esto fui yo" comparando, no para identificar el
+dispositivo: guardar la IP sería recoger un dato de localización que el
+producto no necesita.
+
+`user_id` es `on delete set null` y no `cascade`, a diferencia del resto del
+esquema. Es deliberado: el evento `eliminacion_solicitada` **sobrevive al
+borrado**, anonimizado, y es el único rastro que queda de una cuenta
+eliminada. Existe para poder responder "sí, esa cuenta se eliminó el 26 de
+julio" si alguna vez hace falta.
+
+### 9.9 Migración `065` — consentimientos
+
+Requerida por `45_configuracion_privacidad_y_control_de_datos.md` §4.2.
+
+```sql
+create table if not exists public.consent_events (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references auth.users(id) on delete cascade,
+  kind public.consent_kind not null,
+  granted boolean not null,
+  version text not null,
+  detail jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists consent_events_lookup_idx
+  on public.consent_events (user_id, kind, created_at desc);
+```
+
+**Es un registro de eventos, no un estado.** El consentimiento vigente es el
+último evento de su tipo. Guardarlo como estado mutable perdería la historia,
+y la historia es lo que permite responder "¿desde cuándo?" y "¿cuándo lo
+quitó?".
+
+`version` guarda qué versión del documento se aceptó, y es lo que hace
+verificable la regla de versionar juntas la capacidad y su declaración
+(`45` `RUL-CONF-09`).
 
 Reglas de migración heredadas y vigentes: cada archivo es idempotente
 (`if not exists`), nunca usa `add constraint if not exists` (no existe en

@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 111 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 130 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -123,9 +123,9 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 
 | # | Documento | Estado |
 |---|---|---|
-| 43 | `43_auth_y_cuenta.md` | no iniciado |
-| 44 | `44_onboarding_web.md` | no iniciado |
-| 45 | `45_configuracion_privacidad_y_control_de_datos.md` | no iniciado |
+| 43 | `43_auth_y_cuenta.md` | aprobado | Recuperación, reenvío y `/auth/callback`, que hoy no existen. Errores por código, no por texto. **Cierra `C-13`.** |
+| 44 | `44_onboarding_web.md` | aprobado | **Reescritura.** Tres puertas, ninguna obligatoria. Sin barra de progreso. Seis rutas dan valor con un solo dato. |
+| 45 | `45_configuracion_privacidad_y_control_de_datos.md` | aprobado | Configuración por secciones. Modo discreto con un punto de decisión. **Cierra `C-04`, `C-14` y `C-16`.** |
 | 46 | `46_notificaciones_y_correo_saliente.md` | no iniciado |
 | 47 | `47_ciclo_de_vida_del_dato_y_estados_vacios.md` | no iniciado |
 | 48 | `48_ayuda_explicabilidad_y_soporte.md` | no iniciado |
@@ -143,7 +143,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 45/60 documentos aprobados o vivos. Olas 1 a 11 completas: los 16 modulos y el bloque del asistente terminados.**
+**Progreso: 48/60 documentos aprobados o vivos. Olas 1 a 11 completas; Ola 12 en curso (43, 44 y 45 hechos).**
 
 ## 5. Orden de lectura por rol
 
