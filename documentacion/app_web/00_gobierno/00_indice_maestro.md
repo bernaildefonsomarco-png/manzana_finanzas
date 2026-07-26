@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 106 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 111 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -117,7 +117,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 |---|---|---|
 | 40 | `40_catalogo_de_tools_y_comandos.md` | aprobado | **Agregación, no diseño.** 95 comandos, 145 entradas de lectura. Leer se compone; escribir se enumera. Seis niveles de confirmación. **Cierra `C-03`.** |
 | 41 | `41_asistente_ia_en_la_app.md` | aprobado | **El presentador web.** Invierte `05c` §15: la IA escribe, siempre con confirmación. Solo la prosa se transmite; las cifras no. |
-| 42 | `42_reutilizacion_del_codigo_existente_motor.md` | no iniciado |
+| 42 | `42_reutilizacion_del_codigo_existente_motor.md` | aprobado | **Primer contacto con `src/agents/`.** Casi la mitad sobrevive. Lo que se reemplaza son 150 líneas: el enum de 15 tools, el canal en el núcleo y el arnés. |
 
 ### 06 — Transversales
 
@@ -143,7 +143,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 44/60 documentos aprobados o vivos. Olas 1 a 10 completas; los 16 modulos y el catalogo del asistente terminados.**
+**Progreso: 45/60 documentos aprobados o vivos. Olas 1 a 11 completas: los 16 modulos y el bloque del asistente terminados.**
 
 ## 5. Orden de lectura por rol
 
