@@ -190,7 +190,7 @@ mensual habría que recrearlo a mano cada mes.
 | `44` Onboarding web | Primer valor sin WhatsApp: cuenta financiera → primer movimiento o importación → correo opcional. | Onboarding guiado por WhatsApp (fase 2). |
 | `45` Configuración y privacidad | Configuración en secciones navegables. Consentimientos granulares. **Modo discreto como preferencia de servidor** (cierra `C-04`). Exportar todo. Eliminar cuenta y datos. Declaración Limited Use publicada (cierra `C-16`). | Configuración de organización o equipo. |
 | `46` Notificaciones y correo saliente | Correo transaccional. Preferencias por tipo. Anti-fatiga. Baja en un clic. | Marketing por correo sin opt-in. Push (V1.1). |
-| `47` Ciclo de vida del dato | Comportamiento de cada módulo con 0 / 5 / 50 / 500 movimientos. | — |
+| `47` Ciclo de vida del dato | Comportamiento de cada módulo por **tramo de presentación** —vacío 0, temprano 1-10, funcional 11-50, completo 51+— y por **tramo de volumen** —normal, denso, muy denso—. | — |
 | `48` Ayuda y explicabilidad | "¿De dónde sale esta cifra?" como patrón transversal reutilizable. Ayuda contextual. | Chat de soporte humano en vivo. |
 
 ## 4. Fuera de alcance global de V1-web
