@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 92 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 98 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -115,7 +115,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 
 | # | Documento | Estado |
 |---|---|---|
-| 40 | `40_catalogo_de_tools_y_comandos.md` | no iniciado |
+| 40 | `40_catalogo_de_tools_y_comandos.md` | aprobado | **Agregación, no diseño.** 95 comandos, 145 entradas de lectura. Leer se compone; escribir se enumera. Seis niveles de confirmación. **Cierra `C-03`.** |
 | 41 | `41_asistente_ia_en_la_app.md` | no iniciado |
 | 42 | `42_reutilizacion_del_codigo_existente_motor.md` | no iniciado |
 
@@ -143,7 +143,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 55 | `55_ledger_construccion_web.md` | no iniciado |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado |
 
-**Progreso: 42/60 documentos aprobados o vivos. Olas 1 a 9 completas: los 16 modulos estan terminados.**
+**Progreso: 43/60 documentos aprobados o vivos. Olas 1 a 9 completas y los 16 modulos terminados; Ola 10 en curso.**
 
 ## 5. Orden de lectura por rol
 

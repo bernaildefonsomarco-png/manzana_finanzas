@@ -458,19 +458,19 @@ Entidad: `pendientes`.
 
 | Dimensión | Notas |
 |---|---|
-| `origen` | correo, importación, recurrente, asistente, sistema |
-| `tipo` | Los seis de §4.1 |
-| `estado` | pendiente, confirmado, descartado, ya registrado, caducado |
+| `origen_pendiente` | correo, importación, recurrente, asistente, sistema |
+| `tipo_pendiente` | Los seis de §4.1 |
+| `estado_pendiente` | pendiente, confirmado, descartado, ya registrado, caducado |
 | `confirmable` | sí/no |
 | `nivel_riesgo` | bajo, medio, alto |
 | `tiene_duplicado` | sí/no |
-| `antiguedad` | Días desde su creación |
+| `antiguedad_pendiente` | Días desde su creación |
 
 | Medida | Notas |
 |---|---|
-| `conteo` | Agrupable por origen y tipo |
+| `conteo_pendientes` | Agrupable por origen y tipo |
 | `suma_propuesta` | Suma de los montos propuestos. **Nunca se presenta como gasto real** |
-| `tasa_confirmacion` | Confirmados sobre total resueltos |
+| `tasa_confirmacion_pendientes` | Confirmados sobre total resueltos |
 
 La segunda medida lleva advertencia obligatoria en cualquier respuesta que la
 use: es dinero **no confirmado**, y presentarlo junto al gasto real sin

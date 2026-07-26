@@ -458,9 +458,9 @@ Entidad principal: `movimientos`.
 
 | Dimensión | Notas |
 |---|---|
-| `tipo` | Los 11 |
-| `estado` | confirmado, por revisar, corregido, eliminado |
-| `origen` | manual, correo, importación, asistente, recurrente, whatsapp |
+| `tipo_movimiento` | Los 11 |
+| `estado_movimiento` | confirmado, por revisar, corregido, eliminado |
+| `origen_movimiento` | manual, correo, importación, asistente, recurrente, whatsapp |
 | `comercio` | |
 | `cuenta`, `caja` | |
 | `fecha` | Con rangos arbitrarios — clave para que el modelo aplique su conocimiento del mundo (`20b` §5.2) |

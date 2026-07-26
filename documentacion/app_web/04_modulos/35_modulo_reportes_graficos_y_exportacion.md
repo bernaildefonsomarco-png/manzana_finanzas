@@ -700,7 +700,7 @@ transversal:
 
 | Medida | Notas |
 |---|---|
-| `total_por_grupo` | Con las referencias de cada grupo |
+| `total_por_grupo` | **Alias** de `suma` con la agrupación pedida (`RUL-CAT-04`). Con las referencias de cada grupo |
 | `variacion_entre_periodos` | Absoluta y relativa |
 | `movimientos_excluidos` | Cuántos y por qué |
 

@@ -484,6 +484,26 @@ Cuando la línea no se resuelve ni con reglas ni con el modelo en modo
 abre el formulario. Escalar sin avisar convertiría un registro de 5 segundos
 en una conversación, que no es lo que el usuario pidió.
 
+### 14.4 Lo que el motor NO puede hacer aquí
+
+- **Guardar un movimiento sin previsualización**, por muy clara que sea la
+  línea. La previsualización es lo que convierte el parseo en algo corregible;
+  sin ella, un error de interpretación se descubre días después en el listado.
+- **Escalar al asistente un registro rápido que no pudo resolver.** Se abre el
+  formulario (§14.3).
+- **Inventar el campo que falta.** Si no hay cuenta y no hay una por defecto,
+  se pregunta o se deja vacío; no se elige la más usada en silencio.
+- **Crear una plantilla sola.** Se sugiere tras tres registros casi idénticos
+  y el usuario decide; una plantilla no pedida es ruido en el formulario.
+- **Aplicar una abreviatura aprendida que el usuario olvidó** (`RUL-MEM-09`).
+- **Interpretar una fecha ambigua sin decir cómo la entendió.** "el 3" en
+  agosto puede ser el 3 de agosto o el 3 de julio; la previsualización muestra
+  la fecha resuelta, no la escrita.
+
+La primera y la última son la misma idea: **este módulo existe para ir rápido,
+y la velocidad no puede pagarse con datos mal registrados.** Cinco segundos
+para registrar y diez minutos para encontrar el error no es un buen negocio.
+
 ## 15. Memoria y aprendizaje
 
 | Qué aprende | De dónde | Cómo se corrige |

@@ -647,10 +647,10 @@ relativo sigue siendo útil y no es sensible**; el monto sí.
 |---|---|
 | `categoria_presupuestada` | |
 | `tipo_presupuesto` | presupuesto, límite, límite estricto |
-| `periodo` | semanal, quincenal, mensual |
+| `periodo_presupuesto` | semanal, quincenal, mensual |
 | `tramo_avance` | holgado, atención, cerca, superado |
 | `tiene_traspaso` | sí/no |
-| `origen` | manual, sugerido |
+| `origen_presupuesto` | manual, sugerido |
 | `estado_meta` | activa, alcanzada, pausada |
 | `meta_respaldada` | Si tiene caja vinculada |
 
@@ -674,8 +674,9 @@ relativo sigue siendo útil y no es sensible**; el monto sí.
 | `copiar_presupuestos_periodo_anterior` | **Masiva**: conteo y muestra |
 | `aceptar_sugerencia_presupuesto` | Tarjeta con evidencia |
 | `crear_meta` | Tarjeta |
-| `vincular_meta_caja` | Tarjeta |
+| `vincular_caja_a_meta` | Tarjeta |
 | `aportar_a_meta` | Tarjeta con efecto sobre el dinero libre |
+| `activar_renovacion` / `desactivar_renovacion` | Tarjeta (`ACT-PRES-15`) |
 
 ### 14.3 Qué se puede pedir en lenguaje natural
 

@@ -487,13 +487,13 @@ saber que una cuota puede aparecer en dos módulos.
 | Dimensión | Notas |
 |---|---|
 | `estado_recurrente` | sugerido, activo, pausado, cancelado |
-| `frecuencia` | |
+| `frecuencia_recurrente` | |
 | `variabilidad_monto` | fijo, variable |
-| `cubierto_por_caja` | sí/no — **la que evita el doble descuento** |
-| `vinculado_a_deuda` | sí/no |
+| `compromiso_cubierto_por_caja` | sí/no — **la que evita el doble descuento** |
+| `recurrente_vinculado_a_deuda` | sí/no |
 | `dias_hasta_vencimiento` | |
 | `estado_ocurrencia` | esperada, pagada, saltada, vencida |
-| `origen` | manual, detectado, email |
+| `origen_recurrente` | manual, detectado, email |
 
 | Medida | Notas |
 |---|---|
@@ -506,13 +506,13 @@ saber que una cuota puede aparecer en dos módulos.
 | Comando | Confirmación |
 |---|---|
 | `crear_recurrente` | Tarjeta editable |
-| `confirmar_sugerencia` | Tarjeta con evidencia |
+| `aceptar_sugerencia_recurrente` | Tarjeta con evidencia |
 | `marcar_pagado` | Tarjeta con monto editable |
 | `saltar_periodo` | Tarjeta |
 | `pausar_recurrente` / `reactivar` | Tarjeta |
 | `cancelar_recurrente` | **Riesgo** |
 | `actualizar_monto_esperado` | Tarjeta |
-| `vincular_caja` / `vincular_deuda` | Tarjeta |
+| `vincular_caja_a_compromiso` / `vincular_deuda` | Tarjeta |
 
 ### 14.3 Qué se puede pedir en lenguaje natural
 

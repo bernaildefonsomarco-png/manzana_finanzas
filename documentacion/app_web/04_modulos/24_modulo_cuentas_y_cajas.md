@@ -536,15 +536,15 @@ Entidades: `cuentas`, `cajas`.
 | Dimensión | Valores |
 |---|---|
 | `tipo_cuenta` | digital, banco, físico, tarjeta |
-| `institucion` | texto |
-| `es_default` | sí/no |
+| `institucion` | Texto. **Dueño de esta dimensión**; `28` la consume |
+| `es_cuenta_default` | sí/no |
 | `tiene_cajas` | sí/no |
 | `saldo_negativo` | sí/no |
 | `tipo_caja` | compromiso, objetivo, emergencia |
-| `tiene_meta` | sí/no |
-| `progreso_meta` | proporción 0–1 |
-| `vinculada_a_deuda` | sí/no |
-| `cubierto_por_caja` | sí/no — **dimensión de movimientos que aporta este módulo** |
+| `caja_tiene_meta` | sí/no |
+| `progreso_caja` | proporción 0–1 |
+| `caja_vinculada_a_deuda` | sí/no |
+| `movimiento_cubierto_por_caja` | sí/no — **dimensión de movimientos que aporta este módulo** |
 
 | Medida | Qué calcula |
 |---|---|
@@ -552,7 +552,7 @@ Entidades: `cuentas`, `cajas`.
 | `separado_total` | Suma de saldos de cajas activas |
 | `libre_en_cuentas` | `RUL-CUENTAS-02` |
 | `dinero_libre` | `RUL-CUENTAS-03` |
-| `libre_por_cuenta` | `RUL-CUENTAS-01`, agrupable |
+| `libre_por_cuenta` | **Alias** de `libre_en_cuentas` con `agrupar: cuenta` (`RUL-CAT-04`). Equivale a `RUL-CUENTAS-01` |
 
 Toda consulta devuelve las referencias de las cuentas, cajas y movimientos
 que componen cada cifra (`22_grounding_evidencia_y_politica.md` §2).
@@ -572,7 +572,6 @@ que componen cada cifra (`22_grounding_evidencia_y_politica.md` §2).
 | `separar_en_caja` | Tarjeta con efecto previo | Sí |
 | `devolver_a_libre` | Tarjeta con efecto previo | Sí |
 | `mover_entre_cajas` | Tarjeta con efecto previo | Sí |
-| `vincular_caja` | Tarjeta | Sí |
 
 ### 14.3 Qué se puede pedir en lenguaje natural
 

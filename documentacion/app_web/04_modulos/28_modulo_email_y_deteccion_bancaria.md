@@ -621,7 +621,7 @@ Entidad: `correo`, `fuentes`.
 | Dimensión | Notas |
 |---|---|
 | `buzon` | Cuál de los conectados |
-| `institucion` | |
+| `institucion` | **Consumida**, no declarada: su dueño es el módulo `24` (`RUL-CAT-03`) |
 | `remitente` | |
 | `origen_fuente` | catálogo, usuario, sugerido |
 | `estado_fuente` | shadow, activa, pausada, desactivada |
@@ -630,8 +630,8 @@ Entidad: `correo`, `fuentes`.
 | Medida | Notas |
 |---|---|
 | `detecciones` | Conteo por fuente y periodo |
-| `tasa_confirmacion` | Confirmadas sobre creadas |
-| `tasa_descarte` | Señal de ruido |
+| `tasa_confirmacion_detecciones` | Confirmadas sobre creadas |
+| `tasa_descarte_detecciones` | Señal de ruido |
 
 ### 14.2 Comandos que acepta
 
@@ -640,7 +640,7 @@ Entidad: `correo`, `fuentes`.
 | `añadir_fuente` | Tarjeta |
 | `editar_remitente` | Tarjeta, avisando que vuelve a shadow |
 | `pausar_fuente` | Tarjeta |
-| `aceptar_sugerencia` | Tarjeta |
+| `aceptar_sugerencia_remitente` | Tarjeta |
 | `iniciar_backfill` | Tarjeta con volumen estimado |
 | `desconectar_buzon` | **Riesgo**, explicando qué se conserva |
 
@@ -661,6 +661,30 @@ La última es un caso de uso real y frecuente: el usuario nota que falta algo.
 La respuesta debe distinguir entre "el correo no llegó", "llegó de un
 remitente no vigilado" y "llegó pero no coincidió con ninguna plantilla",
 porque las tres tienen soluciones distintas.
+
+### 14.4 Lo que el motor NO puede hacer aquí
+
+- **Conectar un buzón.** OAuth exige la interacción directa del usuario con
+  Google. No hay comando, y no lo habrá.
+- **Leer el cuerpo de un correo para sugerir un remitente.** La detección de
+  remitentes nuevos usa **solo metadatos** —dirección y patrón de asunto—
+  (`WEB-D028`, `RUL-EMAIL-05`). Es la restricción más estricta del módulo y la
+  que sostiene la promesa de privacidad de conectar el correo.
+- **Citar el contenido de un correo en una respuesta.** El cuerpo no se
+  almacena, así que ni siquiera hay de dónde citarlo — pero conviene decirlo
+  para que nadie lo añada creyendo que mejora la explicación.
+- **Crear un movimiento directamente desde una detección.** Toda detección
+  nace como pendiente y pasa por confirmación (`27`).
+- **Reactivar una fuente que el usuario desactivó**, ni sugerir un remitente
+  sobre el que dijo "no preguntar". Ese "no" se respeta indefinidamente
+  (`RUL-EMAIL-09`).
+- **Prometer que la detección es completa.** Si un banco cambia de formato,
+  deja de detectarse; el motor puede decir qué ve y qué no, nunca afirmar que
+  no falta nada.
+
+La segunda es la que hay que defender con más cuidado, porque **leer el cuerpo
+mejoraría la detección**. Esa es exactamente la razón de escribirla: las
+restricciones que no cuestan nada no hace falta documentarlas.
 
 ## 15. Memoria y aprendizaje
 

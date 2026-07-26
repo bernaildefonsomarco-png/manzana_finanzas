@@ -566,12 +566,12 @@ personas son de los datos más sensibles del producto.
 
 | Dimensión | Notas |
 |---|---|
-| `direccion` | debes / te deben |
+| `direccion_deuda` | debes / te deben |
 | `tipo_deuda` | informal, banco, tarjeta, cuotas, préstamo |
 | `estado_deuda` | activa, vence pronto, vencida, cerrada, condonada |
 | `persona` | |
 | `tiene_calendario` | sí/no |
-| `cubierta_por_caja` | sí/no |
+| `deuda_cubierta_por_caja` | sí/no |
 | `dias_hasta_proxima_cuota` | |
 | `progreso_pago` | Proporción pagada |
 | `estado_cuota` | Los seis estados |
@@ -598,7 +598,7 @@ distinta.
 | `renegociar_deuda` | **Riesgo**, con calendarios lado a lado |
 | `cerrar_deuda` | **Riesgo**, con las dos opciones |
 | `reabrir_deuda` | Tarjeta |
-| `vincular_caja` | Tarjeta |
+| `vincular_caja_a_deuda` | Tarjeta |
 | `reprogramar_cuota` / `saltar_cuota` | Tarjeta |
 | `crear_persona` | Tarjeta |
 

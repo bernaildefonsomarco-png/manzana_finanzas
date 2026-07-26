@@ -441,10 +441,21 @@ Entidades: `categorias`, `subcategorias`, `etiquetas`.
 
 | Medida | Qué calcula |
 |---|---|
-| `gasto_por_categoria` | Suma agrupable, excluyendo tipos que no admiten categoría |
-| `conteo_por_categoria` | |
-| `proporcion_del_gasto` | Porcentaje del total del periodo |
-| `sin_clasificar` | Conteo y suma pendientes de revisar |
+| `sin_clasificar` | Conteo y suma pendientes de revisar. **Única medida propia de este módulo** |
+
+Y tres **alias** de medidas del módulo `26` con una agrupación aplicada
+(`RUL-CAT-04`). No son medidas nuevas; se conservan porque se leen mejor:
+
+| Alias | Equivale a |
+|---|---|
+| `gasto_por_categoria` | `suma` + `agrupar: categoria` |
+| `conteo_por_categoria` | `conteo` + `agrupar: categoria` |
+| `proporcion_del_gasto` | `proporcion_del_total` + `agrupar: categoria` |
+
+Declararlas como medidas propias habría reintroducido el catálogo cerrado que
+`WEB-D021` eliminó: al final harían falta también `gasto_por_cuenta`,
+`gasto_por_comercio`, y el asistente seguiría sin poder agrupar por algo que
+nadie anticipó.
 
 **Regla que el compilador aplica siempre:** las consultas de gasto por
 categoría excluyen `transferencia`, `asignacion_interna` y `ajuste`. Es una
@@ -477,6 +488,28 @@ decisión del dominio, no del agente, y por eso vive en el compilador.
 
 La tercera es el caso canónico de operación masiva de todo el corpus
 (`20` §8, `22` §7.1).
+
+### 14.4 Lo que el motor NO puede hacer aquí
+
+- **Reclasificar en lote sin previsualización.** Conteo, muestra de ejemplos y
+  exclusiones son obligatorios antes de confirmar, y el lote entero se deshace
+  como una unidad.
+- **Crear categorías canónicas.** Las 12 son fijas (`RUL-CAT-01`); el usuario
+  crea subcategorías y etiquetas, no categorías raíz.
+- **Fusionar o mover subcategorías sin decir a cuántos movimientos afecta.**
+  Es la operación que más datos toca de una vez en todo el producto.
+- **Clasificar en `otros` para no dejar el campo vacío.** `otros` y `sin
+  clasificar` son cosas distintas (`RUL-CAT-04` de este módulo), y rellenar con
+  `otros` destruye la señal de qué falta revisar.
+- **Aplicar un aprendizaje de clasificación que el usuario olvidó**
+  (`RUL-MEM-09`). Antes de sugerir una categoría se consultan las lápidas.
+- **Reescribir la clasificación de movimientos pasados** al corregir un
+  aprendizaje. Eso es una acción explícita y aparte (`RUL-MEM-04`).
+
+Las dos últimas son las que conectan este módulo con el 36, y sin ellas la
+promesa de olvidar sería falsa justo aquí: **este es el módulo que más
+aprendizajes genera**, así que es donde más se notaría que un olvido no se
+respeta.
 
 ## 15. Memoria y aprendizaje
 
