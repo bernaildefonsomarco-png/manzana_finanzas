@@ -84,7 +84,7 @@ Los hechos que cambian cómo se leen los mismos números.
 | Rutina laboral | Quien trabaja fines de semana no tiene "findes" en el sentido habitual |
 | Periodos especiales | Viajes, mudanzas, meses atípicos: explican picos que si no parecen anomalías |
 
-Los periodos especiales son la conexión con `20b` §4.4: alimentan la
+Los periodos especiales son la conexión con `20b` §5.1: alimentan la
 dimensión `periodo_declarado`, que es lo que permite responder "¿gasto más
 cuando viajo?".
 
@@ -176,6 +176,8 @@ hecho {
 | Permanente | Cómo escribe, su vocabulario | No caduca; se refina |
 | Revisable | Trabajo, con quién vive, cómo le pagan | Se reconfirma con baja frecuencia |
 | Volátil | Viaje en curso, preocupación puntual, meta activa | Caduca sola |
+
+Los plazos concretos de cada vigencia están en `23` §5b.3.
 
 **Ante contradicción se suspende, no se borra.** Si los datos dejan de
 encajar con un hecho del perfil, pasa a *en duda* y el motor pregunta cuando

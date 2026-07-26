@@ -79,16 +79,100 @@ coincidían y nada lo mostraba.
 | Métrica | Objetivo |
 |---|---|
 | Sesiones con el modelo por turno | **1** |
-| Consultas dentro de la sesión | Hasta 5; más de 5 se investiga |
+| Consultas dentro de la sesión | **0 en la mayoría de turnos** (el panorama basta); hasta 5 cuando hace falta detalle; más de 5 se investiga |
+| Turnos que requieren cálculo aislado | Minoría, y decreciente en el tiempo (`20b` §6b.4) |
 | Primer contenido visible | Menos de 1,5 s |
-| Turno completo, consulta simple | Menos de 4 s |
+| Turno completo, resuelto con el panorama | Menos de 2,5 s |
+| Turno completo, con consulta | Menos de 4 s |
 | Turno completo, operación masiva | Menos de 8 s (la previsualización lo justifica) |
 
-Cómo se sostiene el objetivo de una sola sesión con un catálogo completo de
-50-60 comandos: el catálogo es **estable**, así que se cachea. El costo de
-entrada por turno se vuelve marginal y predecible, y a cambio se evita el
-punto de fallo de un filtro previo que deje al asistente sin capacidades que
-sí tiene.
+### 5.1 Composición de la entrada
+
+Dos bloques, ambos estables y por tanto cacheables:
+
+| Bloque | Tamaño | Estabilidad |
+|---|---|---|
+| Instrucciones + catálogo de comandos + vocabulario de consulta | ~15-20k | Cambia solo al desplegar |
+| Panorama del usuario (`20b` §4) | ~26k | Estable dentro de la conversación |
+| Hilo de la conversación | Variable | Crece con el turno |
+
+Que ambos bloques grandes sean estables es lo que hace viable el diseño: se
+cachean, y el costo marginal por turno queda dominado por el hilo, que es
+pequeño.
+
+**El panorama se paga una vez por conversación, no una vez por turno.** Una
+conversación de diez mensajes carga el panorama una sola vez. Por eso el
+costo real por turno baja cuanto más larga es la conversación, que es lo
+contrario de lo que ocurriría consultando en cada mensaje.
+
+### 5.2 Por qué se acepta un catálogo completo
+
+Un catálogo estable se cachea, y el costo de tenerlo entero es predecible.
+Un filtro previo que se equivoca produce el peor fallo posible de un
+asistente — "no sé hacer eso" cuando sí sabe. Se prefiere pagar tokens
+estables antes que introducir un punto donde el asistente pierda capacidades
+sin motivo.
+
+## 5b. Valores operativos
+
+Los números concretos que el resto del corpus menciona sin fijar. **Esta es
+la tabla de referencia**: cuando otro documento dice "el foco caduca" o "la
+propuesta expira", el valor está aquí.
+
+### 5b.1 Vigencia del estado conversacional
+
+| Qué | Valor | Por qué |
+|---|---|---|
+| **Foco** (`vigente_hasta`) | 30 minutos de inactividad | Pasado ese tiempo el usuario ya no recuerda de qué hablaban; resolver "esos" con datos viejos es peor que preguntar |
+| **Foco: invalidación anticipada** | Al cambiar de tema, al establecerse un foco nuevo, o si cambian los datos que lo componen | Un foco que apunta a un movimiento ya corregido está mintiendo |
+| **Propuesta sin confirmar** | 15 minutos, o al cambiar de tema | Confirmar algo que el usuario ya no tiene presente es exactamente lo que el principio de control evita |
+| **Pregunta de desambiguación pendiente** | Hasta el final de la conversación | Es barata de mantener y retomarla es útil |
+| **Panorama cargado** | Toda la conversación; se recarga si hubo escrituras | Estable y cacheable (§5.1) |
+
+Al caducar una propuesta **se dice**, no se ejecuta ni se descarta en
+silencio: *"la operación que te propuse quedó pendiente. ¿La retomamos?"*.
+
+### 5b.2 Límites del cálculo aislado
+
+| Límite | Valor | Por qué |
+|---|---|---|
+| Filas de entrada | 50.000 | Da margen de 3x sobre el peor caso real (3 años de un usuario muy activo son ~16.000 filas, `20b` §6.2) |
+| Tiempo de ejecución | 3 s | El turno completo con consulta tiene presupuesto de 4 s; deja margen para componer la respuesta |
+| Memoria | 128 MB | Holgado para 50.000 filas; corta un consumo desbocado |
+| Consultas por turno | 5 | Más de 5 indica que el agente está buscando a ciegas y se investiga |
+
+Superar cualquiera de ellos **no devuelve resultados parciales**: se aplica
+la escalera de `20b` §6.2 (reformular agregando, acotar declarándolo, o
+rechazar).
+
+### 5b.3 Vigencia de los hechos del perfil
+
+Corresponde al campo `validity` de `user_profile_facts`
+(`13_modelo_datos_web_v1.md` §7.5b).
+
+| Vigencia | Caducidad | Ejemplos |
+|---|---|---|
+| `permanente` | No caduca; se refina con el uso | Cómo escribe, su vocabulario, su trato |
+| `revisable` | Se marca para reconfirmar a los 6 meses sin confirmación | Trabajo, con quién vive, cómo le pagan |
+| `volatil` | Según el hecho: un periodo declarado caduca al terminar; una preocupación puntual, a los 30 días | Viaje en curso, mudanza, meta activa |
+
+Reconfirmar **no es preguntar de inmediato**: el hecho pasa a `en_duda` y se
+pregunta cuando venga a cuento, respetando el máximo de una confirmación de
+perfil por conversación (`20c` §3).
+
+### 5b.4 Ventanas de deshacer
+
+| Acción | Ventana | Después de la ventana |
+|---|---|---|
+| Deshacer desde el aviso de confirmación | 10 s | Sigue siendo reversible desde su propia pantalla |
+| Restaurar un movimiento eliminado | Sin límite | — |
+| Deshacer la confirmación de un pendiente | 24 h | Se corrige el movimiento resultante |
+| Deshacer una importación completa | 7 días | Se eliminan los movimientos uno a uno |
+| Revertir un aprendizaje de memoria | Sin límite | — |
+
+La primera fila es la única con ventana corta, y por diseño: el aviso es una
+comodidad, **no la única vía de recuperación**
+(`11_confianza_errores_y_reversibilidad.md` §7).
 
 ## 6. Latencia percibida
 
@@ -147,17 +231,23 @@ tiene sentido junto a si el turno sirvió de algo.
 | Turnos que requieren desambiguar | Un valor alto indica que se pregunta de más |
 | Turnos rechazados por el verificador | Cada uno es un defecto del agente, no funcionamiento normal |
 | Turnos degradados | Salud del proveedor |
+| **Turnos resueltos solo con el panorama** | Si baja, al panorama le falta algo |
 | Consultas por turno | Si sube, el agente está buscando a ciegas |
+| **Turnos que usan cálculo aislado** | Señal de qué le falta al vocabulario (`20b` §6b.4) |
+| Aciertos de caché de entrada | Si bajan, el costo se dispara sin que nada más cambie |
 | Costo por turno resuelto | La métrica económica real |
 
 ### 8.3 Cómo se contiene sin bajar calidad
 
-- Cachear el catálogo y las instrucciones estables, que son la mayor parte
-  de la entrada.
+- Cachear el catálogo, las instrucciones y el panorama, que son la mayor
+  parte de la entrada y son estables.
+- **No consultar lo que ya está en el panorama.** Es la fuente número uno de
+  costo evitable: pedir a la base algo que el motor ya tiene delante.
 - No consultar lo que ya está en el espacio de trabajo del turno.
 - No repetir consultas equivalentes dentro del mismo turno.
+- Recalcular patrones y resúmenes de forma diferida, nunca dentro del turno.
 - Límite de uso por usuario y ventana (`14_contratos_api_web.md` §8).
-- Cortar un turno que supera un número razonable de consultas y responder
+- Cortar un turno que supera el límite de consultas de §5b.2 y responder
   con lo que tiene, declarándolo.
 
 Lo que **no** se hace para ahorrar: reducir el catálogo, saltarse el
@@ -234,3 +324,13 @@ evidencia lo sustenta. Acertar la cifra sin poder mostrarla no cuenta.
   acceso a datos del usuario. Evidencia: `TEST`.
 - `AC-RT-11` — Se mide costo por turno resuelto, no solo por llamada.
   Evidencia: `METRIC`.
+- `AC-RT-12` — Un foco caducado no resuelve referencias: el motor pregunta a
+  qué se refiere el usuario en vez de usar datos vencidos. Evidencia: `TEST`.
+- `AC-RT-13` — Una propuesta caducada se comunica al usuario; nunca se
+  ejecuta ni se descarta en silencio. Evidencia: `TEST`.
+- `AC-RT-14` — Superar cualquier límite del cálculo aislado no devuelve
+  resultados parciales. Evidencia: `TEST`.
+- `AC-RT-15` — El panorama se carga una vez por conversación, no una vez por
+  turno. Evidencia: `TEST` + `METRIC`.
+- `AC-RT-16` — Un hecho de perfil `revisable` sin confirmar durante 6 meses
+  pasa a `en_duda`. Evidencia: `TEST`.

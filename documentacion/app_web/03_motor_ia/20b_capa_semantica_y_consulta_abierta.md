@@ -106,6 +106,40 @@ El orden es obligatorio: **el cálculo aislado nunca accede a los datos**,
 solo a lo que las capas 1 y 2 ya trajeron. Así el razonamiento libre no
 puede saltarse las reglas de acceso ni perder la procedencia.
 
+### 3.1 Quién toca la base de datos
+
+Aclaración necesaria antes de implementar, porque confundir esto rompe toda
+la seguridad del diseño:
+
+```text
+El AGENTE compone        →  una consulta declarativa
+                            (qué entidad, qué filtros, qué agrupar, qué medir)
+                            NUNCA escribe SQL
+
+El COMPILADOR traduce    →  SQL parametrizado
+                            inyecta el user_id, aplica RLS, acota
+                            ← AQUÍ vive el único SQL del sistema
+
+La BASE devuelve         →  filas + sus identificadores
+
+El SANDBOX recibe        →  ese array de filas, en memoria
+                            calcula sobre ellas
+                            CERO base de datos, cero SQL, cero red
+```
+
+**El modelo nunca escribe SQL en ningún punto.** Lo escribe el compilador, a
+partir de una consulta ya validada contra el esquema del dominio.
+
+El sandbox es una **función pura**: entra un array de filas, sale un valor.
+No tiene credenciales que proteger, conexión que auditar ni consultas que
+revisar, porque no accede a nada. Su peor caso posible es un bucle infinito,
+y eso lo corta el límite de tiempo de §6.2.
+
+La analogía que lo fija: la capa 2 es un bibliotecario que sabe dónde está
+todo y solo entrega lo que te corresponde. El sandbox es tu escritorio con
+los libros que te trajo — ahí haces lo que quieras, pero **no puedes volver a
+la biblioteca por tu cuenta**.
+
 ## 4. Panorama cargado
 
 El motor arranca cada conversación sabiendo quién eres y cómo está tu

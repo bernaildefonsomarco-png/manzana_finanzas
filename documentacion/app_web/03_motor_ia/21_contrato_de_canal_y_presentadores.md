@@ -211,7 +211,7 @@ Usuario, luego en la app: "muéstrame esos"
 → el foco sigue vigente; la app muestra los mismos movimientos
 ```
 
-Con dos salvaguardas: el foco tiene vigencia limitada, y la continuidad
+Con dos salvaguardas: el foco tiene vigencia limitada (`23` §5b.1), y la continuidad
 nunca expone en un canal algo que el modo discreto oculta en el otro.
 
 ## 11. Criterios de aceptación

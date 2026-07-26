@@ -42,21 +42,28 @@ Consecuencia práctica: cada consulta devuelve resultado **y** referencias
 devuelve un número deja al motor sin poder responder "¿de dónde sale eso?",
 y por tanto sin poder emitir la cifra.
 
-### 2.0 Evidencia con consulta abierta y cálculo aislado
+### 2.0 Evidencia en las tres capas de conocimiento
 
-`20b_capa_semantica_y_consulta_abierta.md` permite que el agente componga
-consultas no previstas y, cuando el vocabulario no alcanza, calcule sobre lo
-ya consultado. El invariante de evidencia **no se relaja por eso**; se
-sostiene con tres reglas:
+`20b_capa_semantica_y_consulta_abierta.md` da al motor tres formas de saber
+algo: el panorama cargado, la consulta abierta y el cálculo aislado. El
+invariante de evidencia **no se relaja en ninguna**; se sostiene con cuatro
+reglas:
 
-1. **La consulta devuelve referencias por construcción.** No es una opción
+1. **El panorama lleva referencias.** Cada cifra de la situación actual y
+   cada patrón calculado apunta a los movimientos que lo componen
+   (`20b` §4.3). Que el motor "ya lo supiera" no lo exime de poder mostrarlo.
+2. **La consulta devuelve referencias por construcción.** No es una opción
    del agente: la forma de la respuesta las incluye siempre.
-2. **El cálculo aislado hereda las referencias de sus datos de entrada.**
-   Como solo opera sobre lo que la consulta ya trajo, la cadena de
-   procedencia no se rompe.
-3. **Un resultado calculado que falla una comprobación de sanidad no se
+3. **El cálculo aislado hereda las referencias de sus datos de entrada.**
+   Como solo opera sobre lo que el panorama o la consulta ya trajeron, la
+   cadena de procedencia no se rompe.
+4. **Un resultado calculado que falla una comprobación de sanidad no se
    emite.** Una suma parcial que supera su total, un porcentaje fuera de
    rango o un valor no numérico son defectos, no respuestas.
+
+La primera regla es la menos obvia y la más fácil de olvidar al implementar:
+una cifra que viene precargada se siente como un hecho dado, y sigue
+necesitando poder responder "¿de dónde sale?".
 
 Además, todo resultado de cálculo aislado debe poder explicar **su
 procedimiento** en lenguaje del usuario ("tomé tus movimientos de los
@@ -119,7 +126,7 @@ foco {
   referencias       la lista concreta, en orden
   de_dónde_salió    qué consulta la produjo
   filtros           los que se aplicaron
-  vigente_hasta     cuándo caduca
+  vigente_hasta     cuándo caduca        (valores en 23 §5b.1)
 }
 ```
 
@@ -130,7 +137,7 @@ Reglas:
 2. **Si el foco tiene N elementos, "los N" son exactamente esos.** Si el
    usuario dice un número distinto, el motor lo dice en vez de rellenar:
    *"tengo 4 movimientos de esa consulta, no 5. ¿Amplío la búsqueda?"*
-3. **El foco caduca.** Pasado su tiempo o cambiado el tema, "esos" ya no
+3. **El foco caduca** (valores en `23` §5b.1). Pasado su tiempo o cambiado el tema, "esos" ya no
    resuelve y el motor pregunta a qué se refiere.
 4. **El foco es del usuario, no del canal**, y se puede retomar desde otro
    canal dentro de su vigencia.
@@ -200,7 +207,7 @@ Reglas transversales:
 - El botón nombra la acción ("Registrar gasto", "Reclasificar 200
   movimientos"), nunca dice solo "Aceptar".
 - El texto no afirma que algo ocurrió antes de que el Core lo confirme.
-- Una propuesta sin confirmar caduca; al caducar se dice, no se ejecuta.
+- Una propuesta sin confirmar caduca (`23` §5b.1); al caducar se dice, no se ejecuta.
 - Descartar una propuesta no requiere justificación.
 
 ### 7.1 Operaciones masivas
@@ -288,7 +295,7 @@ Determinístico, entre el agente y el usuario, con autoridad para rechazar:
 | Honestidad | "Registrado" antes de que el Core confirme |
 | Hallazgos | Impresión con cifra no consultada; más de un hallazgo |
 | Modo discreto | Dato sensible en una salida que debía ser discreta |
-| Sanidad del cálculo | Resultado calculado que no supera las comprobaciones de `20b` §6.2 |
+| Sanidad del cálculo | Resultado calculado que no supera las comprobaciones de `20b` §6.3 |
 | Explicabilidad del cálculo | Resultado de cálculo aislado que no puede describir su procedimiento |
 
 Cuando rechaza, el usuario recibe una respuesta honesta y el rechazo se

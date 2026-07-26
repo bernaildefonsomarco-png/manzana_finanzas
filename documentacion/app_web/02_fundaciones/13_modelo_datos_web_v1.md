@@ -610,7 +610,7 @@ con datos de usuario **en la misma migración que la crea**.
 Toda tabla de §7 nace con RLS activo y política de aislamiento por
 `user_id`, sin excepción. El patrón y la política completa de acceso —
 incluida la corrección del uso masivo de `service_role` que hoy esquiva RLS
-en unas 50 de 58 rutas — se define en `15_seguridad_autorizacion_y_rls.md`.
+en 48 de 58 rutas — se define en `15_seguridad_autorizacion_y_rls.md`.
 
 Regla específica para las tablas nuevas: **ninguna concede escritura directa
 al rol `authenticated` sobre columnas que afecten dinero.** Igual que

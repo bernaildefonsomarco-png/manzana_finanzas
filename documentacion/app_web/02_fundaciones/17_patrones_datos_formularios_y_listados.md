@@ -92,7 +92,7 @@ casos se muestra estado de carga y se espera la respuesta real.
 ### 3.1 Deshacer
 
 Toda acción destructiva o fácilmente equivocada ofrece deshacer en el propio
-aviso de confirmación, durante 5 a 10 segundos:
+aviso de confirmación, durante 10 segundos (ventanas completas en `23` §5b.4):
 
 ```text
 Movimiento eliminado.   [Deshacer]

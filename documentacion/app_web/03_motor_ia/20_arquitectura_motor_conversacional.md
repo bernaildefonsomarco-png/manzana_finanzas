@@ -34,19 +34,26 @@ Las tres últimas son las que separan un asistente real de un intérprete de
 comandos: una toca cientos de registros, otra razona sobre el futuro con
 compromisos reales, y la última exige que el sistema pueda explicarse.
 
-## 2. Las siete decisiones que definen este motor
+## 2. Las decisiones que definen este motor
 
-Tomadas explícitamente. Cada una condiciona la arquitectura.
+Tomadas explícitamente con el usuario. Cada una condiciona la arquitectura.
+El registro completo, con su razón y su riesgo, está en
+`03_decisiones_producto_web.md` (`WEB-D014` a `WEB-D025`).
 
-| # | Decisión | Consecuencia arquitectónica |
-|---|---|---|
-| 1 | El asistente puede hacer **todo** lo que la app permite, más operaciones compuestas que la interfaz no ofrece | El catálogo de comandos debe cubrir el 100% del producto |
-| 2 | Responde, ofrece el siguiente paso y **señala lo que nota** | Hace falta una fuente de hallazgos separada del turno |
-| 3 | Las respuestas llevan **elementos interactivos y pueden conducir la app** | La salida no es texto: es una estructura de bloques |
-| 4 | Es una **capa** disponible en toda la app y puede reemplazar la navegación | El contexto de pantalla es una entrada más del turno |
-| 5 | Las operaciones masivas se **previsualizan con muestra** y se pueden deshacer enteras | Existe un tipo de operación distinto del comando simple |
-| 6 | Los hallazgos vienen de **motores determinísticos** y, marcadas aparte, de **observaciones del modelo** | Dos niveles de certeza, visualmente distintos |
-| 7 | Ante ambigüedad **pregunta**, con opciones **derivadas de los datos reales del usuario** | La desambiguación consulta antes de preguntar |
+| # | Decisión | Consecuencia arquitectónica | Dónde se desarrolla |
+|---|---|---|---|
+| 1 | El asistente puede hacer **todo** lo que la app permite, más operaciones compuestas que la interfaz no ofrece | El catálogo de comandos debe cubrir el 100% del producto | §8, doc 40 |
+| 2 | Responde, ofrece el siguiente paso y **señala lo que nota** | Hace falta una fuente de hallazgos separada del turno | §10 |
+| 3 | Las respuestas llevan **elementos interactivos y pueden conducir la app** | La salida no es texto: es una estructura de bloques | §14, doc 21 |
+| 4 | Es una **capa** disponible en toda la app y puede reemplazar la navegación | El contexto de pantalla es una entrada más del turno | §13 |
+| 5 | Las operaciones masivas se **previsualizan con muestra** y se pueden deshacer enteras | Existe un tipo de operación distinto del comando simple | §8 |
+| 6 | Los hallazgos vienen de **motores determinísticos** y, marcadas aparte, de **observaciones del modelo** | Dos niveles de certeza, visualmente distintos | §10, doc 22 |
+| 7 | Ante ambigüedad **pregunta**, con opciones **derivadas de los datos reales del usuario** | La desambiguación consulta antes de preguntar | §11 |
+| 8 | **Leer es un vocabulario abierto**, no un catálogo de consultas | El agente compone consultas; no elige de una lista | doc 20b |
+| 9 | **El conocimiento del mundo lo aporta el modelo**, no la base de datos | El esquema modela solo datos del usuario; los feriados y temporadas no se codifican | doc 20b §2 |
+| 10 | El motor arranca con el **panorama financiero cargado** | Sabe cómo está tu dinero antes de leer tu mensaje | §4, doc 20b §4 |
+| 11 | **Aprende un perfil de la persona**, no solo de su dinero | Cada conversación se siente distinta según con quién habla | §12, doc 20c |
+| 12 | **Conversa como amigo, actúa solo en finanzas** | Conversar es abierto; actuar está acotado al catálogo | doc 20c §6b |
 
 Y cuatro límites duros, que ninguna implementación puede relajar:
 
@@ -67,15 +74,21 @@ Y cuatro límites duros, que ninguna implementación puede relajar:
                     ▼
         ┌───────────────────────┐
         │  Coordinador de turno │  determinístico, sin modelo
-        │  · carga el contexto  │
-        │  · abre el espacio    │
+        │  · carga el panorama  │
+        │  · carga el perfil    │
+        │  · resuelve pendiente │
         │  · aplica límites     │
         └───────────┬───────────┘
                     ▼
         ┌───────────────────────┐      ┌──────────────────┐
-        │  Espacio de trabajo   │◄────►│  Consultas       │
+        │  Espacio de trabajo   │◄────►│  Consulta        │
         │  del turno            │      │  (solo lectura)  │
-        └───────────┬───────────┘      └──────────────────┘
+        │  panorama + perfil    │      └────────┬─────────┘
+        │  + hilo + foco        │               ▼
+        └───────────┬───────────┘      ┌──────────────────┐
+                    │                  │  Cálculo aislado │
+                    │                  │  (sin acceso)    │
+                    │                  └──────────────────┘
                     ▼
         ┌───────────────────────┐
         │  Agente               │  UNA sesión con el modelo
@@ -110,14 +123,22 @@ Determinístico. No llama al modelo. Hace cinco cosas antes de que el agente
 entre en acción:
 
 1. **Reconoce el turno.** Le asigna identificador y `trace_id`.
-2. **Carga el contexto**: el hilo actual, el resumen de conversaciones
-   anteriores, lo aprendido sobre el usuario, y el contexto de pantalla que
-   envió el canal.
-3. **Resuelve lo pendiente.** Si el turno anterior dejó una pregunta abierta
+2. **Carga el panorama financiero** — situación actual, patrones calculados,
+   movimientos recientes y resúmenes del historial (`20b` §4). Solo en el
+   primer turno de la conversación: después se reutiliza.
+3. **Carga el contexto de la persona y de la conversación**: el perfil en sus
+   cuatro capas (`20c` §2), el hilo actual, los resúmenes de conversaciones
+   anteriores, y el contexto de pantalla que envió el canal.
+4. **Resuelve lo pendiente.** Si el turno anterior dejó una pregunta abierta
    o una acción propuesta sin confirmar, lo pone en el espacio de trabajo
    antes de nada.
-4. **Aplica límites de uso** (`14_contratos_api_web.md` §8).
-5. **Abre el espacio de trabajo** y se lo entrega al agente.
+5. **Aplica límites de uso** (`14_contratos_api_web.md` §8).
+6. **Abre el espacio de trabajo** y se lo entrega al agente.
+
+El paso 2 es lo que hace que el motor sepa cómo está tu dinero **antes** de
+leer tu mensaje. Se carga una vez por conversación, no una vez por turno: por
+eso el costo real por turno baja cuanto más larga es la conversación
+(`23` §5.1).
 
 Por qué es determinístico: el estado de la conversación es demasiado
 importante para dejarlo a la interpretación. Si el usuario dice "sí" hay que
@@ -131,17 +152,20 @@ explícita: si algo no está aquí, no existe para el turno.
 
 ```text
 espacio_de_trabajo {
-  entrada          lo que llegó del canal
+  entrada            lo que llegó del canal
   contexto_pantalla  qué mira el usuario ahora
-  hilo             mensajes anteriores de esta conversación
-  memoria          resumen de conversaciones previas + lo aprendido
+  panorama           situación, patrones, movimientos recientes,
+                     resúmenes del historial          (20b §4)
+  perfil             estilo, vida, vínculo, hilo      (20c §2)
+  hilo               mensajes anteriores de esta conversación
+  memoria            resúmenes de conversaciones previas + lo aprendido
 
   foco {                      qué son "esos", "los 5", "eso"
     tipo                      movimientos | deudas | pagos | presupuestos…
     referencias               identificadores en orden
     de_dónde_salió            qué consulta lo produjo
     filtros                   los que se aplicaron
-    vigente_hasta             cuándo caduca
+    vigente_hasta             cuándo caduca        (valores en 23 §5b.1)
   }
 
   huecos [ {                  lo que falta para poder actuar
