@@ -94,8 +94,11 @@ guardados no se puede reinterpretar después, y mostrar su resultado sería
 mostrar un número sin significado.
 
 La funcionalidad de guardar escenarios es **V1.1**; la tabla está diseñada en
-`13_modelo_datos_web_v1.md` §7.3 y su migración `050` no se aplica hasta
-entonces.
+`13_modelo_datos_web_v1.md` §7.3 y su migración `050` queda **diferida**: se
+documenta pero no se aplica en V1-web. Mismo criterio que la `049` de
+importación (`WEB-D026`): una tabla vacía que nada lee ni escribe es esquema
+muerto, y el diseño ya está conservado por escrito, que es lo que evita
+cerrarle la puerta al modelo.
 
 ### 4.3 De dónde salen los datos
 
@@ -145,7 +148,6 @@ parecen razonables.
 ```text
 proyeccion_cierre =
     dinero_libre_actual
-  − compromisos_pendientes_del_periodo_no_cubiertos
   − (ritmo_diario × dias_restantes_del_periodo)
 ```
 
@@ -154,21 +156,42 @@ Donde:
 | Componente | Cómo se calcula |
 |---|---|
 | `dinero_libre_actual` | `RUL-CUENTAS-03` |
-| `compromisos_pendientes` | Del módulo 30, sin doble descuento por cajas |
-| `ritmo_diario` | **Mediana** del gasto diario de los últimos 14 días con actividad |
+| `ritmo_diario` | **Mediana** del gasto diario de los últimos 14 días con actividad, **excluyendo los movimientos ligados a compromisos** |
 | `dias_restantes` | Hasta el fin del periodo, en `America/Lima` |
+
+**Los compromisos no se restan aquí.** Ya están descontados dentro de
+`dinero_libre_actual`: `RUL-CUENTAS-03` es
+`libre_en_cuentas − compromisos_próximos_no_cubiertos_por_caja`. Restarlos otra
+vez sería el doble descuento que `RUL-CUENTAS-04` señala como el error más
+fácil de cometer y el más difícil de ver en pantalla, y que
+`09_modelo_mental_dinero.md` §3 regla 2 prohíbe por nombre.
+
+Los compromisos **sí aparecen en el texto**, pero como declaración de lo que ya
+está contado, nunca como una segunda resta. Es lo que exige `RUL-PROY-01`:
+el supuesto se declara, y aquí el supuesto es *"esta cifra ya descuenta tus
+compromisos"*.
 
 Ejemplo completo:
 
 ```text
 Hoy es 26 de julio.
 Dinero libre: S/560.00
-Compromisos pendientes de julio no cubiertos: S/89.00 (internet, 28 jul)
+  (ya descuenta S/89.00 de internet, 28 jul, que no está apartado en caja)
 Ritmo: mediana de los últimos 14 días = S/62.00 al día
 Días restantes: 5
 
-proyección = 560.00 − 89.00 − (62.00 × 5) = S/161.00
+proyección = 560.00 − (62.00 × 5) = S/250.00
 ```
+
+**El segundo doble descuento, y por qué el ritmo excluye compromisos.** Un pago
+recurrente o una cuota que cayó dentro de los últimos 14 días entra en el gasto
+diario observado. Si además se proyecta hacia adelante como parte del ritmo, se
+está contando dos veces el mismo tipo de salida: una en el ritmo y otra en el
+dinero libre. La mediana lo amortigua —un pago mensual afecta como mucho 1 de
+14 días y no mueve la mediana— pero eso es una casualidad estructural, no una
+garantía: quien implemente el ritmo con un promedio móvil reintroduce el error.
+Por eso **la exclusión es parte de la regla, no una optimización**: el ritmo
+mide el gasto corriente, y los compromisos ya viven en el otro término.
 
 Se usa **mediana y no promedio** por la misma razón que en presupuestos: un
 día atípico (una compra grande) distorsiona el promedio y produce una
@@ -203,10 +226,15 @@ Nunca se rellena un hueco con una estimación silenciosa (`22` §2.1).
 La respuesta tiene tres partes obligatorias, en este orden:
 
 ```text
-1. El efecto aritmético    "Comprarlo te dejaría S/260 libres."
-2. Lo que hay contado      "Cuento tus 3 pagos de este mes (S/428)."
-3. Lo que queda por venir  "Después de esos pagos, te quedarían S/171."
+1. El efecto inmediato     "Comprarlo te dejaría S/260 libres."
+2. Lo que ya está contado  "Esos S/560 ya descuentan los S/89 que aún no
+                            tienes apartados."
+3. Cómo quedaría el cierre "A tu ritmo, cerrarías julio con unos S/-50."
 ```
+
+La tercera parte aplica `RUL-PROY-02` con la compra ya dentro. **No se restan
+los compromisos otra vez**: la parte 2 los declara porque ya viven en la cifra
+de la parte 1.
 
 Y una prohibición: **no se emite un veredicto.** Nunca "sí puedes" ni "no te
 alcanza". Se dan los números y la decisión es del usuario.
@@ -216,15 +244,18 @@ Ejemplo completo:
 ```text
 Usuario: "¿puedo permitirme unas zapatillas de 300?"
 
-Ahora tienes S/560 libres.
-Si gastas S/300, te quedarían S/260.
-Este mes te quedan por pagar S/428 en compromisos, y S/89 de eso
-no está apartado en ninguna caja.
-Después de todo eso, te quedarían unos S/171.
+Ahora tienes S/560 libres. Si gastas S/300, te quedarían S/260.
+Esos S/560 ya descuentan los S/89 de internet del 28, que no está
+apartado en ninguna caja.
+A tu ritmo de estas semanas (S/62 al día, quedan 5), cerrarías julio
+con unos S/-50.
 [Ver el desglose]  [Registrar el gasto]
 ```
 
-Nótese que la respuesta **no dice si le alcanza**. Dice cuánto le quedaría.
+Nótese que la respuesta **no dice si le alcanza**. Dice cuánto le quedaría, y
+deja ver que el cierre saldría en negativo sin llamarlo un error. Mostrar un
+cierre negativo es información; decir "no deberías comprarlo" sería un consejo,
+y eso está prohibido (`22` §8).
 
 **`RUL-PROY-06` — Simulación no escribe nada**
 
@@ -300,6 +331,12 @@ El modelo puede explicar una proyección y ponerla en palabras; no la calcula.
 
 ## 8. Superficies
 
+**Referencia visual: no existe frame previo.** Las proyecciones estaban fuera
+de V1 en `05c` §20 y nunca se diseñaron, así que no hay nada en
+`docs/fase_6_visual/32_especificacion_hifi.md` ni en `stitch_manzana_v1/`. Los
+bloques de abajo son la especificación de layout. Tokens y primitivas salen de
+`16_design_system_web.md`.
+
 ### `SCR-PROY-01` — Proyecciones
 
 **Ruta:** `/proyecciones`
@@ -310,10 +347,11 @@ El modelo puede explicar una proyección y ponerla en palabras; no la calcula.
 ├──────────────────────────────────────────────────┤
 │ A este ritmo terminarías el mes con              │
 │                                                  │
-│      S/161                                       │
+│      S/250                                       │
 │                                                  │
-│ Cuento tus S/89 de compromisos pendientes y tu   │
-│ ritmo de las últimas 2 semanas (S/62 al día).    │
+│ Parto de tus S/560 libres, que ya descuentan     │
+│ S/89 de compromisos sin apartar, y de tu ritmo   │
+│ de las últimas 2 semanas (S/62 al día).          │
 │ [Ver el detalle]                                 │
 ├──────────────────────────────────────────────────┤
 │ Este mes                                         │
@@ -342,15 +380,22 @@ Panel. Muestra la aritmética completa, línea por línea, con enlace a los
 movimientos y compromisos que la componen:
 
 ```text
-Dinero libre hoy                    S/560.00   [ver desglose]
-− Compromisos de julio sin cubrir   − S/89.00  [ver cuáles]
+Dinero libre hoy                     S/560.00  [ver desglose]
+  Libre en cuentas        S/649.00
+  − Compromisos sin caja  − S/89.00            [ver cuáles]
 − Ritmo estimado (5 días × S/62)    − S/310.00 [ver los 14 días]
-────────────────────────────────────────────
-= Proyección de cierre               S/161.00
+─────────────────────────────────────────────
+= Proyección de cierre               S/250.00
 ```
 
 Es la materialización del principio de procedencia: cada línea es navegable
 hasta sus datos.
+
+La primera línea se muestra **desglosada hacia dentro, con sangría**, no como
+dos restas al mismo nivel. Es deliberado: hace visible que los compromisos ya
+están dentro del dinero libre y hace evidente en pantalla que restarlos de
+nuevo sería contarlos dos veces. La jerarquía visual aquí no es estética, es
+la defensa contra `RUL-CUENTAS-04`.
 
 ### `SCR-PROY-03` — Simulador
 
@@ -394,10 +439,12 @@ Respuesta de `GET /projections/period`:
 
 ```jsonc
 {
-  "projection": "161.00",
+  "projection": "250.00",
   "range": null,                       // o { "min": "120.00", "max": "240.00" }
   "assumptions": [
-    { "kind": "compromisos", "amount": "89.00", "refs": ["rec_123"] },
+    // Declarativo: ya está dentro de free_money, no se resta aparte
+    { "kind": "compromisos_ya_descontados", "amount": "89.00",
+      "refs": ["rec_123"] },
     { "kind": "ritmo_diario", "amount": "62.00", "basis": "mediana_14d",
       "refs": ["mov_1", "mov_2", "..."] },
     { "kind": "dias_restantes", "value": 5 }
@@ -479,7 +526,7 @@ nunca debe poder cambiar nada.**
 "¿cómo voy este mes?"                          → proyección + situación
 "¿me alcanza hasta fin de mes?"                → proyección con compromisos
 "¿qué pasa si gasto 500 esta semana?"          → simulación
-"¿por qué dices que terminaría con 161?"       → detalle de la aritmética
+"¿por qué dices que terminaría con 250?"       → detalle de la aritmética
 "¿estoy gastando más de lo que gano?"          → componente gasto/ingreso
 ```
 
@@ -548,7 +595,8 @@ o si hay que ajustarlo.
 ## 18. Accesibilidad específica
 
 - La proyección se anuncia con su supuesto principal, no sola: "A este ritmo
-  terminarías el mes con 161 soles, contando 89 de compromisos".
+  terminarías el mes con 250 soles, partiendo de 560 libres que ya descuentan
+  89 de compromisos".
 - Un rango se anuncia como rango: "entre 120 y 240 soles".
 - Los componentes de situación son una lista con texto, sin depender de
   iconos de check.
@@ -588,10 +636,14 @@ o si hay que ajustarlo.
 
 - `AC-PROY-01` — Ninguna proyección se emite sin declarar sus supuestos en el
   mismo bloque visual. Evidencia: `TEST` + `USER`.
-- `AC-PROY-02` — El ejemplo de `RUL-PROY-02` produce exactamente S/161.00.
+- `AC-PROY-02` — El ejemplo de `RUL-PROY-02` produce exactamente S/250.00.
   Evidencia: `TEST`.
-- `AC-PROY-03` — El ritmo diario usa mediana, no promedio.
-  Evidencia: `TEST`.
+- `AC-PROY-02b` — **Los compromisos se descuentan una sola vez.** Dado un
+  usuario con compromisos no cubiertos, la proyección de cierre es igual a
+  `dinero_libre − ritmo × dias`, y **no** a `dinero_libre − compromisos −
+  ritmo × dias`. Evidencia: `TEST`.
+- `AC-PROY-03` — El ritmo diario usa mediana, no promedio, y **excluye los
+  movimientos ligados a compromisos**. Evidencia: `TEST`.
 - `AC-PROY-04` — Con alta dispersión se muestra rango en vez de número único.
   Evidencia: `TEST`.
 - `AC-PROY-05` — Con menos de 7 días de movimientos no se proyecta y se dice
@@ -648,13 +700,29 @@ formaliza aquí como regla verificable.
 
 **Contradicciones que cierra:** ninguna de las 17.
 
-**Decisiones tomadas en este documento**, sujetas a revisión del usuario:
+**Decisiones tomadas en este documento**, registradas en
+`03_decisiones_producto_web.md`:
 
-| Decisión | Alternativa descartada | Razón |
-|---|---|---|
-| Sin veredicto en "¿puedo permitírmelo?" | Responder sí o no | Un veredicto le quita la decisión al usuario, y el sistema no conoce su contexto completo |
-| Salud descrita por componentes, sin puntuar | Score numérico o letra | Un número desnudo es falsa precisión y un juicio sobre la persona |
-| Mediana para el ritmo | Promedio | Un día atípico distorsiona el promedio y produce proyecciones que no representan el hábito |
-| Rango con alta dispersión | Número único siempre | Un número exacto sobre datos dispersos es falsa precisión |
-| Umbral de 7 días para proyectar | Proyectar desde el primer día | Proyectar con dos movimientos produce cifras sin base que erosionan la confianza |
-| Sin comandos de escritura | Permitir registrar desde el simulador | Proyectar nunca debe poder cambiar nada; registrar es una acción aparte y explícita |
+| Decisión | ID | Alternativa descartada | Razón |
+|---|---|---|---|
+| Sin veredicto en "¿puedo permitírmelo?" | `WEB-D036` | Responder sí o no | Un veredicto le quita la decisión al usuario, y el sistema no conoce su contexto completo |
+| Salud descrita por componentes, sin puntuar | `WEB-D037` | Score numérico o letra | Un número desnudo es falsa precisión y un juicio sobre la persona |
+| Sin comandos de escritura | `WEB-D038` | Permitir registrar desde el simulador | Proyectar nunca debe poder cambiar nada; registrar es una acción aparte y explícita |
+| Mediana para el ritmo, sin compromisos | `WEB-D039` | Promedio, e incluir todo el gasto | Un día atípico distorsiona el promedio, y contar los compromisos en el ritmo los cuenta dos veces |
+| Rango con alta dispersión | `WEB-D040` | Número único siempre | Un número exacto sobre datos dispersos es falsa precisión |
+| Umbral de 7 días para proyectar | `WEB-D041` | Proyectar desde el primer día | Proyectar con dos movimientos produce cifras sin base que erosionan la confianza |
+
+**Corrección de auditoría, 26 de julio de 2026.** Una revisión externa
+encontró que `RUL-PROY-02` descontaba los compromisos dos veces: partía de
+`dinero_libre` (`RUL-CUENTAS-03`), que ya los resta, y los volvía a restar.
+Era el error que `RUL-CUENTAS-04` nombra como el más difícil de ver en
+pantalla, cometido tres reglas después de enunciarlo. Se eliminó la resta
+duplicada por decisión del usuario, se propagó a `RUL-PROY-05`, `SCR-PROY-01`,
+`SCR-PROY-02`, `GET /projections/period`, §17, §18 y `AC-PROY-02`, y se añadió
+`AC-PROY-02b` para que un test lo impida en el futuro.
+
+Al corregirlo apareció un **segundo doble descuento que la auditoría no vio**:
+los pagos recurrentes y las cuotas caían dentro de la ventana de 14 días del
+ritmo y a la vez dentro de los compromisos. La mediana lo tapaba por
+casualidad. Ahora `RUL-PROY-02` excluye del ritmo los movimientos ligados a
+compromisos, y `AC-PROY-03` lo verifica.

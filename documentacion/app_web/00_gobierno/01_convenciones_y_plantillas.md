@@ -99,9 +99,13 @@ debe declarar qué nivel de evidencia exige antes de considerarse cumplido.
 | `aprobado` | Aceptado como fuente de verdad para implementación. |
 | `vivo` | Se actualiza continuamente durante la implementación (índices, ledger, matriz de trazabilidad, decision log). |
 
-Cada documento declara su estado en el encabezado. Un documento `vivo` lleva
-además una fecha de última actualización que se cambia en cada edición real
-(no en ediciones cosméticas).
+**Dónde vive el estado.** No en el encabezado de cada documento, sino en la
+tabla de `00_indice_maestro.md`. El encabezado de un documento declara su
+**alcance** (`V1`, `V1.1`, `V1 (reescritura)`), que es una propiedad estable
+del contenido; el estado de revisión cambia con cada ronda y duplicarlo en 60
+cabeceras garantiza que se desincronice. Los documentos `vivo` sí llevan en su
+encabezado una fecha de última actualización, que se cambia en cada edición
+real y no en las cosméticas.
 
 ---
 
@@ -173,10 +177,14 @@ Docs que dependen de este
    numérico en soles**.
 7. **Validaciones** — por campo: obligatoriedad, rango, normalización, zona
    horaria, redondeo, colisiones.
-8. **Superficies** — por pantalla, ID `SCR-<MOD>-NN`, **ruta URL real**,
-   layout, jerarquía, mobile/desktop, referencia a
-   `docs/fase_6_visual/32_especificacion_hifi.md` y a la carpeta de frames
-   correspondiente en `stitch_manzana_v1/`.
+8. **Superficies** — por pantalla, ID `SCR-<MOD>-NN`, **una sola ruta URL
+   real** (no dos candidatas separadas por "o"), layout, jerarquía,
+   mobile/desktop, y **referencia visual**: o bien
+   `docs/fase_6_visual/32_especificacion_hifi.md` con su carpeta de frames en
+   `stitch_manzana_v1/`, o bien la declaración explícita de que **no existe
+   frame previo** porque la pantalla es nueva. Lo segundo es el caso de todo
+   lo que `05c` §20 dejaba fuera de V1: presupuestos, proyecciones, reportes.
+   Enlazar a un frame que no existe es peor que decir que no lo hay.
 9. **Acciones** — ID `ACT-<MOD>-NN`: precondición, dónde se dispara, si
    requiere confirmación, resultado, **cómo se deshace** (si se puede),
    evento de dominio emitido.

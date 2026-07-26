@@ -109,9 +109,14 @@ anterior, aporta tres módulos nuevos.
 
 | Nivel | Funcionalidad |
 |---|---|
-| **IN** | Presupuesto por categoría y periodo (semanal, quincenal, mensual). Metas de ahorro con monto objetivo y fecha, vinculables a una caja. Límites blandos (avisan) y duros (avisan y destacan). Semáforo de avance. Comportamiento definido al superarlos, sin lenguaje de culpa. Presupuesto sugerido a partir del historial del usuario. Relación explícita con el dinero libre. Copiar presupuesto del periodo anterior. |
-| **V1.1** | Presupuesto de base cero. Reasignación entre categorías dentro del mismo periodo. Metas colaborativas. |
-| **FUERA** | Presupuestos por persona o grupo (V1 es usuario individual). Inversión de excedentes. |
+| **IN** | Presupuesto por categoría y periodo (semanal, quincenal, mensual). Metas de ahorro con monto objetivo y fecha, vinculables a una caja. Límites blandos (avisan) y duros (avisan y destacan). Semáforo de avance. Comportamiento definido al superarlos, sin lenguaje de culpa. Presupuesto sugerido a partir del historial del usuario. Relación explícita con el dinero libre. Copiar presupuesto del periodo anterior. **Renovación automática al cerrar el periodo, desactivable por presupuesto. Traspaso del sobrante al periodo siguiente, apagado por defecto.** |
+| **V1.1** | Presupuesto de base cero. Reasignación entre categorías dentro del mismo periodo. Metas colaborativas. **Presupuestos por subcategoría. Aportes programados a metas. Alineación del periodo con el día de cobro del usuario.** |
+| **FUERA** | Presupuestos por persona o grupo, incluidos los compartidos (V1 es usuario individual). Inversión de excedentes. **Bloqueo de gastos, gamificación, comparación social y recomendación de recortes: prohibidos, no diferidos.** |
+
+Las dos funciones añadidas a IN vienen del doc 32 y amplían este documento
+según `01_convenciones_y_plantillas.md` §2. Ambas son mecánica del ciclo de
+vida de un presupuesto, no funcionalidad nueva: sin renovación, un presupuesto
+mensual habría que recrearlo a mano cada mes.
 
 ### 3.10 `MOD-PROYECCIONES` — Proyecciones y simulación (doc 33) — **NUEVO**
 

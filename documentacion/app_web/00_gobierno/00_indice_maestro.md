@@ -2,7 +2,7 @@
 
 **Bloque:** 00 — Gobierno
 **Estado:** vivo
-**Fecha de última actualización:** 25 de julio de 2026
+**Fecha de última actualización:** 26 de julio de 2026
 **Depende de:** ninguno (es la puerta de entrada al corpus)
 
 ---
@@ -102,8 +102,8 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 29 | `29_modulo_captura_sin_friccion.md` | aprobado | Parseo híbrido: reglas primero, modelo solo si hacen falta. Importación de archivos diferida a V1.1. |
 | 30 | `30_modulo_recurrentes_y_pagos_que_vienen.md` | aprobado | Detectar no es activar. Un pago esperado no toca saldos, solo el dinero libre. |
 | 31 | `31_modulo_deudas.md` | aprobado | Conciliación determinista con previsualización. Tarjeta como deuda simple. No cobra ni contacta a nadie. |
-| 32 | `32_modulo_presupuestos_metas_y_limites.md` | aprobado | **Nuevo.** Un presupuesto no reserva dinero. Ningún tipo bloquea gastos. Superar es información, no fracaso. |
-| 33 | `33_modulo_proyecciones_y_simulacion.md` | aprobado | **Nuevo.** Sin veredictos ni score. Todo supuesto declarado. Único módulo sin comandos de escritura. |
+| 32 | `32_modulo_presupuestos_metas_y_limites.md` | aprobado | **Nuevo.** Un presupuesto no reserva dinero. Ningún tipo bloquea gastos. El tramo es permanente, el aviso llega una vez. *Corregido en auditoría 26 jul.* |
+| 33 | `33_modulo_proyecciones_y_simulacion.md` | aprobado | **Nuevo.** Sin veredictos ni score. Los compromisos se descuentan una sola vez. Único módulo sin comandos de escritura. *Corregido en auditoría 26 jul.* |
 | 34 | `34_modulo_descubrimientos_e_insights.md` | no iniciado |
 | 35 | `35_modulo_reportes_graficos_y_exportacion.md` | no iniciado |
 | 36 | `36_modulo_memoria_y_aprendizaje.md` | no iniciado |

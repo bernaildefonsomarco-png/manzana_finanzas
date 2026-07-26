@@ -73,6 +73,8 @@ period_end    date not null
 amount        numeric(14,2) not null
 kind          budget_kind not null      -- presupuesto | limite_blando | limite_duro
 rollover      boolean not null default false
+auto_renew    boolean not null default true
+alerted_thresholds  smallint[] not null default '{}'   -- 70 | 90 | 100
 source        budget_source not null    -- manual | sugerido
 status        budget_status not null    -- activo | pausado | archivado
 created_at, updated_at, deleted_at, metadata
@@ -82,10 +84,23 @@ Restricciones:
 
 - `amount > 0`.
 - `period_end > period_start`.
-- Único parcial `(user_id, category_id, period_start, kind)` entre activos:
-  no puede haber dos presupuestos de la misma categoría, periodo y tipo.
+- `category_id` referencia `categories(id)`.
+- Único parcial `(user_id, category_id, period_start, kind)` **entre los de
+  `status = 'activo'`**: no puede haber dos presupuestos activos de la misma
+  categoría, periodo y tipo. Archivados y pausados no bloquean, porque
+  archivar y recrear dentro del mismo periodo es un caso legítimo
+  (`ACT-PRES-03`) y solo los activos calculan avance.
 - `category_id` nulo significa presupuesto general del periodo, que convive
   con los de categoría.
+
+Dos columnas merecen explicación porque existen para sostener una regla que
+sin ellas no sería implementable:
+
+- **`auto_renew`** — `RUL-PRES-10` permite desactivar la renovación por
+  presupuesto. Sin columna, esa frase era una promesa sin respaldo.
+- **`alerted_thresholds`** — qué umbrales ya avisaron en **este** periodo. Se
+  vacía al renovar. Es lo que hace verificable `RUL-PRES-06`; véase §6 para
+  por qué el aviso y el tramo son cosas distintas.
 
 **No existe ninguna columna que descuente de saldos.** Es la traducción
 estructural de `RUL-PRES-01`.
@@ -124,7 +139,19 @@ recalcular todo el pasado en cada consulta. Único por `(budget_id, as_of)`.
 
 ### 4.4 Migración requerida
 
-`048`, ya documentada en `13_modelo_datos_web_v1.md` §7.1. Sin cambios.
+`048`, documentada en `13_modelo_datos_web_v1.md` §7.1. Este módulo añade a lo
+que allí figuraba:
+
+| Cambio | Por qué |
+|---|---|
+| `budgets.auto_renew` | `RUL-PRES-10` |
+| `budgets.alerted_thresholds` | `RUL-PRES-06` |
+| FK `budgets.category_id → categories(id)` | Un presupuesto de una categoría inexistente no es representable |
+| Alcance del único: entre `activo`, no "no borrado" | Archivar y recrear en el mismo periodo es legítimo |
+| Único `(budget_id, as_of)` en snapshots | El trabajo diario debe poder reejecutarse sin duplicar |
+| Índices `budgets (user_id, status)` y `budget_progress_snapshots (budget_id, as_of desc)` | §17 |
+
+Los seis están ya reflejados en `13` §7.1 y §11.
 
 ## 5. Máquina de estados
 
@@ -157,7 +184,25 @@ sobrante si `rollover` está activo.
 ```
 
 Cuatro tramos, y su único efecto es el lenguaje y el color con que se
-muestra. **Ninguno bloquea nada ni dispara un aviso obligatorio.**
+muestra. **Ninguno bloquea nada.**
+
+**Tramo y aviso son dos cosas distintas, y confundirlas es el error clásico de
+este módulo.** Conviene fijarlo aquí porque el resto de §6 depende de la
+distinción:
+
+| | Tramo | Aviso |
+|---|---|---|
+| Qué es | Estado visual permanente | Notificación puntual |
+| Dónde vive | Se calcula al vuelo, no se guarda | `alerted_thresholds` en `budgets` |
+| Dónde se ve | Donde aparezca el presupuesto: `/presupuestos` e Inicio | Bandeja de notificaciones (`37`) |
+| Cuántas veces | Siempre visible mientras dure | Una vez por umbral y periodo |
+| Quién lo dispara | Nadie: es el avance actual | Cruzar un umbral hacia arriba |
+
+Un presupuesto al 95% muestra el tramo "cerca" cada vez que el usuario abra la
+pantalla, indefinidamente, y eso no es un aviso: es el estado de la cosa. El
+aviso es el mensaje que llega **una sola vez** cuando cruza el 90%. Que el
+tramo sea permanente y el aviso no es lo que evita que el producto se convierta
+en un recordatorio constante de que vas mal.
 
 ### 5.3 Meta
 
@@ -194,10 +239,13 @@ diferencia cuando el usuario la encuentre por primera vez
 
 | Cuenta | No cuenta |
 |---|---|
-| `gasto` | `transferencia` — mover entre cuentas propias no es gasto |
-| `pago_recurrente` | `asignacion_interna` — apartar no es gastar |
-| `pago_deuda`, solo en presupuestos de la categoría `deudas` | `ajuste` |
+| `gasto` | `ingreso` — un presupuesto mide gasto, no entradas |
+| `pago_recurrente` | `transferencia` — mover entre cuentas propias no es gasto |
+| `pago_deuda`, solo en presupuestos de la categoría `deudas` | `asignacion_interna` — apartar no es gastar |
+| | `ajuste` |
 | | `deuda_adquirida`, `prestamo_dado`, `prestamo_recibido`, `devolucion_recibida` |
+
+Los once tipos de `26` §4 quedan clasificados: tres cuentan, ocho no.
 
 La tercera fila de la izquierda es una decisión deliberada: si alguien
 presupuesta "Deudas: S/500 al mes", espera que sus pagos de cuota cuenten
@@ -228,11 +276,18 @@ pero sí en el presupuesto general si existe.
 
 **`RUL-PRES-04` — Los tres tipos, y qué cambia entre ellos**
 
-| Tipo | Cuándo avisa | Dónde se muestra | ¿Bloquea? |
+Lo único que cambia entre los tres tipos es **en qué umbrales avisan**. El
+tramo se muestra igual en los tres (§5.2).
+
+| Tipo | Umbrales que avisan | Peso visual del tramo | ¿Bloquea? |
 |---|---|---|---|
-| **Presupuesto** | Solo al superar | Inicio y Presupuestos | No |
-| **Límite** | Al 90% y al superar | Ídem, con más peso | No |
-| **Límite estricto** | Al 70%, 90% y al superar | Ídem, destacado | **No** |
+| **Presupuesto** | 100 | Normal | No |
+| **Límite** | 90, 100 | Con más peso | No |
+| **Límite estricto** | 70, 90, 100 | Destacado | **No** |
+
+Los umbrales de esta tabla son los valores que se guardan en
+`alerted_thresholds`, y el destino del aviso es la bandeja de notificaciones
+del módulo 37, con su política de fatiga.
 
 **Ninguno bloquea un gasto.** La diferencia es solo cuánta atención pide.
 
@@ -270,6 +325,43 @@ otra vez**. Superar avisa una vez, no en cada gasto posterior.
 
 Sin esta regla, un presupuesto superado a mitad de mes convierte cada compra
 del resto del mes en una notificación de fracaso.
+
+Cómo se implementa, sin ambigüedad:
+
+```text
+Al escribirse un movimiento de una categoría presupuestada:
+  1. recalcular pct
+  2. para cada umbral U de RUL-PRES-04 según el tipo:
+       si pct >= U y U no está en budget.alerted_thresholds:
+           emitir aviso al módulo 37
+           añadir U a budget.alerted_thresholds
+  3. nunca se quita nada de alerted_thresholds durante el periodo
+```
+
+El paso 3 es la regla entera. Si el avance baja del umbral, **el umbral sigue
+marcado**: eso es lo que impide el aviso repetido cuando vuelve a subir. Se
+vacía solo al renovar el periodo (`RUL-PRES-10`).
+
+Ejemplo, límite estricto de S/300 en Transporte:
+
+```text
+ 5 jul  gastado S/215  → 72%  cruza 70  → avisa.  alerted = {70}
+12 jul  gastado S/276  → 92%  cruza 90  → avisa.  alerted = {70,90}
+14 jul  se elimina un gasto, queda S/258 → 86%    no avisa. alerted = {70,90}
+18 jul  gastado S/291  → 97%  90 ya está → NO avisa
+26 jul  gastado S/330  → 110% cruza 100 → avisa.  alerted = {70,90,100}
+29 jul  gastado S/358  → 119% 100 ya está → NO avisa
+ 1 ago  renueva → alerted = {}
+```
+
+Editar el monto del presupuesto **no vacía** `alerted_thresholds`. Subirlo tras
+superar baja el porcentaje, y si más tarde vuelve a cruzar el 100% no se avisa
+de nuevo: el usuario ya sabe que ese presupuesto le queda corto, se lo dijimos
+este mes y ya actuó. Insistir sería exactamente el ruido que la regla evita.
+
+**El tramo no se ve afectado por nada de esto.** En el ejemplo, el 14 de julio
+la pantalla muestra "cerca, 86%" aunque no se haya emitido ningún aviso, y el
+29 muestra "superado por S/58" aunque tampoco. Ver §5.2.
 
 **`RUL-PRES-07` — Presupuesto sugerido a partir del historial propio**
 
@@ -324,11 +416,20 @@ documenta como límite conocido.
 **`RUL-PRES-10` — Renovación automática**
 
 Al terminar un periodo, un trabajo diario archiva el presupuesto con su
-resultado y crea el del periodo siguiente con el mismo monto (más el
-sobrante si aplica). Se avisa una vez al empezar el periodo nuevo, sin
+resultado y, **si `auto_renew` está activo**, crea el del periodo siguiente con
+el mismo monto (más el sobrante si `rollover` aplica) y con
+`alerted_thresholds` vacío. Se avisa una vez al empezar el periodo nuevo, sin
 interrumpir.
 
-El usuario puede desactivar la renovación por presupuesto.
+`auto_renew` está **encendido por defecto**: quien pone un presupuesto mensual
+espera tenerlo el mes siguiente sin volver a crearlo. Se apaga desde
+`ACT-PRES-15` o `PATCH /budgets/[id]`, y con él apagado el presupuesto
+simplemente se archiva al cerrar el periodo.
+
+Es el reverso deliberado de `rollover`, que está apagado por defecto
+(`RUL-PRES-08`): renovar mantiene la herramienta como el usuario la dejó,
+mientras que traspasar el sobrante **cambia qué significa el número** del mes
+siguiente. Lo que preserva la expectativa va encendido; lo que la altera, no.
 
 **`RUL-PRES-11` — Metas y cajas**
 
@@ -375,6 +476,13 @@ actual, no los archivados. Los snapshots ya tomados se conservan.
 
 ## 8. Superficies
 
+**Referencia visual: no existe frame previo.** Ninguna de estas cinco
+pantallas está en `docs/fase_6_visual/32_especificacion_hifi.md` ni en
+`stitch_manzana_v1/`, porque `05c` §20 dejaba los presupuestos fuera de V1 y
+nunca se diseñaron. Los bloques de texto de abajo son la especificación de
+layout, no un boceto de algo ya dibujado. Los tokens y primitivas salen de
+`16_design_system_web.md`.
+
 ### `SCR-PRES-01` — Presupuestos
 
 **Ruta:** `/presupuestos`
@@ -383,7 +491,7 @@ actual, no los archivados. Los snapshots ya tomados se conservan.
 ```text
 ┌──────────────────────────────────────────────────┐
 │ Presupuestos              julio 2026  [+ Nuevo]  │
-│ Llevas S/1,240 de S/1,800 planeado               │
+│ Llevas S/640 de S/900 planeado                   │
 ├──────────────────────────────────────────────────┤
 │ Alimentación        S/318 de S/400   ▓▓▓▓▓▓▓░ 80%│
 │ Transporte          S/230 de S/200   ▓▓▓▓▓▓▓▓ +30│
@@ -403,6 +511,9 @@ actual, no los archivados. Los snapshots ya tomados se conservan.
 
 Detalles que importan:
 
+- La cabecera suma **exactamente los presupuestos listados**: 318 + 230 + 92 =
+  640, sobre 400 + 200 + 300 = 900. Esta pantalla los muestra todos; la que
+  recorta a tres es `SCR-PRES-05`.
 - El superado se muestra con **su explicación y sus dos salidas**, en la
   misma tarjeta. No hay que ir a buscar por qué.
 - "Ajustar" tiene la misma jerarquía visual que "Ver qué subió".
@@ -426,7 +537,13 @@ si hay historial suficiente. El tipo se explica en una línea cada uno.
 
 ### `SCR-PRES-04` — Detalle de meta
 
-**Ruta:** `/presupuestos/[id]` con tipo meta, o `/metas/[id]`.
+**Ruta:** `/presupuestos/[id]`
+
+Es la misma ruta que `SCR-PRES-02` y no hay `/metas/[id]`: presupuestos y metas
+comparten pantalla de listado, y darles rutas de detalle distintas obligaría a
+saber de qué tipo es un identificador antes de poder navegar hasta él.
+Coherente con el mapa de rutas de `10` §4, donde `/presupuestos/[id]` está
+declarada como "detalle de presupuesto o meta".
 
 Progreso, caja vinculada, ritmo necesario si hay fecha, historial de aportes,
 y acción de aportar (que crea una `asignacion_interna` hacia la caja).
@@ -451,6 +568,7 @@ Nunca los muestra todos: el Inicio informa, no audita.
 | `ACT-PRES-07` | Rechazar sugerencia | No | — | `presupuesto.sugerido_rechazado` |
 | `ACT-PRES-08` | Copiar del periodo anterior | Sí, con resumen | Archivando | `presupuesto.copiado` |
 | `ACT-PRES-09` | Activar o desactivar traspaso | No | Alternando | `presupuesto.traspaso_cambiado` |
+| `ACT-PRES-15` | Activar o desactivar renovación | No | Alternando | `presupuesto.renovacion_cambiada` |
 | `ACT-PRES-10` | Ver qué compone el avance | No | — | `presupuesto.detalle_consultado` |
 | `ACT-PRES-11` | Crear meta | No | Archivando | `meta.creada` |
 | `ACT-PRES-12` | Vincular meta a caja | No | Desvinculando | `meta.vinculada` |
@@ -467,7 +585,7 @@ caja vinculada, vía el módulo 24.
 | `GET /budgets` | Del periodo indicado, con avance calculado y sus referencias |
 | `POST /budgets` | Crea. El servidor calcula `period_start` y `period_end` |
 | `GET /budgets/[id]` | Detalle con movimientos que lo componen e historial |
-| `PATCH /budgets/[id]` | Edita monto, tipo o traspaso |
+| `PATCH /budgets/[id]` | Edita monto, tipo, traspaso o renovación. No toca `alerted_thresholds` |
 | `DELETE /budgets/[id]` | Archiva |
 | `POST /budgets/[id]/pause` · `/resume` | Transiciones |
 | `POST /budgets/copy-previous` | Copia el periodo anterior completo. `Idempotency-Key` |
@@ -676,14 +794,25 @@ cumpla todas las reglas de §6.
 
 - `AC-PRES-01` — Un presupuesto no modifica el dinero libre ni ningún saldo.
   Evidencia: `TEST`.
-- `AC-PRES-02` — Transferencias, asignaciones internas y ajustes no cuentan
-  en ningún presupuesto. Evidencia: `TEST`.
+- `AC-PRES-02` — De los once tipos de movimiento, solo `gasto`,
+  `pago_recurrente` y `pago_deuda` (este último solo en categoría `deudas`)
+  cuentan en un presupuesto. Los otros ocho, incluido `ingreso`, no.
+  Evidencia: `TEST`.
 - `AC-PRES-03` — Un pago de deuda cuenta solo en presupuestos de la categoría
   `deudas`. Evidencia: `TEST`.
 - `AC-PRES-04` — Ningún tipo de presupuesto bloquea un gasto.
   Evidencia: `TEST`.
-- `AC-PRES-05` — Cruzar un umbral avisa **una sola vez** por periodo.
+- `AC-PRES-05` — Cruzar un umbral avisa **una sola vez** por periodo. El
+  ejemplo de siete pasos de `RUL-PRES-06` produce exactamente tres avisos, y
+  `alerted_thresholds` termina en `{70,90,100}`. Evidencia: `TEST`.
+- `AC-PRES-05b` — Bajar del umbral y volver a cruzarlo **no** vuelve a avisar,
+  y editar el monto tampoco vacía `alerted_thresholds`. Evidencia: `TEST`.
+- `AC-PRES-05c` — El tramo se muestra siempre según el avance actual, aunque no
+  se haya emitido ningún aviso. Evidencia: `TEST` + `USER`.
+- `AC-PRES-05d` — Renovar un periodo vacía `alerted_thresholds`.
   Evidencia: `TEST`.
+- `AC-PRES-05e` — Con `auto_renew` apagado, el presupuesto se archiva al cerrar
+  el periodo y **no** se crea uno nuevo. Evidencia: `TEST`.
 - `AC-PRES-06` — Ningún copy usa las palabras prohibidas de §3 ni presenta el
   superado como fracaso. Evidencia: `TEST` + `USER`.
 - `AC-PRES-07` — "Ajustar el presupuesto" aparece con la misma jerarquía que
@@ -711,9 +840,15 @@ cumpla todas las reglas de §6.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 
-Fuera de V1-web: base cero, reasignación entre categorías, presupuestos por
-subcategoría, aportes programados, alineación del periodo con el día de
-cobro (límite conocido de `RUL-PRES-09`), presupuestos compartidos.
+**Diferido a V1.1** (`07` §3.9): base cero, reasignación entre categorías
+dentro del periodo, presupuestos por subcategoría, aportes programados a
+metas, alineación del periodo con el día de cobro (límite conocido de
+`RUL-PRES-09`), metas colaborativas.
+
+**Fuera de V1 sin fecha:** presupuestos compartidos o por grupo. No es lo
+mismo que las metas colaborativas de V1.1: una meta compartida es un objetivo
+que dos personas miran, mientras que un presupuesto compartido exige decidir
+de quién es cada gasto, y eso es un producto distinto.
 
 **Prohibido, no diferido:** bloqueo de gastos, gamificación, comparación
 social, recomendación de recortes.
@@ -740,11 +875,23 @@ documental heredada: `docs/fase_2_estrategia/alcance_v1/indice.md` §11 listaba
 "Metas/límites — documento propio si se decide convertirlo en feature
 formal", pendiente desde mayo de 2026.
 
-**Decisiones tomadas en este documento**, sujetas a revisión del usuario:
+**Decisiones tomadas en este documento**, registradas en
+`03_decisiones_producto_web.md`:
 
-| Decisión | Alternativa descartada | Razón |
-|---|---|---|
-| Traspaso apagado por defecto | Encendido | Con traspaso, el presupuesto deja de ser referencia del periodo y se vuelve un acumulado menos legible |
-| Sugerencia por mediana | Promedio | Un mes atípico desplaza el promedio y produce un presupuesto que no representa el hábito |
-| Ningún tipo bloquea gastos | Límite duro que bloquea | Impedirlo trataría al usuario como si no supiera lo que hace con su dinero |
-| Aviso una vez por umbral | Aviso en cada gasto posterior | Convertiría el resto del mes en notificaciones de fracaso |
+| Decisión | ID | Alternativa descartada | Razón |
+|---|---|---|---|
+| Un presupuesto no reserva dinero | `WEB-D030` | Reservar como una caja | Reservar convierte el presupuesto en caja y borra la distinción entre planear y apartar |
+| Ningún tipo bloquea gastos | `WEB-D031` | Límite duro que bloquea | Impedirlo trataría al usuario como si no supiera lo que hace con su dinero |
+| Tramo permanente, aviso una sola vez | `WEB-D032` | Un solo concepto de "alerta" | Confundirlos convierte el resto del mes en notificaciones de fracaso, o hace desaparecer el estado de la pantalla |
+| Sugerencia por mediana de ≥2 periodos | `WEB-D033` | Promedio, o sugerir desde el primer periodo | Un mes atípico desplaza el promedio y produce un presupuesto que no representa el hábito |
+| Traspaso apagado, renovación encendida | `WEB-D034` | Ambos iguales | Renovar preserva la expectativa del usuario; traspasar cambia qué significa el número del mes siguiente |
+| "Ajustar el presupuesto" con la misma jerarquía | `WEB-D035` | Salida secundaria | Un presupuesto mal calibrado se corrige, no se sufre |
+
+**Corrección de auditoría, 26 de julio de 2026.** Una revisión externa
+encontró nueve defectos en la primera versión de este documento. Los cambios:
+se separó el tramo del aviso (§5.2, `RUL-PRES-06`), se añadieron las columnas
+`auto_renew` y `alerted_thresholds` que sostenían reglas sin respaldo, se
+alineó el alcance del único con `13` §7.1, se completó `RUL-PRES-02` con
+`ingreso`, se cuadró la aritmética del mockup de `SCR-PRES-01`, se eliminó la
+ruta alternativa `/metas/[id]`, se sincronizaron los índices con `13` §11 y se
+amplió `07` §3.9 con lo que este documento añadió a IN.

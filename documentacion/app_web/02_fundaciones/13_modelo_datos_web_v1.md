@@ -219,13 +219,32 @@ period_end    date not null
 amount        numeric(14,2) not null
 kind          budget_kind not null     -- presupuesto | limite_blando | limite_duro
 rollover      boolean not null default false
+auto_renew    boolean not null default true
+alerted_thresholds  smallint[] not null default '{}'   -- 70 | 90 | 100
 source        budget_source not null   -- manual | sugerido
 status        budget_status not null   -- activo | pausado | archivado
 created_at, updated_at, deleted_at, metadata
 ```
 
-Restricciones: `amount > 0`; `period_end > period_start`; único por
-`(user_id, category_id, period_start, kind)` cuando no está borrado.
+`auto_renew` sostiene `RUL-PRES-10`: la renovación automática se puede
+desactivar por presupuesto, y sin columna esa promesa no era implementable.
+
+`alerted_thresholds` guarda qué umbrales ya avisaron **en este periodo**, y se
+vacía al renovar. Es lo que hace verificable `RUL-PRES-06` ("una vez por umbral
+y periodo"): sin él, un presupuesto superado a mitad de mes convierte cada
+compra posterior en una notificación, y `AC-PRES-05` no se puede escribir como
+test. Se guarda el umbral y no un contador porque la regla se enuncia por
+umbral, y el test debe poder leerse igual que la regla.
+
+Restricciones: `amount > 0`; `period_end > period_start`; `category_id`
+referencia `categories(id)`; único parcial por
+`(user_id, category_id, period_start, kind)` **entre los de `status = 'activo'`**.
+
+El alcance del único es deliberado y no es "cuando no está borrado": archivar
+un presupuesto a mitad de periodo y crear otro para la misma categoría y
+periodo es un caso legítimo —es lo que hace `ACT-PRES-03` cuando el usuario
+recalibra— y un único sobre los no borrados lo bloquearía. Solo los activos
+calculan avance, así que solo entre ellos hay ambigüedad real.
 
 **`goals`** — una meta de ahorro, opcionalmente respaldada por una caja.
 
@@ -252,6 +271,9 @@ comparativas, sin recalcular todo el pasado en cada consulta.
 id, user_id, budget_id, as_of date, spent numeric(14,2),
 remaining numeric(14,2), pct numeric(5,4), created_at
 ```
+
+Único por `(budget_id, as_of)`: el trabajo diario debe poder reejecutarse sin
+duplicar la foto del día.
 
 ### 7.2 Importación — migración `049` — **DIFERIDA A V1.1**
 
@@ -295,10 +317,16 @@ se bloquea entero.
 `file_hash` permite detectar la reimportación del mismo archivo y avisar
 antes de duplicar.
 
-### 7.3 Proyecciones y simulación — migración `050`
+### 7.3 Proyecciones y simulación — migración `050` — **DIFERIDA A V1.1**
 
-**`simulation_scenarios`** — escenarios guardados (marcado `V1.1` en el
-alcance; la tabla se crea ahora para no cerrarle la puerta al modelo).
+> **Los escenarios guardados son V1.1** (`07_alcance_web_v1.md` §3.10). Esta
+> tabla queda **diseñada y sin aplicar**: la migración `050` no se ejecuta
+> hasta activar la funcionalidad, mismo criterio que la `049` (`WEB-D026`).
+> Una tabla vacía que ningún código lee ni escribe es esquema muerto; lo que
+> evita cerrarle la puerta al modelo es el diseño escrito, no el DDL aplicado.
+> Ver `33_modulo_proyecciones_y_simulacion.md` §4.2.
+
+**`simulation_scenarios`** — escenarios guardados.
 
 ```text
 id, user_id, name, assumptions jsonb not null,
@@ -597,8 +625,8 @@ movement_source      + import_confirmed | assistant_confirmed
 |---|---|---|
 | `047` | Ampliación de `movement_source` con `import_confirmed` y `assistant_confirmed` | 006 |
 | `048` | Presupuestos, metas y snapshots de avance | 003, 004, 006 |
-| `049` | Lotes y filas de importación | 006, 007 |
-| `050` | Escenarios de simulación | 048 |
+| `049` | Lotes y filas de importación — **diferida a V1.1**, no se aplica | 006, 007 |
+| `050` | Escenarios de simulación — **diferida a V1.1**, no se aplica | 048 |
 | `051` | Reportes guardados y trabajos de exportación | 006 |
 | `052` | Hilos y mensajes del asistente | 006, 042 |
 | `053` | Canal in-app y bandeja de notificaciones | 017, 019, 028 |
@@ -656,6 +684,8 @@ al rol `authenticated` sobre columnas que afecten dinero.** Igual que
 | Tabla | Índice | Para qué |
 |---|---|---|
 | `budgets` | `(user_id, period_start desc, category_id)` | Avance del periodo actual en el Inicio |
+| `budgets` | `(user_id, status)` | Listado y renovación diaria de los activos |
+| `budget_progress_snapshots` | `(budget_id, as_of desc)` | Historial de periodos en el detalle |
 | `goals` | `(user_id, status)` | Listado de metas activas |
 | `import_batches` | `(user_id, created_at desc)` | Historial de importaciones |
 | `import_rows` | `(batch_id, row_number)` | Previsualización y deshacer del lote |
