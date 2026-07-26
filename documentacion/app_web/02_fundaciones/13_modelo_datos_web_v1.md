@@ -634,6 +634,9 @@ movement_source      + import_confirmed | assistant_confirmed
 | `055` | Panorama: patrones, resúmenes mensuales y de conversación | 006, 007, 052, 054 |
 | `056` | Registro de cálculos generados | — |
 | `057` | Confirmabilidad de pendientes | 008 |
+| `058` | Gestión de remitentes bancarios y sugerencias | 006, 028 |
+| `059` | Plantillas de movimientos | 006, 007 |
+| `060` | Tipos nuevos de descubrimiento y feedback del usuario | 027, 048 |
 
 ### 9.1 Migración `057` — confirmabilidad de pendientes
 
@@ -662,6 +665,49 @@ alter table public.pending_items
 presentados como confirmables que no podían confirmarse— ocurrió porque nada
 lo impedía estructuralmente. Con esta restricción, la base rechaza el estado
 inválido aunque el código lo intente.
+
+### 9.2 Migración `058` — remitentes bancarios
+
+Requerida por `28_modulo_email_y_deteccion_bancaria.md` §4. Hace editables las
+direcciones desde las que cada banco escribe, permite varias activas por
+institución, y añade `sender_suggestions` para los remitentes no vigilados que
+parecen financieros, detectados **solo con metadatos** (`WEB-D028`).
+
+### 9.3 Migración `059` — plantillas de movimientos
+
+Requerida por `29_modulo_captura_sin_friccion.md` §4. Guarda las plantillas
+de registro rápido del usuario.
+
+### 9.4 Migración `060` — descubrimientos
+
+Requerida por `34_modulo_descubrimientos_e_insights.md` §4.3. Amplía lo que ya
+creó la migración `027`:
+
+```sql
+-- Cuatro tipos que antes eran imposibles: sus módulos no existían
+alter type public.insight_type add value 'budget_risk';
+alter type public.insight_type add value 'goal_pace';
+alter type public.insight_type add value 'commitment_uncovered';
+alter type public.insight_type add value 'merchant_pattern';
+
+create type public.insight_feedback as enum ('util', 'no_util');
+
+alter table public.insight_candidates
+  add column if not exists feedback    public.insight_feedback null,
+  add column if not exists feedback_at timestamptz null;
+
+create index if not exists insight_candidates_feedback_idx
+  on public.insight_candidates (user_id, type, feedback);
+```
+
+El feedback vive en el candidato y no en `insight_deliveries` porque el juicio
+del usuario es sobre **el hallazgo**, no sobre la vez que se le mostró: si el
+mismo hallazgo reaparece en otro periodo, su historial de utilidad debe
+acompañarlo.
+
+`alter type ... add value` no puede ejecutarse dentro de una transacción en
+PostgreSQL. Esta migración va en su propio archivo, sin envolver, y por eso no
+comparte fichero con la creación del enum ni con el `alter table`.
 
 Reglas de migración heredadas y vigentes: cada archivo es idempotente
 (`if not exists`), nunca usa `add constraint if not exists` (no existe en

@@ -148,8 +148,16 @@ Es específico, reduce ruido, no culpa, y permite actuar.
 los 5 movimientos confirmados y los patrones temporales exigían 40+
 movimientos y 4 semanas de datos. Esos umbrales asumían captura sin fricción
 por WhatsApp. En una app web con registro manual, esperar 4 semanas significa
-un mes sintiendo que el producto no hace nada. Los umbrales se rebajan y se
-rediseñan en `34_modulo_descubrimientos_e_insights.md` y
+un mes sintiendo que el producto no hace nada.
+
+La solución, diseñada en `34_modulo_descubrimientos_e_insights.md` §6, **no
+fue rebajar los umbrales**: fue descubrir que sobraban para la mayoría de los
+casos. Buena parte de lo que se le puede decir a alguien sobre su dinero sale
+de lo que **esa persona ya declaró** —un presupuesto, una deuda, un
+compromiso, una caja— y eso no necesita ningún historial. Los umbrales
+inferenciales se mantienen donde son honestos (un patrón temporal sigue
+necesitando cuatro semanas, porque con menos sería falso), pero dejan de
+gobernar la experiencia. Ver también
 `47_ciclo_de_vida_del_dato_y_estados_vacios.md`.
 
 ## 8. Qué debe ser cierto para que la tesis se sostenga
