@@ -199,11 +199,16 @@ El agente **no escribe nada**. Su salida es una propuesta.
 
 ## 7. Consultas
 
-El agente accede a los datos solo a través de consultas de **solo lectura**,
-declaradas en `40_catalogo_de_tools_y_comandos.md` y agregadas desde la §14
-de cada módulo.
+> **Ampliado en `20b_capa_semantica_y_consulta_abierta.md`.** Un catálogo de
+> consultas predefinidas pone un techo: el asistente responde lo previsto y
+> se queda mudo en el resto. Las lecturas no son un catálogo cerrado, son un
+> **vocabulario del dominio que el agente compone libremente**, con un
+> escalón de cálculo aislado cuando el vocabulario no alcanza. Leer ese
+> documento antes de implementar esta sección.
 
-Dos reglas de diseño que evitan un fallo concreto:
+El agente accede a los datos solo en **modo lectura**. Dos reglas de diseño
+que evitan un fallo concreto y que se conservan sea cual sea la forma de la
+consulta:
 
 1. **Toda consulta devuelve, junto al resultado, las referencias de lo que lo
    compone.** Una consulta de "cuánto gasté en comida" no devuelve solo
@@ -214,6 +219,10 @@ Dos reglas de diseño que evitan un fallo concreto:
 2. **Toda consulta declara su alcance temporal y sus filtros en la
    respuesta.** Así el motor sabe si el "este mes" que usó lo dijo el usuario
    o lo puso él.
+
+La identidad del usuario la inyecta el compilador de consultas, nunca el
+agente: no existe forma de expresar en el lenguaje una consulta sobre datos
+ajenos.
 
 ## 8. Comandos
 
@@ -327,7 +336,13 @@ Reglas:
 
 ## 12. Memoria
 
-Tres capas, con controles distintos:
+> **Ampliado en `20c_perfil_del_usuario_y_voz.md`.** Las tres capas de abajo
+> guardan lo que pasó con el dinero, pero no a la persona — y sin la persona,
+> dos usuarios con los mismos movimientos reciben la misma conversación. El
+> perfil añade cuatro capas: cómo escribe, su contexto de vida, su relación
+> con el dinero, y el hilo de la relación.
+
+Tres capas de memoria conversacional, con controles distintos:
 
 | Capa | Qué guarda | Vigencia | Control del usuario |
 |---|---|---|---|

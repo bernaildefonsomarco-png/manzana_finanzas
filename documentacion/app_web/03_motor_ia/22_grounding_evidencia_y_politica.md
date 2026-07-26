@@ -42,6 +42,28 @@ Consecuencia práctica: cada consulta devuelve resultado **y** referencias
 devuelve un número deja al motor sin poder responder "¿de dónde sale eso?",
 y por tanto sin poder emitir la cifra.
 
+### 2.0 Evidencia con consulta abierta y cálculo aislado
+
+`20b_capa_semantica_y_consulta_abierta.md` permite que el agente componga
+consultas no previstas y, cuando el vocabulario no alcanza, calcule sobre lo
+ya consultado. El invariante de evidencia **no se relaja por eso**; se
+sostiene con tres reglas:
+
+1. **La consulta devuelve referencias por construcción.** No es una opción
+   del agente: la forma de la respuesta las incluye siempre.
+2. **El cálculo aislado hereda las referencias de sus datos de entrada.**
+   Como solo opera sobre lo que la consulta ya trajo, la cadena de
+   procedencia no se rompe.
+3. **Un resultado calculado que falla una comprobación de sanidad no se
+   emite.** Una suma parcial que supera su total, un porcentaje fuera de
+   rango o un valor no numérico son defectos, no respuestas.
+
+Además, todo resultado de cálculo aislado debe poder explicar **su
+procedimiento** en lenguaje del usuario ("tomé tus movimientos de los
+últimos 3 meses, los agrupé por semana y comparé las que tienen feriado
+contra las demás"). Una cifra que no puede explicar cómo se obtuvo está en
+la misma situación que una cifra sin referencias: no se emite.
+
 ### 2.1 Qué pasa cuando no hay evidencia
 
 El motor dice que no puede, y ofrece la vía que sí funciona:
@@ -266,6 +288,8 @@ Determinístico, entre el agente y el usuario, con autoridad para rechazar:
 | Honestidad | "Registrado" antes de que el Core confirme |
 | Hallazgos | Impresión con cifra no consultada; más de un hallazgo |
 | Modo discreto | Dato sensible en una salida que debía ser discreta |
+| Sanidad del cálculo | Resultado calculado que no supera las comprobaciones de `20b` §6.2 |
+| Explicabilidad del cálculo | Resultado de cálculo aislado que no puede describir su procedimiento |
 
 Cuando rechaza, el usuario recibe una respuesta honesta y el rechazo se
 registra como defecto a investigar — no como funcionamiento normal. Un
