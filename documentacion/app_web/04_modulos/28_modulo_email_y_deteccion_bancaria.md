@@ -621,7 +621,7 @@ Entidad: `correo`, `fuentes`.
 | Dimensión | Notas |
 |---|---|
 | `buzon` | Cuál de los conectados |
-| `institucion` | **Consumida**, no declarada: su dueño es el módulo `24` (`RUL-CAT-03`) |
+| `institucion` | **Consumida**, no declarada: su dueño es el módulo `24` (`RUL-CATALOGO-03`) |
 | `remitente` | |
 | `origen_fuente` | catálogo, usuario, sugerido |
 | `estado_fuente` | shadow, activa, pausada, desactivada |

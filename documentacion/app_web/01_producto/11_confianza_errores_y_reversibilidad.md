@@ -268,19 +268,19 @@ disculpa larga.
 
 ## 14. Criterios de aceptación
 
-- `AC-CONF-01` — Todo dato financiero visible puede responder fuente, estado
+- `AC-CONFIANZA-01` — Todo dato financiero visible puede responder fuente, estado
   e impacto desde su propio detalle. Evidencia: `TEST` + `USER`.
-- `AC-CONF-02` — Ningún mensaje de error visible está en inglés ni proviene
+- `AC-CONFIANZA-02` — Ningún mensaje de error visible está en inglés ni proviene
   crudo de un proveedor externo. Evidencia: `TEST`.
-- `AC-CONF-03` — Todo error visible ofrece al menos una acción de salida.
+- `AC-CONFIANZA-03` — Todo error visible ofrece al menos una acción de salida.
   Evidencia: `TEST`.
-- `AC-CONF-04` — Reparar una respuesta y corregir un dato financiero son
+- `AC-CONFIANZA-04` — Reparar una respuesta y corregir un dato financiero son
   operaciones distintas, con registros distintos. Evidencia: `TEST`.
-- `AC-CONF-05` — Un movimiento eliminado puede restaurarse y su impacto se
+- `AC-CONFIANZA-05` — Un movimiento eliminado puede restaurarse y su impacto se
   recalcula correctamente. Evidencia: `TEST`.
-- `AC-CONF-06` — Ante un fallo transitorio, la app nunca muestra una pantalla
+- `AC-CONFIANZA-06` — Ante un fallo transitorio, la app nunca muestra una pantalla
   vacía si existían datos previos. Evidencia: `TEST` + `USER`.
-- `AC-CONF-07` — El asistente nunca emite una cifra que no pueda fundamentar.
+- `AC-CONFIANZA-07` — El asistente nunca emite una cifra que no pueda fundamentar.
   Evidencia: `TEST`.
-- `AC-CONF-08` — Toda acción de la lista de §8 exige confirmación explícita
+- `AC-CONFIANZA-08` — Toda acción de la lista de §8 exige confirmación explícita
   que nombra el elemento concreto afectado. Evidencia: `TEST`.

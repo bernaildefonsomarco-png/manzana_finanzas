@@ -504,7 +504,7 @@ degradada**. Se dice que no se pudo calcular.
 |---|---|
 | `proyeccion_cierre` | Con sus supuestos obligatorios |
 | `ritmo_diario` | Mediana de 14 días |
-| *(compromisos del periodo)* | **No es una medida de este módulo.** Se consume `total_no_cubierto` del módulo `30` (`RUL-CAT-03`) |
+| *(compromisos del periodo)* | **No es una medida de este módulo.** Se consume `total_no_cubierto` del módulo `30` (`RUL-CATALOGO-03`) |
 | `impacto_simulado` | Efecto de un gasto hipotético |
 
 **Regla del compilador:** ninguna medida de este módulo se devuelve sin su

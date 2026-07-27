@@ -552,7 +552,7 @@ Entidades: `cuentas`, `cajas`.
 | `separado_total` | Suma de saldos de cajas activas |
 | `libre_en_cuentas` | `RUL-CUENTAS-02` |
 | `dinero_libre` | `RUL-CUENTAS-03` |
-| `libre_por_cuenta` | **Alias** de `libre_en_cuentas` con `agrupar: cuenta` (`RUL-CAT-04`). Equivale a `RUL-CUENTAS-01` |
+| `libre_por_cuenta` | **Alias** de `libre_en_cuentas` con `agrupar: cuenta` (`RUL-CATALOGO-04`). Equivale a `RUL-CUENTAS-01` |
 
 Toda consulta devuelve las referencias de las cuentas, cajas y movimientos
 que componen cada cifra (`22_grounding_evidencia_y_politica.md` §2).

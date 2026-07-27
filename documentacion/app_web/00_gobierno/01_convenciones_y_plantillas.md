@@ -55,15 +55,29 @@ necesite referenciar tiene un ID estable con este formato:
 | `ERR-` | Un error de dominio con mensaje visible | `ERR-DEUDAS-02` (cuota ya pagada) |
 | `AC-` | Un criterio de aceptación | `AC-PENDIENTES-04` |
 
-`<MOD>` es el nombre corto del módulo en mayúsculas (ej. `MOVIMIENTOS`,
+`<MOD>` es el **token del módulo**, en mayúsculas (ej. `MOVIMIENTOS`,
 `CUENTAS`, `DEUDAS`, `PRESUPUESTOS`). `<NN>` es un número de dos dígitos,
 correlativo dentro del módulo, que **nunca se reutiliza** aunque el elemento
 se elimine — si `RUL-CUENTAS-03` se retira, ese número queda muerto y el
 siguiente es `RUL-CUENTAS-04` en adelante.
 
-Estos IDs se agregan mecánicamente en dos documentos:
+**El token se asigna, no se infiere** (`WEB-D143`). Sale del registro de
+`50_matriz_de_trazabilidad_web.md` §2, que es la única fuente, y un test sobre
+el corpus falla si aparece un token no registrado o si un token se define en
+dos documentos.
+
+Esta regla llegó tarde y costó caro. La redacción anterior decía "el nombre
+corto del módulo", y abreviar un nombre es una operación que dos autores
+resuelven distinto: "recurrentes" y "recordatorios" abrevian igual, y también
+"categorías" y "catálogo". El resultado fueron **69 identificadores con dos
+significados**, 46 de ellos entre los módulos 30 y 37 en las cinco familias a
+la vez. El inventario completo y su corrección están en
+`49_criterios_de_aceptacion_globales.md` §3 y §14.
+
+Estos IDs se agregan mecánicamente en tres documentos:
 - `40_catalogo_de_tools_y_comandos.md` agrega los `ACT-` que exponen tools/comandos al motor IA.
-- `50_matriz_de_trazabilidad_web.md` agrega todos los IDs contra su implementación real.
+- `49_criterios_de_aceptacion_globales.md` agrega los `AC-` y define qué significa cerrarlos.
+- `50_matriz_de_trazabilidad_web.md` agrega todos los IDs contra su implementación real, y aloja el registro de tokens.
 
 ---
 
@@ -87,6 +101,25 @@ intención documentada con una capacidad real:
 de evidencia `TEST` o `SMOKE`. Cada nivel es necesario pero no sustituye al
 siguiente. Todo criterio de aceptación (`AC-`) en los documentos de módulo
 debe declarar qué nivel de evidencia exige antes de considerarse cumplido.
+
+**El enum es cerrado: siete niveles y ninguno más.** No existe "revisión", ni
+"validado por el equipo", ni ninguna variante que signifique "alguien lo
+mira" — que en la práctica significa que nadie lo mira. El corpus llegó a
+tener cuatro criterios con "revisión" inventada sobre la marcha; tres de ellos
+eran tests que nadie había visto como tales
+(`49_criterios_de_aceptacion_globales.md` §6.2).
+
+**Segundo eje: la clase de prueba.** El nivel dice *cuánta* evidencia hace
+falta; no dice *quién la produce*. Un criterio que falla la compilación y otro
+que falla una suite son ambos `TEST` y no cuestan lo mismo ni protegen igual.
+Por eso todo criterio cuyo nivel incluya `TEST` declara además su clase, del
+enum de `49` §6.1.
+
+**Los tres portones.** Los siete niveles se agrupan en `G1` construido
+(`DOC`/`CODE`/`TEST`), `G2` probado en real (`SMOKE`/`LIVE`) y `G3` validado
+(`USER`/`METRIC`). Un corte del plan de implementación cierra con `G1` y `G2`;
+los de `G3` no se pierden, cambian de estado (`WEB-D144`, `WEB-D145`). La
+definición completa está en `49` §4.
 
 ---
 
@@ -210,8 +243,15 @@ Docs que dependen de este
 18. **Accesibilidad específica** — teclado, foco, anuncios de lector de
     pantalla, tablas y gráficos si aplica.
 19. **Casos borde** — numerados, con comportamiento esperado explícito.
-20. **Criterios de aceptación** — ID `AC-<MOD>-NN`, verificables, cada uno
-    con su nivel de evidencia exigido (`CODE`/`TEST`/`SMOKE`/`LIVE`/`USER`).
+20. **Criterios de aceptación** — ID `AC-<MOD>-NN`, verificables, cada uno con
+    su nivel de evidencia exigido (§4) y, si ese nivel incluye `TEST`, su
+    **clase de prueba** del enum de
+    `49_criterios_de_aceptacion_globales.md` §6.1 (`unidad`, `integracion`,
+    `e2e`, `lint`, `build`, `presupuesto`, `contenido`, `corpus`). Los dos
+    campos son obligatorios: el nivel dice cuánta evidencia hace falta, la
+    clase dice quién la produce. Un criterio transversal de `14`–`19`, `47` o
+    `48` **no se copia aquí** (`WEB-D148`); si el módulo necesita algo
+    distinto, declara la excepción con su justificación.
 21. **Fuera de alcance y puente a WhatsApp** — qué queda fuera de V1-web y
     qué se reserva explícitamente para cuando WhatsApp entre como canal.
 22. **Trazabilidad** — qué documentos de `docs/` consume (rutas exactas de

@@ -318,7 +318,7 @@ llevaría a lo más costoso de deshacer.
 Nunca crea nada. "Registrar gasto" abre el registro rápido. Nunca registra.
 
 Misma frontera que `WEB-D047` (descubrimientos), `WEB-D038` (proyecciones) y
-`RUL-REC-11` (recordatorios), y aquí por un motivo propio: **la paleta se usa
+`RUL-NOTIF-11` (recordatorios), y aquí por un motivo propio: **la paleta se usa
 a ciegas y a toda velocidad**, con el foco puesto en escribir. Es la
 superficie de la aplicación donde un usuario tiene menos posibilidades de leer
 antes de pulsar.

@@ -778,7 +778,7 @@ create index in_app_notifications_subject_idx
 Es lo que permite cerrar el recordatorio cuando esa cosa deja de aplicar
 —se paga la cuota, se reconecta el buzón— **en la misma transacción de la
 escritura que lo resuelve**, sin que el usuario descarte nada
-(`RUL-REC-06`). Mismo patrón que el `fingerprint` de los descubrimientos
+(`RUL-NOTIF-06`). Mismo patrón que el `fingerprint` de los descubrimientos
 (`WEB-D048`).
 
 El primer índice sostiene el badge, que se consulta en cada carga de página.

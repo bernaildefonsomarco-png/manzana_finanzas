@@ -197,7 +197,7 @@ movimiento que registró, y el mismo "lo siguiente" si sigue aplicando.
 
 **Nunca se reinicia la bienvenida** ni se vuelve a mostrar el estado vacío si
 hay algún dato. Y no se manda un correo de "no terminaste de configurar": eso
-es lo que `RUL-REC-01` clasifica como clase U, apagado por defecto.
+es lo que `RUL-NOTIF-01` clasifica como clase U, apagado por defecto.
 
 **`RUL-ONB-06` — El onboarding se desvanece; no se completa**
 

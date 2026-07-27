@@ -113,7 +113,7 @@ El Inicio **no crea ni guarda nada**. Es una composición de lo que ya existe:
 | Avance de presupuestos | `32` (`SCR-PRES-05`) |
 | Movimientos recientes | `26` |
 | Resumen del periodo | `35` (`SCR-REP-05`) |
-| Recordatorios | `37` (`SCR-REC-05`) |
+| Recordatorios | `37` (`SCR-NOTIF-05`) |
 | Asistente | `41` |
 
 Que no tenga datos propios es lo que hace exigible `RUL-HOME-02`: **el Inicio
@@ -302,7 +302,7 @@ Todos sus bloques navegan o abren un formulario. Ninguno registra, confirma ni
 paga.
 
 Es la cuarta vez que aparece esta frontera —`WEB-D038` en proyecciones,
-`WEB-D047` en descubrimientos, `RUL-REC-11` en recordatorios, `RUL-BUS-08` en
+`WEB-D047` en descubrimientos, `RUL-NOTIF-11` en recordatorios, `RUL-BUS-08` en
 la paleta— y aquí cierra el conjunto: **ninguna superficie que el usuario no
 pidió abrir puede cambiar su dinero.** El Inicio se abre solo, al entrar.
 
@@ -736,7 +736,7 @@ la inversión fue equivocada o está mal ejecutada.
    revalida al enfocar la ventana; nunca se muestran dos verdades sin decir su
    antigüedad.
 10. **"Ahora no" sobre una cuota vencida, y al día siguiente se paga.** No
-    reaparece: su causa se resolvió (`RUL-REC-06`).
+    reaparece: su causa se resolvió (`RUL-NOTIF-06`).
 11. **Modo discreto activado con el asistente abierto.** El asistente también
     oculta montos; no hay una superficie que se salte el modo.
 12. **Bloque de presupuestos con nueve presupuestos activos.** Se muestran

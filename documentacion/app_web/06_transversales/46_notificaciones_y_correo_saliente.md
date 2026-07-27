@@ -22,7 +22,7 @@ mitades que no se parecen en nada, y que confundirlas es el error clásico:
 |---|---|---|
 | Qué es | Respuesta a algo que el usuario acaba de hacer | Aviso de algo que pasó sin él |
 | Ejemplo | Confirma tu correo, tu descarga está lista | Tu cuota vence el 15 |
-| ¿Opt-in? | **No**: lo pidió | **Sí, por tipo** (`RUL-REC-04`) |
+| ¿Opt-in? | **No**: lo pidió | **Sí, por tipo** (`RUL-NOTIF-04`) |
 | ¿Horario silencioso? | **No** | **Sí** |
 | ¿Baja? | No aplica: sin ella no funciona la cuenta | **Un clic** |
 | Quién manda | `43` | `37` |
@@ -151,7 +151,7 @@ Los cuatro transaccionales de V1, todos de `43` y `35`:
 Ninguno lleva enlace de baja, y es correcto: **sin ellos la cuenta no
 funciona**. Lo que sí llevan es una línea que explica por qué llegaron.
 
-Los de notificación son los diez tipos de `RUL-REC-01`, cada uno con su
+Los de notificación son los diez tipos de `RUL-NOTIF-01`, cada uno con su
 interruptor, todos apagados al crear la cuenta (`C-17`).
 
 **`RUL-MAIL-02` — La preferencia se lee al enviar, no al encolar**
@@ -173,7 +173,7 @@ apague el interruptor o pague la cuota.
 
 **`RUL-MAIL-03` — Horario silencioso y límites, solo para notificaciones**
 
-Heredado de `37` `RUL-REC-05` y `RUL-REC-01`:
+Heredado de `37` `RUL-NOTIF-05` y `RUL-NOTIF-01`:
 
 - **22:00 a 08:00** en `America/Lima`, configurable.
 - Lo que caería dentro **se difiere**, no se descarta.
@@ -217,7 +217,7 @@ de verdad. Sin ella, ese botón marca como spam.
 
 | Elemento | Regla |
 |---|---|
-| **Asunto** | **Nunca un monto ni una categoría** (`RUL-REC-12`) |
+| **Asunto** | **Nunca un monto ni una categoría** (`RUL-NOTIF-12`) |
 | Cuerpo | El dato concreto, sí. Es el correo del usuario |
 | Categorías sensibles | **No salen por correo**, ni con opt-in (`RUL-CONF-04`) |
 | Enlaces | Solo a rutas internas de Manzana; el de baja es la excepción |
@@ -592,7 +592,7 @@ horario silencioso de `05j_nudges.md` §9 y §10.
 
 **Contradicciones:**
 
-`C-17` — ya cerrada en `37` (`RUL-REC-04`). Este documento la implementa en el
+`C-17` — ya cerrada en `37` (`RUL-NOTIF-04`). Este documento la implementa en el
 canal: la columna de correo empieza vacía y cada activación registra su
 consentimiento.
 

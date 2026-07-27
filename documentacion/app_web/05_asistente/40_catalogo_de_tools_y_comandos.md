@@ -110,7 +110,7 @@ dos operaciones donde el sistema afirma algo que nadie observó.
 Las cinco salieron de las colisiones de §9. Se declaran aquí porque valen para
 todo lo que se añada en el futuro.
 
-**`RUL-CAT-01` — Toda dimensión lleva su sujeto en el nombre**
+**`RUL-CATALOGO-01` — Toda dimensión lleva su sujeto en el nombre**
 
 Prohibidos los nombres desnudos: `tipo`, `estado`, `origen`, `periodo`,
 `frecuencia`, `conteo`. Se escriben `tipo_movimiento`, `estado_pendiente`,
@@ -120,7 +120,7 @@ Resuelve seis de las siete colisiones encontradas y, más importante, **impide
 que vuelvan a aparecer**. Un módulo escrito desde dentro no puede saber que
 otro ya usó `origen`; con el sujeto en el nombre, no hace falta que lo sepa.
 
-**`RUL-CAT-02` — Un nombre, un género, una grafía**
+**`RUL-CATALOGO-02` — Un nombre, un género, una grafía**
 
 `cubierto_por_caja` y `cubierta_por_caja` no son dos dimensiones. El
 identificador se escribe en masculino singular por convención, aunque su sujeto
@@ -128,7 +128,7 @@ sea femenino: `caja_vinculada_a_deuda` **no**, `caja_vinculada_a_deuda` sí
 —el género que manda es el del sujeto declarado en el prefijo, y una vez
 elegido no varía entre módulos.
 
-**`RUL-CAT-03` — Cada medida tiene un solo dueño**
+**`RUL-CATALOGO-03` — Cada medida tiene un solo dueño**
 
 Si dos módulos declaran la misma cifra, uno la calcula y el otro la consume.
 Nunca los dos.
@@ -138,7 +138,7 @@ Es la generalización de `WEB-D049` (el reporte no tiene aritmética propia) y
 misma: dos dueños son dos implementaciones, y dos implementaciones acaban
 dando dos números.
 
-**`RUL-CAT-04` — Una medida agrupada no es una medida nueva**
+**`RUL-CATALOGO-04` — Una medida agrupada no es una medida nueva**
 
 `gasto_por_categoria` es `suma` con `agrupar: categoria`. No es una medida
 distinta: es un **alias**, y así se declara.
@@ -151,7 +151,7 @@ asistente seguiría sin poder agrupar por algo que nadie anticipó.
 
 Los alias se mantienen porque se leen mejor. Se declaran como lo que son.
 
-**`RUL-CAT-05` — Un comando, un nombre, un dueño**
+**`RUL-CATALOGO-05` — Un comando, un nombre, un dueño**
 
 Si tres módulos necesitan vincular una caja a algo, no hay tres
 `vincular_caja`: hay `vincular_caja_a_deuda`, `vincular_caja_a_compromiso` y
@@ -287,7 +287,7 @@ pedirlo. Es una decisión del dominio y por eso vive en el compilador
 | `origen_aprendizaje` | dicho, observado y confirmado | `36` |
 | `capa_perfil` | estilo, vida, vínculo, hilo | `36` |
 | `tiene_contradiccion` | sí/no | `36` |
-| `tipo_recordatorio` | Los 10 de `RUL-REC-01` | `37` |
+| `tipo_recordatorio` | Los 10 de `RUL-NOTIF-01` | `37` |
 | `clase_recordatorio` | T, V, A, U | `37` |
 | `estado_recordatorio` | abierto, leído, pospuesto, resuelto, descartado, caducado | `37` |
 | `canal_entrega` | bandeja, correo | `37` |
@@ -345,7 +345,7 @@ agregación de la capa semántica.
 
 ### 6.2 Alias: medidas agrupadas
 
-No son medidas nuevas (`RUL-CAT-04`). Se conservan porque se leen mejor.
+No son medidas nuevas (`RUL-CATALOGO-04`). Se conservan porque se leen mejor.
 
 | Alias | Equivale a | Declarado en |
 |---|---|---|
@@ -579,7 +579,7 @@ nunca debe poder cambiar nada (`WEB-D038`). Registrar el gasto simulado es
 Trece comandos con `ninguna` y **ninguno de ellos toca dinero**: son
 descartes, marcas, preferencias y confirmaciones de algo que el usuario acaba
 de decir. Que la lista de `ninguna` no contenga nada financiero es
-verificable, y es `AC-CAT-04`.
+verificable, y es `AC-CATALOGO-04`.
 
 ## 8. Lo que el motor NO puede hacer — agregado
 
@@ -648,7 +648,7 @@ visible desde dentro de un módulo.
 | `institucion` | `24` `28` | **No es colisión**: mismo concepto. Dueño `24`; `28` la consume |
 
 Las cuatro primeras son el mismo defecto: un módulo escrito desde dentro no
-puede saber qué nombres usó otro. `RUL-CAT-01` lo previene de forma
+puede saber qué nombres usó otro. `RUL-CATALOGO-01` lo previene de forma
 estructural.
 
 ### 9.2 Tres variantes de grafía
@@ -662,7 +662,7 @@ estructural.
 ### 9.3 Una colisión de comando
 
 `vincular_caja` estaba declarado en `24`, `30` y `31` con el mismo nombre y
-tres destinos distintos. Resuelto con `RUL-CAT-05`:
+tres destinos distintos. Resuelto con `RUL-CATALOGO-05`:
 
 | Antes | Ahora | Dueño |
 |---|---|---|
@@ -679,7 +679,7 @@ propiedad de lo que se vincula.
 | Medida | Dueños | Resolución |
 |---|---|---|
 | `compromisos_restantes` (`33`) | Duplica `total_no_cubierto` (`30`) | Eliminada de `33`, que la consume |
-| `gasto_por_categoria` (`25`) | Es `suma` (`26`) agrupada | Alias (`RUL-CAT-04`) |
+| `gasto_por_categoria` (`25`) | Es `suma` (`26`) agrupada | Alias (`RUL-CATALOGO-04`) |
 | `conteo_por_categoria` (`25`) | Es `conteo` (`26`) agrupada | Alias |
 | `proporcion_del_gasto` (`25`) | Es `proporcion_del_total` (`26`) agrupada | Alias |
 | `total_por_grupo` (`35`) | Es `suma` agrupada | Alias |
@@ -708,28 +708,28 @@ si son el mismo nivel.
 
 ## 10. Verificación
 
-- `AC-CAT-01` — Toda dimensión, medida y comando declarado en la §14 de un
+- `AC-CATALOGO-01` — Toda dimensión, medida y comando declarado en la §14 de un
   módulo aparece en este catálogo, y viceversa. El build falla si no.
   Evidencia: `TEST`.
-- `AC-CAT-02` — El nivel de confirmación de cada comando coincide entre el
+- `AC-CATALOGO-02` — El nivel de confirmación de cada comando coincide entre el
   módulo y este documento. Evidencia: `TEST`.
-- `AC-CAT-03` — No existen dos dimensiones ni dos medidas con el mismo nombre
+- `AC-CATALOGO-03` — No existen dos dimensiones ni dos medidas con el mismo nombre
   y distinto dueño. Evidencia: `TEST`.
-- `AC-CAT-04` — **Ningún comando de nivel `ninguna` toca dinero.**
+- `AC-CATALOGO-04` — **Ningún comando de nivel `ninguna` toca dinero.**
   Evidencia: `CODE` + `TEST`.
-- `AC-CAT-05` — Ningún comando de nivel `riesgo` se puede ejecutar con la
+- `AC-CATALOGO-05` — Ningún comando de nivel `riesgo` se puede ejecutar con la
   misma acción que uno de nivel `tarjeta`. Evidencia: `TEST`.
-- `AC-CAT-06` — Todo comando es idempotente por clave. Evidencia: `TEST`.
-- `AC-CAT-07` — Ninguna medida se devuelve sin sus referencias de evidencia.
+- `AC-CATALOGO-06` — Todo comando es idempotente por clave. Evidencia: `TEST`.
+- `AC-CATALOGO-07` — Ninguna medida se devuelve sin sus referencias de evidencia.
   Evidencia: `TEST`.
-- `AC-CAT-08` — `suma_propuesta`, `saldo_total_a_favor` y `proyeccion_cierre`
+- `AC-CATALOGO-08` — `suma_propuesta`, `saldo_total_a_favor` y `proyeccion_cierre`
   no se emiten sin su advertencia. Evidencia: `TEST`.
-- `AC-CAT-09` — Cada módulo declara su §14.4, y sus prohibiciones aparecen en
+- `AC-CATALOGO-09` — Cada módulo declara su §14.4, y sus prohibiciones aparecen en
   §8.2. Evidencia: `TEST`.
-- `AC-CAT-10` — Ningún comando fuera de este catálogo se puede ejecutar. El
+- `AC-CATALOGO-10` — Ningún comando fuera de este catálogo se puede ejecutar. El
   ejecutor rechaza lo desconocido en vez de intentarlo. Evidencia: `TEST`.
 
-`AC-CAT-10` es el que convierte "catálogo cerrado" de una afirmación en una
+`AC-CATALOGO-10` es el que convierte "catálogo cerrado" de una afirmación en una
 propiedad: la lista blanca vive en el ejecutor, no en el prompt.
 
 ## 11. Trazabilidad
@@ -742,7 +742,7 @@ propiedad: la lista blanca vive en el ejecutor, no en el prompt.
 `C-03` — *"14 tools vs. 15 tools — documentación de capacidades
 desactualizada."* Se cierra cambiando el método, no el número: el catálogo se
 genera por agregación y un test falla el build si se desincroniza (§2,
-`AC-CAT-01`). Contar bien una vez no habría servido de nada; el defecto era
+`AC-CATALOGO-01`). Contar bien una vez no habría servido de nada; el defecto era
 mantener dos listas a mano.
 
 El número real, verificado contando las §14 de los dieciséis módulos: **95

@@ -23,9 +23,9 @@ derecho a sonar. En una app web sin canal push, nada de eso interrumpe a
 nadie. La bandeja está donde el usuario la va a buscar.
 
 Eso no significa que la disciplina sobre. Significa que **cambia de sitio**
-(`RUL-REC-02`): los límites de frecuencia y el horario silencioso gobiernan lo
+(`RUL-NOTIF-02`): los límites de frecuencia y el horario silencioso gobiernan lo
 que **sale por correo**, que sí es interrupción; la bandeja se gobierna con
-otra cosa, que es que **lo resuelto desaparece solo** (`RUL-REC-06`). Una
+otra cosa, que es que **lo resuelto desaparece solo** (`RUL-NOTIF-06`). Una
 bandeja que acumula cuarenta avisos de cosas ya hechas no cansa por
 frecuencia, cansa por inutilidad.
 
@@ -37,7 +37,7 @@ El correo está apagado hasta que el usuario lo encienda, tipo por tipo.
 - **No es un descubrimiento.** Un recordatorio es algo que **vence o espera
   resolución**; un descubrimiento es algo que no sabías. El primero se
   resuelve y desaparece, el segundo se lee y expira. La frontera está en
-  `RUL-REC-03` porque es la que más fácil se borra.
+  `RUL-NOTIF-03` porque es la que más fácil se borra.
 - **No ejecuta nada.** Recordar un pago no lo paga. Es la misma frontera de
   `WEB-D047` y `WEB-D038`: lo que aparece sin que nadie lo pida no cambia
   nada.
@@ -50,7 +50,7 @@ El correo está apagado hasta que el usuario lo encienda, tipo por tipo.
 
 | Nivel | Funcionalidad |
 |---|---|
-| **IN** | Bandeja de recordatorios en la app con badge de conteo. Los diez tipos de `RUL-REC-01`, en cuatro clases con reglas distintas. Configuración granular por tipo y por canal. Política anti-fatiga para el correo. Horario silencioso. Silenciar, pausar y posponer. Resolución automática cuando la causa desaparece. Entrega por correo bajo opt-in explícito por tipo. **Ningún canal que interrumpa activado por defecto.** |
+| **IN** | Bandeja de recordatorios en la app con badge de conteo. Los diez tipos de `RUL-NOTIF-01`, en cuatro clases con reglas distintas. Configuración granular por tipo y por canal. Política anti-fatiga para el correo. Horario silencioso. Silenciar, pausar y posponer. Resolución automática cuando la causa desaparece. Entrega por correo bajo opt-in explícito por tipo. **Ningún canal que interrumpa activado por defecto.** |
 | **V1.1** | Notificaciones push del navegador. Resumen semanal por correo. Recordatorios con fecha elegida por el usuario. |
 | **FUERA** | SMS. WhatsApp (fase 2). Recordatorios que ejecuten acciones. Avisos de producto, promociones o novedades. Recordatorios sobre terceros. |
 
@@ -106,7 +106,7 @@ created_at, expires_at
 
 `nudge_delivery_id` es nulo en los recordatorios transaccionales, que no pasan
 por el motor de decisión: una descarga lista no compite con nada
-(`RUL-REC-01`, clase T).
+(`RUL-NOTIF-01`, clase T).
 
 ### 4.2 Migración `062` — lo que falta
 
@@ -193,7 +193,7 @@ recordatorios sirven.
 
 ## 6. Reglas de negocio
 
-**`RUL-REC-01` — Diez tipos en cuatro clases, con reglas distintas**
+**`RUL-NOTIF-01` — Diez tipos en cuatro clases, con reglas distintas**
 
 | Clase | Qué es | Canal correo | Límite diario |
 |---|---|---|---|
@@ -219,10 +219,10 @@ recordatorios sirven.
 al producto que al usuario: nadie necesita que le recuerden que no ha usado
 una aplicación. Por eso es el más restringido de los diez, viene apagado en
 todos los canales incluida la bandeja, y se suprime ante cualquier señal de
-actividad (`RUL-REC-07`). Se documenta como lo que es en vez de disfrazarlo de
+actividad (`RUL-NOTIF-07`). Se documenta como lo que es en vez de disfrazarlo de
 utilidad financiera.
 
-**`RUL-REC-02` — La fatiga gobierna lo que sale, no lo que se guarda**
+**`RUL-NOTIF-02` — La fatiga gobierna lo que sale, no lo que se guarda**
 
 La corrección estructural respecto de `05j`.
 
@@ -230,9 +230,9 @@ La corrección estructural respecto de `05j`.
 |---|---|---|
 | ¿Interrumpe? | No: está donde el usuario va a buscarla | **Sí** |
 | Horario silencioso | No aplica | **Aplica** |
-| Límite diario | No aplica | **Aplica** (`RUL-REC-01`) |
+| Límite diario | No aplica | **Aplica** (`RUL-NOTIF-01`) |
 | Consentimiento | Activa por defecto | **Apagado por defecto** |
-| Qué la mantiene sana | Resolución automática (`RUL-REC-06`) | La política de arriba |
+| Qué la mantiene sana | Resolución automática (`RUL-NOTIF-06`) | La política de arriba |
 
 `05j` aplicaba una sola política a todo porque en su mundo todo era push.
 Aplicarla igual aquí produciría el absurdo de **no guardar en la bandeja un
@@ -243,7 +243,7 @@ Que la bandeja venga activa **no contradice `C-17`**: `C-17` prohíbe activar
 canales que interrumpen, y una sección de la aplicación no interrumpe a nadie.
 Lo que viene apagado es el correo, tipo por tipo.
 
-**`RUL-REC-03` — Recordatorio no es descubrimiento**
+**`RUL-NOTIF-03` — Recordatorio no es descubrimiento**
 
 | | Recordatorio (37) | Descubrimiento (34) |
 |---|---|---|
@@ -268,7 +268,7 @@ coherentes: el **tramo** del presupuesto es estado permanente que se ve en su
 pantalla (`WEB-D032`), y el **aviso** de haber cruzado el umbral es un
 recordatorio que llega una vez a esta bandeja.
 
-**`RUL-REC-04` — Ningún canal que interrumpa viene activado**
+**`RUL-NOTIF-04` — Ningún canal que interrumpa viene activado**
 
 Cierra `C-17`. En el alta de una cuenta:
 
@@ -287,7 +287,7 @@ Encenderlo se ofrece **en el momento en que tiene sentido** —al registrar la
 primera deuda con cuotas, por ejemplo— y nunca como una pantalla de permisos
 en el onboarding, donde nadie decide nada informadamente.
 
-**`RUL-REC-05` — Horario silencioso: 22:00 a 08:00, y solo para el correo**
+**`RUL-NOTIF-05` — Horario silencioso: 22:00 a 08:00, y solo para el correo**
 
 Heredado de `05j` §9, con su valor por defecto intacto y su ámbito reducido.
 
@@ -301,7 +301,7 @@ Heredado de `05j` §9, con su valor por defecto intacto y su ámbito reducido.
   las once de la noche y recibir el aviso a las once y un minuto es lo
   correcto.
 
-**`RUL-REC-06` — Lo resuelto desaparece solo**
+**`RUL-NOTIF-06` — Lo resuelto desaparece solo**
 
 La regla que mantiene la bandeja usable, y la que sustituye a la política de
 frecuencia para este canal.
@@ -333,7 +333,7 @@ El usuario paga el alquiler y lo registra.
 **Un recordatorio que sigue ahí después de haber hecho la cosa** es la forma
 más rápida de enseñarle a alguien a ignorar la bandeja entera.
 
-**`RUL-REC-07` — Supresión por actividad**
+**`RUL-NOTIF-07` — Supresión por actividad**
 
 Rescatada de `05j` §10.3 y ampliada. No se genera un recordatorio si el
 usuario **ya está haciendo eso mismo**:
@@ -348,7 +348,7 @@ usuario **ya está haciendo eso mismo**:
 La última fila es la general y hace innecesarias muchas reglas particulares:
 **un sujeto, un recordatorio abierto.** No se apilan.
 
-**`RUL-REC-08` — Prioridad cuando compiten**
+**`RUL-NOTIF-08` — Prioridad cuando compiten**
 
 Solo importa para el correo, que tiene límite diario. Orden heredado de `05j`
 §10.2, adaptado a los tipos de V1-web:
@@ -373,7 +373,7 @@ Y la regla de desempate de `05j`, que se conserva porque es buena:
 note**. Es exactamente el fallo que `WEB-D028` describe, y descubrirlo tarde
 cuesta movimientos perdidos.
 
-**`RUL-REC-09` — El badge cuenta lo abierto y sin leer, y se acota**
+**`RUL-NOTIF-09` — El badge cuenta lo abierto y sin leer, y se acota**
 
 ```text
 badge = recordatorios sin leer, sin resolver, sin descartar y sin posponer
@@ -390,16 +390,16 @@ La segunda viñeta es una decisión: un badge que solo baja cuando resuelves
 todo es un badge que se queda alto para siempre, y un indicador que nunca
 llega a cero deja de mirarse.
 
-**`RUL-REC-10` — Posponer es una respuesta legítima**
+**`RUL-NOTIF-10` — Posponer es una respuesta legítima**
 
 Posponer mueve `snoozed_until` y el recordatorio vuelve. Opciones fijas:
 **mañana, en 3 días, la semana que viene.**
 
 No se ofrece posponer indefinidamente: para eso está descartar, que es
 honesto. Y un recordatorio pospuesto que se **resuelve** mientras tanto no
-vuelve nunca (`RUL-REC-06` gana).
+vuelve nunca (`RUL-NOTIF-06` gana).
 
-**`RUL-REC-11` — Un recordatorio no ejecuta nada**
+**`RUL-NOTIF-11` — Un recordatorio no ejecuta nada**
 
 Lleva a la pantalla donde el usuario actúa, con lo que haga falta precargado.
 Nunca registra el pago, nunca confirma el pendiente, nunca ajusta el
@@ -410,7 +410,7 @@ aquí es más importante que en ninguno: un recordatorio de pago que pudiera
 registrar el pago convertiría un aviso en una operación de dinero disparada
 por un temporizador.
 
-**`RUL-REC-12` — Modo discreto y sensibilidad**
+**`RUL-NOTIF-12` — Modo discreto y sensibilidad**
 
 - En modo discreto, el cuerpo del recordatorio **oculta los montos**, no el
   recordatorio: "El alquiler vence el viernes" sigue siendo útil sin el S/850.
@@ -428,7 +428,7 @@ bloqueo de un teléfono que puede estar sobre una mesa.
 
 | Campo | Regla |
 |---|---|
-| `kind` | De los diez tipos de `RUL-REC-01` |
+| `kind` | De los diez tipos de `RUL-NOTIF-01` |
 | `subject_key` | Obligatorio salvo en clase T sin sujeto; formato `ambito:id` |
 | `title` | 1–80 caracteres, sin signos de exclamación |
 | `body` | 1–200 caracteres |
@@ -448,7 +448,7 @@ propia aplicación.
 descrita en `docs/fase_6_visual/32_especificacion_hifi.md` (Inicio). La
 bandeja como pantalla propia y su configuración son nuevas y no tienen frame.
 
-### `SCR-REC-01` — Bandeja
+### `SCR-NOTIF-01` — Bandeja
 
 **Ruta:** `/recordatorios`
 **Estado en URL:** `filtro`
@@ -482,19 +482,19 @@ Detalles que importan:
 - El vencido no se pinta de rojo ni se pone arriba con urgencia visual: va
   primero por orden, y su texto ya dice que venció.
 - "Ya la pagué" es un atajo a registrar con los datos precargados, no una
-  confirmación silenciosa (`RUL-REC-11`).
+  confirmación silenciosa (`RUL-NOTIF-11`).
 - "Resueltos esta semana" existe para que se vea que **la bandeja se vacía
   sola**. Sin esa prueba, el usuario no confía en que desaparezcan.
 
-### `SCR-REC-02` — Badge y acceso
+### `SCR-NOTIF-02` — Badge y acceso
 
 Componente en la navegación. Punto con conteo hasta `9+`, con
-`aria-label` que dice el número real. Abre `SCR-REC-01`.
+`aria-label` que dice el número real. Abre `SCR-NOTIF-01`.
 
 Sin conteo, el punto no aparece: **un indicador vacío que siempre está
 presente enseña a ignorarlo.**
 
-### `SCR-REC-03` — Ajustes de recordatorios
+### `SCR-NOTIF-03` — Ajustes de recordatorios
 
 **Ruta:** `/configuracion/recordatorios`
 
@@ -518,21 +518,21 @@ presente enseña a ignorarlo.**
 └──────────────────────────────────────────────────┘
 ```
 
-- Toda la columna de correo **empieza vacía** (`RUL-REC-04`).
+- Toda la columna de correo **empieza vacía** (`RUL-NOTIF-04`).
 - "Cuando no registras nada" empieza apagado en **las dos** columnas: es el
   tipo de clase U.
 - "Pausar todo" existe porque hay semanas en las que alguien no quiere saber
   nada, y la alternativa a un pausado temporal es que lo apague todo para
   siempre.
 
-### `SCR-REC-04` — Resueltos y descartados
+### `SCR-NOTIF-04` — Resueltos y descartados
 
 **Ruta:** `/recordatorios?filtro=cerrados`
 
 Historial de solo lectura, con la distinción entre resuelto y descartado
 visible. Sirve para "¿me avisaste de esto?".
 
-### `SCR-REC-05` — Recordatorios en el Inicio
+### `SCR-NOTIF-05` — Recordatorios en el Inicio
 
 Componente. **Como máximo dos**, los de mayor prioridad sin leer, con enlace a
 la bandeja. Si no hay ninguno, no aparece nada (`39`).
@@ -541,17 +541,17 @@ la bandeja. Si no hay ninguno, no aparece nada (`39`).
 
 | ID | Acción | ¿Confirma? | Deshacer | Evento |
 |---|---|---|---|---|
-| `ACT-REC-01` | Abrir la bandeja | No | — | `recordatorio.bandeja_abierta` |
-| `ACT-REC-02` | Ir a resolver | No | La de destino | `recordatorio.accion_tomada` |
-| `ACT-REC-03` | Posponer | No | Volviendo a la bandeja | `recordatorio.pospuesto` |
-| `ACT-REC-04` | Descartar | No | Restaurando 30 días | `recordatorio.descartado` |
-| `ACT-REC-05` | Silenciar un tipo | No | Reactivando | `recordatorio.tipo_silenciado` |
-| `ACT-REC-06` | Activar el correo de un tipo | **Sí** | Desactivando | `recordatorio.correo_activado` |
-| `ACT-REC-07` | Cambiar el horario silencioso | No | — | `recordatorio.horario_cambiado` |
-| `ACT-REC-08` | Pausar todo una semana | No | Reanudando | `recordatorio.pausado` |
-| `ACT-REC-09` | Ver los cerrados | No | — | `recordatorio.historial_visto` |
+| `ACT-NOTIF-01` | Abrir la bandeja | No | — | `recordatorio.bandeja_abierta` |
+| `ACT-NOTIF-02` | Ir a resolver | No | La de destino | `recordatorio.accion_tomada` |
+| `ACT-NOTIF-03` | Posponer | No | Volviendo a la bandeja | `recordatorio.pospuesto` |
+| `ACT-NOTIF-04` | Descartar | No | Restaurando 30 días | `recordatorio.descartado` |
+| `ACT-NOTIF-05` | Silenciar un tipo | No | Reactivando | `recordatorio.tipo_silenciado` |
+| `ACT-NOTIF-06` | Activar el correo de un tipo | **Sí** | Desactivando | `recordatorio.correo_activado` |
+| `ACT-NOTIF-07` | Cambiar el horario silencioso | No | — | `recordatorio.horario_cambiado` |
+| `ACT-NOTIF-08` | Pausar todo una semana | No | Reanudando | `recordatorio.pausado` |
+| `ACT-NOTIF-09` | Ver los cerrados | No | — | `recordatorio.historial_visto` |
 
-`ACT-REC-06` confirma porque es un **consentimiento**: el usuario está
+`ACT-NOTIF-06` confirma porque es un **consentimiento**: el usuario está
 autorizando que le escriban a su correo. La tarjeta dice qué tipo, con qué
 frecuencia máxima y que puede apagarlo cuando quiera. Queda registrado como
 evento de consentimiento (`45`).
@@ -602,7 +602,7 @@ recibir un correo justo después de haber desactivado los correos.
 | **Un tipo silenciado** | Se dice en ajustes; no se insiste en reactivarlo |
 | **Más de 9 abiertos** | Se muestran todos, agrupados por tipo; el badge dice `9+` |
 | **Cargando** | Esqueleto de dos tarjetas |
-| **Modo discreto** | Textos visibles, montos ocultos (`RUL-REC-12`) |
+| **Modo discreto** | Textos visibles, montos ocultos (`RUL-NOTIF-12`) |
 
 La primera fila importa: una bandeja vacía en una cuenta nueva **no es un
 error ni un hueco**, es el estado correcto, y decirlo evita que parezca que
@@ -612,11 +612,11 @@ algo no cargó.
 
 | ID | Causa | Mensaje visible | Salida |
 |---|---|---|---|
-| `ERR-REC-01` | Recordatorio no encontrado | "Ese recordatorio ya no está." | Ver la bandeja |
-| `ERR-REC-02` | Posponer más de 30 días | "Puedo recordártelo hasta dentro de un mes." | Elegir otra fecha |
-| `ERR-REC-03` | Activar correo sin correo verificado | "Antes necesito confirmar tu correo." | Ir a verificarlo |
-| `ERR-REC-04` | Actuar sobre uno ya resuelto | "Eso ya está resuelto." | Ver la bandeja |
-| `ERR-REC-05` | Horario silencioso inválido | "Necesito una hora de inicio y una de fin." | Corregir |
+| `ERR-NOTIF-01` | Recordatorio no encontrado | "Ese recordatorio ya no está." | Ver la bandeja |
+| `ERR-NOTIF-02` | Posponer más de 30 días | "Puedo recordártelo hasta dentro de un mes." | Elegir otra fecha |
+| `ERR-NOTIF-03` | Activar correo sin correo verificado | "Antes necesito confirmar tu correo." | Ir a verificarlo |
+| `ERR-NOTIF-04` | Actuar sobre uno ya resuelto | "Eso ya está resuelto." | Ver la bandeja |
+| `ERR-NOTIF-05` | Horario silencioso inválido | "Necesito una hora de inicio y una de fin." | Corregir |
 
 ## 14. Integración con el motor IA
 
@@ -665,9 +665,9 @@ y se paga con la confianza en todo lo demás.
 ### 14.4 Lo que el motor NO puede hacer aquí
 
 - **Crear un recordatorio.** Solo el motor de decisión los crea, desde eventos
-  de dominio (`RUL-REC-01`).
+  de dominio (`RUL-NOTIF-01`).
 - Resolver uno sin que la causa se resuelva de verdad.
-- Ejecutar la acción que el recordatorio sugiere (`RUL-REC-11`).
+- Ejecutar la acción que el recordatorio sugiere (`RUL-NOTIF-11`).
 - Activar un canal de correo sin la tarjeta de consentimiento.
 - Saltarse el horario silencioso ni los límites diarios.
 
@@ -704,7 +704,7 @@ Sin montos, sin descripciones. Sí tipo, clase, canal y `trace_id`.
 |---|---|
 | **Tasa de resolución por tipo** | Si el recordatorio sirve para algo |
 | **Tasa de descarte por tipo** | Si molesta. Alta y sostenida = retirar el tipo |
-| Resueltos solos sobre el total | Que `RUL-REC-06` funciona |
+| Resueltos solos sobre el total | Que `RUL-NOTIF-06` funciona |
 | Tipos silenciados | Dónde se pasa de la raya |
 | Usuarios que activan el correo | Si el opt-in por tipo era la forma correcta de pedirlo |
 | Usuarios que pausan todo | Señal fuerte: el volumen es demasiado |
@@ -755,13 +755,13 @@ alguien lo apague — se queda ahí gastando atención.
 ## 19. Casos borde
 
 1. **El usuario paga el alquiler antes de que llegue el recordatorio.** No se
-   genera: `RUL-REC-07` lo suprime al no existir ya la causa.
+   genera: `RUL-NOTIF-07` lo suprime al no existir ya la causa.
 2. **Paga después de que el recordatorio esté en la bandeja.** Pasa a
    `resuelto` en la misma transacción del registro.
 3. **Compromiso eliminado con recordatorio abierto.** Se resuelve, no se
    descarta: su causa desapareció.
 4. **Recordatorio pospuesto que se resuelve mientras tanto.** No vuelve
-   (`RUL-REC-10`).
+   (`RUL-NOTIF-10`).
 5. **Presupuesto que cruza dos umbrales el mismo día.** Dos recordatorios con
    `subject_key` distinto —el umbral forma parte de la clave—, y ambos son
    correctos.
@@ -786,45 +786,45 @@ comprueba al encolar no vale; hay que comprobarlo al enviar.**
 
 ## 20. Criterios de aceptación
 
-- `AC-REC-01` — Ningún canal que interrumpa viene activado en una cuenta
+- `AC-NOTIF-01` — Ningún canal que interrumpa viene activado en una cuenta
   nueva. El correo está apagado en los diez tipos. Cierra `C-17`.
   Evidencia: `TEST`.
-- `AC-REC-02` — El consentimiento del correo es por tipo, y activar uno no
+- `AC-NOTIF-02` — El consentimiento del correo es por tipo, y activar uno no
   activa los demás. Evidencia: `TEST`.
-- `AC-REC-03` — Activar el correo de un tipo registra un evento de
+- `AC-NOTIF-03` — Activar el correo de un tipo registra un evento de
   consentimiento explícito. Evidencia: `TEST`.
-- `AC-REC-04` — El horario silencioso y los límites diarios **no afectan a la
+- `AC-NOTIF-04` — El horario silencioso y los límites diarios **no afectan a la
   bandeja**, solo al correo. Evidencia: `TEST`.
-- `AC-REC-05` — Un correo que caería en horario silencioso se difiere, y
+- `AC-NOTIF-05` — Un correo que caería en horario silencioso se difiere, y
   varios diferidos se agrupan en uno. Evidencia: `TEST`.
-- `AC-REC-06` — Resolver la causa resuelve el recordatorio **en la misma
+- `AC-NOTIF-06` — Resolver la causa resuelve el recordatorio **en la misma
   transacción**, sin intervención del usuario. Evidencia: `TEST`.
-- `AC-REC-07` — No existen dos recordatorios abiertos con el mismo
+- `AC-NOTIF-07` — No existen dos recordatorios abiertos con el mismo
   `subject_key`. Evidencia: `TEST`.
-- `AC-REC-08` — Un recordatorio pospuesto que se resuelve no vuelve.
+- `AC-NOTIF-08` — Un recordatorio pospuesto que se resuelve no vuelve.
   Evidencia: `TEST`.
-- `AC-REC-09` — El badge cuenta solo lo abierto y sin leer, y muestra `9+`
+- `AC-NOTIF-09` — El badge cuenta solo lo abierto y sin leer, y muestra `9+`
   como máximo. Evidencia: `TEST`.
-- `AC-REC-10` — Ningún recordatorio ejecuta una acción; todos navegan.
+- `AC-NOTIF-10` — Ningún recordatorio ejecuta una acción; todos navegan.
   Evidencia: `CODE` + `TEST`.
-- `AC-REC-11` — `action_url` es siempre una ruta interna. Evidencia: `TEST`.
-- `AC-REC-12` — El asunto de un correo no contiene montos ni categorías.
+- `AC-NOTIF-11` — `action_url` es siempre una ruta interna. Evidencia: `TEST`.
+- `AC-NOTIF-12` — El asunto de un correo no contiene montos ni categorías.
   Evidencia: `TEST`.
-- `AC-REC-13` — Los recordatorios de categorías sensibles no salen por correo
+- `AC-NOTIF-13` — Los recordatorios de categorías sensibles no salen por correo
   ni con opt-in. Evidencia: `TEST`.
-- `AC-REC-14` — La preferencia de canal se lee **en el momento del envío**, no
+- `AC-NOTIF-14` — La preferencia de canal se lee **en el momento del envío**, no
   al encolar. Evidencia: `TEST`.
-- `AC-REC-15` — El envío es idempotente por `(user_id, subject_key, día)`.
+- `AC-NOTIF-15` — El envío es idempotente por `(user_id, subject_key, día)`.
   Evidencia: `TEST`.
-- `AC-REC-16` — `sin_registrar` viene apagado en todos los canales, incluida
+- `AC-NOTIF-16` — `sin_registrar` viene apagado en todos los canales, incluida
   la bandeja. Evidencia: `TEST`.
-- `AC-REC-17` — Un tipo descartado 5 veces seguidas sin resolverse deja de
+- `AC-NOTIF-17` — Un tipo descartado 5 veces seguidas sin resolverse deja de
   generarse, y se dice en ajustes. Evidencia: `TEST`.
-- `AC-REC-18` — Ningún recordatorio usa `role="alert"` ni signos de
+- `AC-NOTIF-18` — Ningún recordatorio usa `role="alert"` ni signos de
   exclamación. Evidencia: `TEST`.
-- `AC-REC-19` — El motor no puede crear un recordatorio ni saltarse el horario
+- `AC-NOTIF-19` — El motor no puede crear un recordatorio ni saltarse el horario
   silencioso. Evidencia: `TEST`.
-- `AC-REC-20` — No existe ninguna ruta pública que cree recordatorios.
+- `AC-NOTIF-20` — No existe ninguna ruta pública que cree recordatorios.
   Evidencia: `CODE`.
 
 ## 21. Fuera de alcance y puente a WhatsApp
@@ -846,10 +846,10 @@ documentado en vez de perdido:
 | De `05j` | Por qué sigue siendo bueno |
 |---|---|
 | Máximo 2 no solicitados al día, 1 sensible (§10.1) | Calibrado para un canal que suena |
-| La competencia entre candidatos (§10.2) | `RUL-REC-08` es su versión reducida |
+| La competencia entre candidatos (§10.2) | `RUL-NOTIF-08` es su versión reducida |
 | Máximo 2 por ocurrencia de un mismo pago (§10.1) | Antes y después, nunca más |
 | Re-engagement máximo 1 cada 7 días (§10.1) | Coincide con `sin_registrar` |
-| Agrupar al abrir la ventana (§9) | `RUL-REC-05` ya lo aplica al correo |
+| Agrupar al abrir la ventana (§9) | `RUL-NOTIF-05` ya lo aplica al correo |
 
 Y la regla que **no** cambia con el canal: ningún tipo se activa solo. Un
 usuario que dio su número no autorizó que le escriban.
@@ -865,12 +865,12 @@ que el canal principal interrumpe.
 
 | De `05j` | Dónde vive ahora |
 |---|---|
-| Horario silencioso 22:00–08:00, diferir y agrupar (§9) | `RUL-REC-05`, aplicado solo al correo |
-| Competencia entre candidatos (§10.2) | `RUL-REC-08` |
-| "Ante la duda, guardar en el Dashboard" (§10.2) | `RUL-REC-08`, literal |
-| Supresión por actividad (§10.3) | `RUL-REC-07`, ampliada |
-| Consentimiento por tipo y canal (§8) | `RUL-REC-04` |
-| Modo discreto en avisos (§11) | `RUL-REC-12` |
+| Horario silencioso 22:00–08:00, diferir y agrupar (§9) | `RUL-NOTIF-05`, aplicado solo al correo |
+| Competencia entre candidatos (§10.2) | `RUL-NOTIF-08` |
+| "Ante la duda, guardar en el Dashboard" (§10.2) | `RUL-NOTIF-08`, literal |
+| Supresión por actividad (§10.3) | `RUL-NOTIF-07`, ampliada |
+| Consentimiento por tipo y canal (§8) | `RUL-NOTIF-04` |
+| Modo discreto en avisos (§11) | `RUL-NOTIF-12` |
 | Las tablas `nudge_*` de las migraciones `017`, `019`, `028` | §4.1, intactas |
 
 **Qué se descarta:**
@@ -885,8 +885,8 @@ que el canal principal interrumpe.
 **Contradicciones que cierra:**
 
 `C-17` — *"Proactivos activados por defecto vs. consentimiento atómico y gate
-live posteriores."* Se cierra a favor de la regla posterior con `RUL-REC-04`,
-`SCR-REC-03` —donde la columna de correo se ve vacía— y `AC-REC-01`. La
+live posteriores."* Se cierra a favor de la regla posterior con `RUL-NOTIF-04`,
+`SCR-NOTIF-03` —donde la columna de correo se ve vacía— y `AC-NOTIF-01`. La
 tabla antigua de `05a` que los daba por activados no se hereda.
 
 **Decisiones tomadas en este documento**, registradas en

@@ -236,7 +236,7 @@ Nada caduca por antigüedad salvo lo que un módulo declare explícitamente:
 | Pendientes sin resolver | `27` |
 | Descubrimientos | `RUL-DESC-09` |
 | Aprendizajes sin usar, 12 meses | `RUL-MEM-13` |
-| Recordatorios | `RUL-REC-09` |
+| Recordatorios | `37` §5 y §7 (`expires_at`, máximo 30 días) |
 | Archivos de exportación, 24 h | `RUL-REP-13` |
 | Hechos de perfil revisables | `20c` §4 |
 

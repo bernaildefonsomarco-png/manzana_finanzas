@@ -198,7 +198,7 @@ recogidos aquí:
 |---|---|
 | No aparece en el Inicio | `RUL-DESC-13`, `RUL-HOME-10` |
 | No genera hechos de perfil | `RUL-MEM-11` |
-| No sale por correo, ni con opt-in | `RUL-REC-12` |
+| No sale por correo, ni con opt-in | `RUL-NOTIF-12` |
 | Se oculta entera en modo discreto | `RUL-CONF-03` |
 | Nunca se enuncia como cambio de comportamiento | `RUL-DESC-13` |
 
@@ -211,7 +211,7 @@ oculto al dueño.
 | Permiso | Cuándo se pide | Cómo se quita |
 |---|---|---|
 | Leer correos de un banco | Al conectar el buzón (`28`) | Desconectar, o pausar la fuente |
-| Escribir al correo, por tipo | Al activarlo (`37`, `RUL-REC-04`) | Un interruptor, o baja en un clic |
+| Escribir al correo, por tipo | Al activarlo (`37`, `RUL-NOTIF-04`) | Un interruptor, o baja en un clic |
 | Términos y privacidad | Al registrarse | No aplica: es condición de uso |
 
 Los tres primeros se registran en `consent_events` con su versión y su fecha,
@@ -590,7 +590,7 @@ suficiente para que alguien vea lo que no debía.
    pendientes abiertos se archivan (`28`); los movimientos ya confirmados se
    quedan (`RUL-CONF-06`).
 4. **Google revoca el permiso desde su lado.** Se detecta al fallar la lectura
-   y se avisa como `correo_desconectado` (`RUL-REC-01`).
+   y se avisa como `correo_desconectado` (`RUL-NOTIF-01`).
 5. **Se cambian los términos.** Se pide aceptar la versión nueva al entrar,
    con qué cambió resumido. No se bloquea el acceso a exportar ni a eliminar:
    **esos derechos no dependen de aceptar nada.**
@@ -653,7 +653,7 @@ Puente a WhatsApp: la fase 2 añade **un consentimiento más** —escribir al
 teléfono— con el mismo tratamiento: se pide, se registra con versión y fecha,
 y se quita en un clic. Y el modo discreto pasa a tener un significado nuevo,
 porque un mensaje con un monto llega a una pantalla de bloqueo. La regla de
-`RUL-REC-12` —el asunto nunca lleva monto ni categoría— es la que se hereda
+`RUL-NOTIF-12` —el asunto nunca lleva monto ni categoría— es la que se hereda
 para eso.
 
 ## 18. Trazabilidad
