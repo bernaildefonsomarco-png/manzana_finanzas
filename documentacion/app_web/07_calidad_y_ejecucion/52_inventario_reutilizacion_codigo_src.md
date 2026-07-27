@@ -409,6 +409,8 @@ tras medir el árbol entero, que no era obvio de antemano.
   cambios y no bloquean ningún corte web. Evidencia: `CODE`.
 - `AC-INV-12` — Ninguna pantalla reemplazada deja controles sin manejador en
   su sustituta. Evidencia: `TEST`. Clase: `lint`.
+- `AC-INV-13` — Todo resumen cuantitativo del corpus coincide con las filas de
+  las que se deriva. Evidencia: `TEST`. Clase: `corpus`.
 
 ---
 

@@ -143,10 +143,26 @@ El bloque mejor conservado para la app web. Ninguno se descarta.
 
 | Clasificación | Documentos | % del corpus legacy |
 |---|---|---:|
-| REUTILIZAR | 21 | ~38% |
-| REESCRIBIR | 11 | ~20% |
-| CONGELAR-WHATSAPP | 9 | ~16% |
-| DESCARTAR | 15 | ~26% |
+| REUTILIZAR | 26 | 48 % |
+| REESCRIBIR | 12 | 22 % |
+| DESCARTAR | 9 | 17 % |
+| CONGELAR-WHATSAPP | 7 | 13 % |
+| **Total** | **54** | |
+
+`05b_motor_ia.md` lleva doble clasificación —REESCRIBIR el 70 %, REUTILIZAR el
+30 %— y cuenta una sola vez, en REESCRIBIR.
+
+**Estas cifras se recontaron el 26 de julio de 2026 y no son las que este
+documento declaraba.** Decía 21 / 11 / 9 / 15, que suman 56 sobre 54 filas: un
+resumen escrito a mano que nunca se volvió a comprobar contra su propia tabla.
+Es el mismo defecto que el corpus encontró en el catálogo de comandos
+(`C-03`), en las páginas legales (`C-14`, `C-16`), en el mapa de rutas (`50`
+§5.3) y en las dos ramas de migraciones (`WEB-D163`) — y aquí apareció en el
+documento de gobierno que clasifica a todos los demás.
+
+El remedio es el mismo de las otras cuatro veces: la tabla de arriba pasa a
+ser una **vista generada** desde las filas de §3 a §9, con un test de clase
+`corpus` que falla si divergen (`AC-INV-13`).
 
 El bloque técnico (modelo de datos, arquitectura, cuentas/cajas, categorías,
 deudas, recurrentes, design system, app flow, especificación Hi-Fi) se

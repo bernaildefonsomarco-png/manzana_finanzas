@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 169 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 170 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -113,16 +113,16 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 
 ### 05 — Asistente
 
-| # | Documento | Estado |
-|---|---|---|
+| # | Documento | Estado | Notas |
+|---|---|---|---|
 | 40 | `40_catalogo_de_tools_y_comandos.md` | aprobado | **Agregación, no diseño.** 95 comandos, 145 entradas de lectura. Leer se compone; escribir se enumera. Seis niveles de confirmación. **Cierra `C-03`.** |
 | 41 | `41_asistente_ia_en_la_app.md` | aprobado | **El presentador web.** Invierte `05c` §15: la IA escribe, siempre con confirmación. Solo la prosa se transmite; las cifras no. |
 | 42 | `42_reutilizacion_del_codigo_existente_motor.md` | aprobado | **Primer contacto con `src/agents/`.** Casi la mitad sobrevive. Lo que se reemplaza son 150 líneas: el enum de 15 tools, el canal en el núcleo y el arnés. |
 
 ### 06 — Transversales
 
-| # | Documento | Estado |
-|---|---|---|
+| # | Documento | Estado | Notas |
+|---|---|---|---|
 | 43 | `43_auth_y_cuenta.md` | aprobado | Recuperación, reenvío y `/auth/callback`, que hoy no existen. Errores por código, no por texto. **Cierra `C-13`.** |
 | 44 | `44_onboarding_web.md` | aprobado | **Reescritura.** Tres puertas, ninguna obligatoria. Sin barra de progreso. Seis rutas dan valor con un solo dato. |
 | 45 | `45_configuracion_privacidad_y_control_de_datos.md` | aprobado | Configuración por secciones. Modo discreto con un punto de decisión. **Cierra `C-04`, `C-14` y `C-16`.** |
@@ -135,16 +135,17 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | # | Documento | Estado | Nota |
 |---|---|---|---|
 | 49 | `49_criterios_de_aceptacion_globales.md` | aprobado | **Agregación.** 625 criterios, tres portones, definición de "hecho". 69 identificadores ambiguos corregidos. |
-| 50 | `50_matriz_de_trazabilidad_web.md` | vivo | Registro de tokens (fuente única) y **único censo vivo** del corpus: 1.527 IDs. La matriz se genera, no se escribe. 16 rutas que el mapa no conocía. |
+| 50 | `50_matriz_de_trazabilidad_web.md` | vivo | Registro de tokens (fuente única) y **único censo vivo** del corpus: 1.550 IDs. La matriz se genera, no se escribe. 16 rutas que el mapa no conocía. |
 | 51 | `51_estrategia_de_pruebas_web.md` | aprobado | Árbol de decisión de clase de prueba. Seis comprobaciones que fallan el build. RLS por tabla. La cobertura nunca se había medido: el proveedor no estaba instalado. |
 | 52 | `52_inventario_reutilizacion_codigo_src.md` | aprobado | Veredicto sobre las 88.168 líneas de producción. Tres de cada cuatro sobreviven. 28 ficheros de `core/` mencionan WhatsApp: la prueba de agnosticismo no compila hoy. |
 | 53 | `53_deuda_tecnica_y_saneamiento.md` | aprobado | Cuatro deudas bloqueantes con evidencia de resolución exigida, siete con gate asignado, dos riesgos aceptados con condición. No se salda deuda en código condenado. |
 | 54 | `54_plan_de_implementacion_web.md` | aprobado | **Veinte cortes** `W-01`..`W-20` con entrega comprobable, precondición y grafo. Siete de cimientos antes de la primera función. Prompt de corte para agentes. |
-| 55 | `55_ledger_construccion_web.md` | no iniciado | |
-| 56 | `56_puente_a_fase_whatsapp.md` | no iniciado | |
+| 55 | `55_ledger_construccion_web.md` | vivo | Sucesor del `23b`, que tenía 8.082 líneas, cinco entradas y cero menciones de las migraciones que se aplicaron mientras estaba abierto. Tres mecanismos para que no se pare en silencio. |
+| 56 | `56_puente_a_fase_whatsapp.md` | aprobado | **Cierra el corpus.** Qué queda listo, qué se descongela de `docs/` y qué no, y las cinco listas que divergieron. |
 
-**Progreso: 57/60 documentos aprobados o vivos.** Olas 1 a 12 completas y la
-13 en marcha. Quedan dos: el ledger de construcción y el puente a la fase WhatsApp.
+**Progreso: 59/59 documentos aprobados o vivos. El corpus está completo.**
+Las trece olas de escritura están cerradas. La implementación empieza por
+`W-01` del `54_plan_de_implementacion_web.md`.
 
 ## 5. Orden de lectura por rol
 
@@ -177,7 +178,7 @@ OLA 9   37 38 39                  — COMPLETADA (26 de julio de 2026)
 OLA 10  40 41                     — COMPLETADA (26 de julio de 2026)
 OLA 11  42                        — COMPLETADA (26 de julio de 2026). Primer contacto autorizado con el código del motor
 OLA 12  43 44 45 46 47 48         — COMPLETADA (26 de julio de 2026)
-OLA 13  49 50 51 52 53 54 55 56   — en curso
+OLA 13  49 50 51 52 53 54 55 56   — COMPLETADA (26 de julio de 2026)
 ```
 
 Aristas que no se pueden invertir (detalle completo en el plan de sesión):
