@@ -65,6 +65,54 @@ resto sale bien.** Es la parte que la construcción anterior se saltó, y por es
 hay 17 modales a mano, cero rutas y 48 rutas esquivando RLS. Saltárselo otra
 vez produciría exactamente el mismo resultado con más código.
 
+### 3.1 Qué corte es dueño de cada documento
+
+`AC-PLAN-05` exige que **todo documento con criterios tenga exactamente un
+corte dueño**. Los 53 que los tienen:
+
+| Corte | Documentos |
+|---|---|
+| `W-01` | `06`, `07`, `49`, `50`, `52`, `53`, `54`, `56` |
+| `W-02` | `13`, `15` |
+| `W-03` | `51` |
+| `W-04` | `21` |
+| `W-05` | `14` |
+| `W-06` | `16`, `18` |
+| `W-07` | `08`, `10`, `11`, `12`, `17` |
+| `W-08` | `09`, `24`, `25` |
+| `W-09` | `26` |
+| `W-10` | `27`, `28`, `29` |
+| `W-11` | `30`, `31` |
+| `W-12` | `32`, `33` |
+| `W-13` | `34`, `36` |
+| `W-14` | `35`, `37`, `38` |
+| `W-15` | `39` |
+| `W-16` | `20`, `20b`, `20c`, `22`, `23`, `40`, `42` |
+| `W-17` | `41` |
+| `W-18` | `43`, `44`, `45` |
+| `W-19` | `19`, `46`, `47`, `48` |
+| `W-20` | `55` |
+
+Los seis de `00_gobierno/` no aparecen: gobiernan el proceso de escritura y no
+tienen criterios.
+
+**`RUL-PLAN-04` — Ser dueño de un documento y cerrar un criterio suyo son
+cosas distintas.** El documento tiene un solo corte dueño, que es quien
+responde de que quede implementado entero. Pero un corte anterior puede cerrar
+criterios sueltos de ese documento, y la matriz registra cuál lo hizo.
+
+Tres casos reales, y los tres son deliberados:
+
+| Criterio | Lo cierra | El documento es de |
+|---|---|---|
+| `AC-RT-01` — el proceso no arranca con motor de prueba en producción | `W-02` | `W-16` |
+| `AC-REU-06` — el arranque falla si `production_safe` es falso | `W-02` | `W-16` |
+| `AC-INV-03`, `AC-INV-04` — el canal fuera del núcleo | `W-04` | `W-01` |
+
+Los dos primeros son gates de seguridad que no pueden esperar al corte del
+motor. El tercero es la auditoría de canal, que tiene corte propio aunque su
+documento sea el inventario.
+
 ---
 
 ## 4. Bloque A — Cimientos
@@ -73,27 +121,43 @@ vez produciría exactamente el mismo resultado con más código.
 
 | | |
 |---|---|
-| **Entrega** | El repositorio describe lo que contiene: un árbol de migraciones, un README cierto y `/` que redirige. (`D-12`, que impedía compilar, se resolvió el 26 de julio antes de abrir el corte) |
-| **Implementa** | `52` §11, §12; `53` §3, §4 |
+| **Entrega** | El repositorio describe lo que contiene, y existe la herramienta que lo comprueba |
+| **Implementa** | `50`, `52`, `53`; y las aserciones sobre el corpus de `06`, `07`, `49`, `54`, `56` |
 | **Precondición** | Ninguna |
 | **Paga** | `D-05` (dos ramas), `D-10` (README), `D-11` (carpetas). `D-12` ya resuelta |
-| **Cierra** | `AC-INV-07`, `AC-INV-08`, `AC-INV-09`, `AC-INV-10`, `AC-DEUDA-04`, `AC-DEUDA-08` |
+| **Cierra** | `AC-INV-07`, `AC-INV-08`, `AC-INV-09`, `AC-INV-10`, `AC-DEUDA-04`, `AC-DEUDA-08`, `AC-TRAZ-01` a `AC-TRAZ-04` |
 
-Contenido concreto: `supabase/migrations/` como rama única y
-`migrations.test.ts` leyendo de ella; borrar las seis carpetas con solo
-`.gitkeep` y conservar las cuatro que el diseño llenará; corregir las ocho
-afirmaciones falsas del README; completar `PUBLIC_PATHS` del proxy con las
-ocho rutas públicas que faltan y añadir la redirección de `/` (`WEB-D151`).
+Contenido concreto:
+
+1. **El generador de la matriz** (`50` §8) y los tests de clase `corpus`. Van
+   aquí y no en `W-03` por una razón de arranque: `RUL-PLAN-02` exige
+   regenerar la matriz para cerrar cualquier corte, **incluido este**. Sin el
+   generador, `W-01` no puede cerrarse y el plan entero se queda parado en la
+   primera casilla. Es además un script que lee ficheros de texto: no necesita
+   nada de la aplicación.
+2. `supabase/migrations/` como rama única y `migrations.test.ts` leyendo de
+   ella.
+3. Borrar las seis carpetas con solo `.gitkeep` —`(dashboard)` entre ellas— y
+   conservar las cuatro que el diseño llenará.
+4. Corregir las ocho afirmaciones falsas del `README.md`.
+5. Completar `PUBLIC_PATHS` del proxy con las ocho rutas públicas que faltan.
+
+**Lo que este corte NO hace: la redirección de `/`.** `WEB-D151` la fija, pero
+hoy `src/app/page.tsx` renderiza `AuthScreen` sin sesión y `DashboardApp` con
+ella, y **ni `/entrar` ni `/inicio` existen todavía**. Implementarla aquí
+dejaría la aplicación inalcanzable. Se implementa en `W-07`, que es el corte
+que crea los dos destinos. Completar `PUBLIC_PATHS` sí es seguro: añadir a una
+lista de exclusión rutas que aún no existen no rompe nada.
 
 Es el corte más pequeño y va primero porque **todo lo demás se apoya en creer
-lo que el repositorio dice**.
+lo que el repositorio dice** — y ahora también en poder comprobarlo.
 
 ### `W-02` — RLS y arranque seguro
 
 | | |
 |---|---|
 | **Entrega** | El build falla si una ruta esquiva RLS sin justificación, y si el motor de prueba puede servir en producción |
-| **Implementa** | `15` completo; `23` §arranque; `42` §6 |
+| **Implementa** | `13`, `15`. Cierra además `AC-RT-01` y `AC-REU-06`, cuyos documentos son de `W-16` (`RUL-PLAN-04`) |
 | **Precondición** | `W-01` |
 | **Paga** | `D-02`, `D-03`, `D-04` |
 | **Cierra** | `AC-SEG-01` a `AC-SEG-08`, `AC-RT-01`, `AC-REU-06`, `AC-PRUEBA-05` |
@@ -129,7 +193,7 @@ clase `corpus`.
 | | |
 |---|---|
 | **Entrega** | La prueba de agnosticismo del `21` compila y pasa |
-| **Implementa** | `21`; `52` §4.1 |
+| **Implementa** | `21`. Cierra `AC-INV-03` y `AC-INV-04`, del `52`, que es de `W-01` (`RUL-PLAN-04`) |
 | **Precondición** | `W-03` (la prueba necesita dónde vivir) |
 | **Paga** | `D-01` |
 | **Cierra** | `AC-CANAL-01` a `AC-CANAL-09`, `AC-INV-03`, `AC-INV-04` |
@@ -171,15 +235,21 @@ porque se borre.
 | | |
 |---|---|
 | **Entrega** | Cada pantalla tiene URL propia, el botón atrás funciona, y ninguna pantalla implementa a mano su obtención de datos |
-| **Implementa** | `10`, `12`, `17` |
+| **Implementa** | `08`, `10`, `11`, `12`, `17` |
 | **Precondición** | `W-05`, `W-06` |
 | **Paga** | El router manual |
-| **Cierra** | `AC-NAV-01` a `AC-NAV-08`, `AC-ARQ-01` a `AC-ARQ-08`, `AC-PAT-01` a `AC-PAT-10` |
+| **Cierra** | `AC-NAV-01` a `AC-NAV-08`, `AC-ARQ-01` a `AC-ARQ-08`, `AC-PAT-01` a `AC-PAT-10`, `AC-EXP-*`, `AC-CONFIANZA-*` |
 
 Grupos `(publico)` y `(app)`, rutas interceptadas para los detalles,
 `loading.tsx` y `error.tsx` por segmento. Se elige aquí la librería de
 obtención de datos, la de formularios y la de fechas —las tres que `12` §2
 declara necesarias—. `dashboard-app.tsx` desaparece.
+
+**Aquí entra la redirección de `/`** (`WEB-D151`), porque es el corte que crea
+sus dos destinos: `/inicio` dentro de `(app)` y `/entrar` dentro de
+`(publico)`. La pantalla de entrada se mueve tal cual desde
+`src/app/page.tsx`; **mejorarla es `W-18`**, moverla es aquí. Sin este paso el
+producto se quedaría sin puerta de entrada entre `W-07` y `W-18`.
 
 **Aquí termina el bloque A.** A partir de este punto cada corte entrega
 producto.
@@ -195,7 +265,7 @@ Inicio el último porque agrega a todos.
 
 | Corte | Entrega | Implementa | Precondición |
 |---|---|---|---|
-| `W-08` | Se ven las cuatro capas del dinero y se clasifica lo que entra | `24`, `25` | `W-07` |
+| `W-08` | Se ven las cuatro capas del dinero y se clasifica lo que entra | `09`, `24`, `25` | `W-07` |
 | `W-09` | Los once tipos de movimiento se guardan desde Movimientos | `26` | `W-08` |
 | `W-10` | Nada se registra solo, y todo pendiente nace confirmable | `27`, `28`, `29` | `W-09` |
 | `W-11` | Se ve qué se debe y qué viene, sin doble descuento | `30`, `31` | `W-10` |
@@ -256,7 +326,7 @@ cuando toca tocarlos.
 |---|---|---|---|
 | `W-18` | Se puede entrar, recuperar la contraseña y llegar al primer valor | `43`, `44`, `45` | `W-15` |
 | `W-19` | Toda cifra se explica, y nada sale por correo sin permiso | `46`, `47`, `48`, `19` | `W-18` |
-| `W-20` | Los criterios de `G3` se cierran con usuarios y con series | `49` §8, §9; `55` | `W-19` |
+| `W-20` | Los criterios de `G3` se cierran con usuarios y con series | `55`, y los protocolos de `49` §8 y §9 | `W-19` |
 
 ### 7.1 Por qué auth va casi al final
 

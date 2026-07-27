@@ -324,7 +324,11 @@ y el `17` `AC-PAT-09` exige *"un único módulo de utilidades de fecha"*.
 que el diseño va a llenar es un marcador; una que nadie va a llenar es ruido
 que hace mentir al README.
 
-`src/app/(dashboard)/` se conserva y se renombra a `(app)` según `12` §5.
+`src/app/(dashboard)/` está entre las seis que desaparecen. El grupo `(app)`
+que dibuja `12` §5 **lo crea `W-07` con rutas dentro**, no se hereda
+renombrando una carpeta vacía: renombrarla dejaría un marcador de un grupo de
+rutas que todavía no existe, y los grupos de rutas de Next no son directorios
+opcionales sino parte del árbol de enrutado.
 
 ---
 
