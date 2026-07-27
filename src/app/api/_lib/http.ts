@@ -85,6 +85,8 @@ export function coreError(error: CoreError, meta: ApiMeta) {
   ]);
   const conflictCodes = new Set([
     "MOVEMENT_ALREADY_INACTIVE",
+    "MOVEMENT_NOT_DELETED",
+    "MOVEMENT_REVERSED_NOT_RESTORABLE",
     "DEBT_NOT_ACTIVE",
     "DEBT_PAYMENT_IDEMPOTENCY_CONFLICT",
   ]);

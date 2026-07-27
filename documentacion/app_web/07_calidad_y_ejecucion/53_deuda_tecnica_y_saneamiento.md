@@ -28,7 +28,7 @@ Lo que queda son tres categorías, y las tres son cortas.
 
 | Categoría | Cuántas | Qué las define |
 |---|---|---|
-| **Bloqueante** | 5 | Impiden que un corte del `54` pueda cerrarse. Exigen evidencia de resolución |
+| **Bloqueante** | 5 — **una resuelta** | Impiden que un corte del `54` pueda cerrarse. Exigen evidencia de resolución |
 | **Con gate asignado** | 7 | No bloquean hoy; tienen un corte concreto donde se pagan |
 | **Riesgo aceptado** | 2 | Se conocen, se registran y se convive con ellas hasta una fecha |
 
@@ -39,31 +39,66 @@ Lo que queda son tres categorías, y las tres son cortas.
 Una deuda es bloqueante cuando **algo que el corpus da por cierto no lo es**.
 No cuando molesta.
 
-### 2.0 `D-12` — El repositorio no compila
+### 2.0 `D-12` — El repositorio no compilaba · **RESUELTA**
 
 | | |
 |---|---|
-| **Qué** | `npm run build` falla. Cuatro errores de tipos: tres códigos de error lanzados en `command-dispatcher.ts` que no están en la unión `CoreErrorCode` de `src/core/finance/errors.ts`, y un `Json \| undefined` en `experience-preferences.repository.ts` |
-| **Desde cuándo** | Desde el commit de baseline. **El repositorio nunca ha compilado en la historia que este proyecto tiene registrada** |
-| **Por qué bloquea** | No hay nada que discutir: no se puede desplegar. Y `W-01` no puede cerrar `G1` sobre un árbol que no compila |
-| **Evidencia de resolución** | `npm run build` termina en verde, y `npm run typecheck` con cero errores |
-| **Corte** | `W-01`. Es lo primero |
+| **Qué** | `npm run build` fallaba. Cuatro errores de tipos: tres códigos de error lanzados en `command-dispatcher.ts` que no estaban en la unión `CoreErrorCode`, y un `Json \| undefined` en `experience-preferences.repository.ts` |
+| **Causa** | La implementación de `auditoria_integral_arquitectura_ia_conversacional_2026-07-23.md` **se interrumpió a medias y no se documentó** |
+| **Descubierta** | 26 de julio de 2026, al ejecutar `npm run build` por primera vez |
+| **Resuelta** | 26 de julio de 2026. `build`, `typecheck`, `lint` y `test` en verde |
+| **Corte** | Se adelantó a antes de `W-01` porque bloqueaba cualquier comprobación |
 
-**Los 863 tests pasan sobre código que no compila**, porque Vitest no
+**Los 863 tests pasaban sobre código que no compilaba**, porque Vitest no
 comprueba tipos. Es la ilustración más literal posible del argumento del `51`:
 una suite verde no dice que el código funcione, dice que las pruebas que
 existen pasan.
 
-Se descubrió el 26 de julio de 2026, al terminar el corpus y ejecutar por
-primera vez `npm run build`. **No estaba en ninguna lista de deuda porque
-nadie lo había ejecutado** — ni el diagnóstico inicial, que dio por buena la
-línea base sin comprobarla. Queda registrado así, con la fecha, porque el
-`AC-DEUDA-06` obliga a preguntarse qué gate faltaba: faltaba ejecutar el
-comando.
+**No estaba en ninguna lista de deuda porque nadie había ejecutado el
+comando** — ni el diagnóstico inicial, que dio por buena la línea base sin
+comprobarla. Es la respuesta a `AC-DEUDA-06`: el gate que faltaba era ejecutar
+`npm run build`, y ahora es `AC-DEUDA-08`.
 
-Los tres códigos que faltan son `MOVEMENT_NOT_DELETED`,
-`MOVEMENT_REQUIRES_SPECIALIZED_ENGINE` y `MOVEMENT_REVERSED_NOT_RESTORABLE`.
-La reparación son cuatro líneas; el hallazgo vale más que la reparación.
+**Qué se hizo, y por qué no fue solo hacer que compilara.** Los tres códigos
+—`MOVEMENT_NOT_DELETED`, `MOVEMENT_REVERSED_NOT_RESTORABLE` y
+`MOVEMENT_REQUIRES_SPECIALIZED_ENGINE`— son implementación **correcta** de
+reglas que el corpus exige: `26` pide restauración de eliminados, y `30` y `31`
+piden que un movimiento ligado a una deuda o a un recurrente se edite desde su
+flujo especializado. Lo que faltaba era declararlos. Así que además de añadirlos
+a la unión se clasificaron en el mapeo HTTP de `src/app/api/_lib/http.ts`: los
+dos primeros son conflicto de estado (**409**), el tercero es una operación
+rechazada con significado de redirección (**422**), que era el valor por
+defecto y resultó ser el correcto.
+
+### 2.0.1 El corte interrumpido, y qué queda de él
+
+El código que no compilaba viene de implementar la auditoría del 23 de julio.
+Se ejecutó buena parte y **no se registró en ningún sitio**: el ledger `23b`
+había dejado de escribirse el 18 de julio (`55` §1).
+
+Rastreado contra el árbol, el 26 de julio:
+
+| Corte de la auditoría | Estado en el código |
+|---|---|
+| A.1 `local_fixture` prohibido en producción | Implementado (`production_safe`) |
+| A.2 `focus_set` con IDs exactos | Implementado, migración `042` |
+| **A.5 separar reparar respuesta de corregir dinero** | **No implementado** |
+| B.1 `TurnWorkspace` | Implementado |
+| B.2 claims con `evidence_refs` | Implementado |
+| B.3 `EvidenceAndPolicyCompiler` | Implementado |
+| B2 memoria gobernada con estados | Implementado, migración `044` |
+| C.1 `ConversationalExecutiveAgent` | Implementado |
+
+**El corpus ya absorbió casi todo esto sin saber que venía de ahí.** El `13`
+documentó las migraciones `042` a `046` leyendo el SQL, y el `42` emitió
+veredicto sobre `TurnWorkspace`, el compilador de evidencia y el agente
+ejecutivo leyendo el código. Que dos documentos escritos a ciegas coincidan
+con un plan que nadie les enseñó dice algo bueno del método.
+
+**Lo único de la auditoría que no llegó al código es A.5**, y el corpus lo
+recogió por su cuenta: `11` separa *reparar respuesta* de *corregir dinero*
+como principio, y `36` lo implementa como memoria gobernable. Se construye en
+`W-13`, no como deuda pendiente sino como funcionalidad especificada.
 
 ### 2.1 `D-01` — El canal está dentro del núcleo
 

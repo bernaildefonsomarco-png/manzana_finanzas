@@ -73,10 +73,10 @@ vez produciría exactamente el mismo resultado con más código.
 
 | | |
 |---|---|
-| **Entrega** | **El repositorio compila**, describe lo que contiene, tiene un árbol de migraciones, un README cierto y `/` redirige |
+| **Entrega** | El repositorio describe lo que contiene: un árbol de migraciones, un README cierto y `/` que redirige. (`D-12`, que impedía compilar, se resolvió el 26 de julio antes de abrir el corte) |
 | **Implementa** | `52` §11, §12; `53` §3, §4 |
 | **Precondición** | Ninguna |
-| **Paga** | `D-12` (no compila), `D-05` (dos ramas), `D-10` (README), `D-11` (carpetas) |
+| **Paga** | `D-05` (dos ramas), `D-10` (README), `D-11` (carpetas). `D-12` ya resuelta |
 | **Cierra** | `AC-INV-07`, `AC-INV-08`, `AC-INV-09`, `AC-INV-10`, `AC-DEUDA-04`, `AC-DEUDA-08` |
 
 Contenido concreto: `supabase/migrations/` como rama única y
@@ -84,9 +84,6 @@ Contenido concreto: `supabase/migrations/` como rama única y
 `.gitkeep` y conservar las cuatro que el diseño llenará; corregir las ocho
 afirmaciones falsas del README; completar `PUBLIC_PATHS` del proxy con las
 ocho rutas públicas que faltan y añadir la redirección de `/` (`WEB-D151`).
-
-Y antes que nada, los cuatro errores de tipos de `D-12`: hoy `npm run build`
-falla, y ha fallado desde el commit inicial.
 
 Es el corte más pequeño y va primero porque **todo lo demás se apoya en creer
 lo que el repositorio dice**.

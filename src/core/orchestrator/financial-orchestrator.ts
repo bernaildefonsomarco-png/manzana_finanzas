@@ -17,7 +17,6 @@ import { DataAgent, type DataContextPack } from "@/agents/data-agent";
 import {
   CorrectionAgent,
   isCorrectionLikeText,
-  type CorrectionContextPack,
   type CorrectionMovementCandidate,
 } from "@/agents/correction-agent";
 import { ResponseAgent } from "@/agents/response-agent";

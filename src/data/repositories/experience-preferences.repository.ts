@@ -70,7 +70,7 @@ export async function setExperiencePreferences(
   };
 }
 
-function asRecord(value: Json | undefined): Record<string, Json> {
+function asRecord(value: Json | undefined): Record<string, Json | undefined> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value
     : {};
