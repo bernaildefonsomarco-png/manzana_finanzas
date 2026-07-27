@@ -219,7 +219,7 @@ nunca expone en un canal algo que el modo discreto oculta en el otro.
 - `AC-CANAL-01` — La prueba de agnosticismo de §8 pasa para los siete casos.
   Evidencia: `TEST`.
 - `AC-CANAL-02` — Ni el agente ni el verificador ni las consultas contienen
-  referencias a un canal concreto. Evidencia: `TEST` (regla de lint).
+  referencias a un canal concreto. Evidencia: `TEST`. Clase: `lint`.
 - `AC-CANAL-03` — Un bloque `cifra` sin referencias no llega a ningún
   presentador. Evidencia: `TEST`.
 - `AC-CANAL-04` — Un bloque `propuesta` sin comando ejecutable no llega a

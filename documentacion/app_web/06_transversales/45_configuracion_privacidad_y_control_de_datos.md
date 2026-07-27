@@ -622,7 +622,7 @@ consentimiento como palanca.
 - `AC-CONF-07` — Revocar un permiso **no borra** los datos ya registrados, y
   se dice. Evidencia: `TEST` + `USER`.
 - `AC-CONF-08` — **`/privacidad` contiene la declaración Limited Use de
-  Google.** Cierra `C-16`. Evidencia: `TEST` sobre el contenido publicado.
+  Google.** Cierra `C-16`. Evidencia: `TEST`. Clase: `contenido`.
 - `AC-CONF-09` — **`/eliminar-datos` describe el flujo en la aplicación como
   vía principal.** Cierra `C-14`. Evidencia: `TEST` + `USER`.
 - `AC-CONF-10` — El build falla si una afirmación comprobable de las páginas

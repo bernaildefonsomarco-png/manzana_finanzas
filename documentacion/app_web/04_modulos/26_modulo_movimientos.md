@@ -603,7 +603,7 @@ restauración.
 - `AC-MOV-01` — Los 11 tipos se guardan desde `/movimientos/nuevo` sin
   redirigir a otra pantalla. Evidencia: `TEST` + `USER`.
 - `AC-MOV-02` — El listado recorre el conjunto completo mediante cursor.
-  Evidencia: `TEST` (E2E).
+  Evidencia: `TEST`. Clase: `e2e`.
 - `AC-MOV-03` — Todos los filtros se aplican en el servidor.
   Evidencia: `TEST`.
 - `AC-MOV-04` — Ningún control del listado carece de manejador funcional.

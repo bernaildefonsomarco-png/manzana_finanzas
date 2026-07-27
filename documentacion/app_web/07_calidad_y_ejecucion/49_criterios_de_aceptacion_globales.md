@@ -36,8 +36,9 @@ verificable.
 
 ## 2. El inventario
 
-**625 criterios de aceptación, en 45 documentos.** Los seis de `00_gobierno/`
-no tienen: gobiernan el proceso de escritura, no el producto.
+**625 criterios de aceptación, en 45 documentos**, escritos antes de este.
+Los seis de `00_gobierno/` no tienen: gobiernan el proceso de escritura, no
+el producto.
 
 | Bloque | Documentos | Criterios |
 |---|---|---|
@@ -47,7 +48,17 @@ no tienen: gobiernan el proceso de escritura, no el producto.
 | `04_modulos/` | 24–39 | 292 |
 | `05_asistente/` | 40–42 | 47 |
 | `06_transversales/` | 43–48 | 92 |
-| **Total** | **45** | **625** |
+| **Total agregado aquí** | **45** | **625** |
+
+**Este documento no lleva el total del corpus.** Los documentos del bloque
+`07` añaden criterios propios y seguirán añadiéndolos, así que un total
+escrito aquí nace desactualizado. El censo vivo —criterios, identificadores,
+tokens— vive en `50_matriz_de_trazabilidad_web.md` §3, que es el único
+documento `vivo` de este bloque y el único autorizado a publicarlo.
+
+Las 625 son las que se agregaron para buscar defectos entre documentos, y son
+las que gobiernan §2.1, §3 y §7. Donde hace falta una cifra del corpus
+completo, este documento cita al `50`.
 
 ### 2.1 Por documento, con su perfil de portón
 
@@ -104,24 +115,30 @@ infraestructura real; `G3` los que exigen un usuario o una serie operativa.
 | `48` | `AC-AYUDA` | 13 | 9 | 0 | 4 |
 | **Total** | | **625** | **476** | **11** | **138** |
 
+Los criterios de los documentos del bloque `07` no entran en esta tabla: se
+agregan en `50` §3, con el resto del censo vivo.
+
 ### 2.2 Por nivel de evidencia
 
-Tal como estaban escritos, antes de las reasignaciones de §6.2 y §6.3. Un
-criterio puede exigir más de un nivel; la suma de la columna supera 625.
+Sobre las 625, y con las reasignaciones de §6.2 y §6.3 **aplicadas en los
+documentos donde vive cada criterio**, no solo declaradas aquí. Un criterio
+puede exigir más de un nivel; la suma de la columna supera 625.
 
-| Nivel | Criterios que lo exigen | % del corpus |
+| Nivel | Criterios que lo exigen | Antes de §6.2 y §6.3 |
 |---|---|---|
-| `DOC` | 18 | 2,9 % |
-| `CODE` | 66 | 10,6 % |
-| `TEST` | 557 | 89,1 % |
-| `SMOKE` | 2 | 0,3 % |
-| `LIVE` | 10 | 1,6 % |
-| `USER` | 121 | 19,4 % |
-| `METRIC` | 18 | 2,9 % |
+| `DOC` | 8 | 18 |
+| `CODE` | 66 | 66 |
+| `TEST` | 567 | 557 |
+| `SMOKE` | 2 | 2 |
+| `LIVE` | 10 | 10 |
+| `USER` | 121 | 121 |
+| `METRIC` | 18 | 18 |
 
-**557 criterios exigen una prueba automatizada.** Esa es la cifra que gobierna
-el documento `51`: no es un objetivo de cobertura porcentual, es un inventario
-nominal. Cada uno de los 557 tiene nombre y dueño.
+Los diez que cambian son ocho `DOC` de §6.3 y dos "revisión" de §6.2.
+
+**567 de las 625 exigen una prueba automatizada.** Es la cifra que gobierna el
+documento `51`: no es un objetivo de cobertura porcentual, es un inventario
+nominal. Cada una tiene nombre y dueño.
 
 ---
 
@@ -231,7 +248,7 @@ tests donde uno basta.
 Mismo hallazgo que `40` §9 encontró con las confirmaciones (44 fraseos para 6
 niveles) y que `47` §1 encontró con los tramos.
 
-Los 625 criterios declaran su evidencia con 25 cadenas distintas. Pero al
+Los 625 criterios declaraban su evidencia con 25 cadenas distintas. Así: Pero al
 mirarlas de cerca, la mayor parte de la variación **no es ruido: es
 información que no tenía dónde ir.**
 
@@ -336,39 +353,53 @@ pasó con `05c` §15 y §20 en el corpus anterior.
 
 ## 6. La clase de prueba — el eje que faltaba
 
-Un criterio declara ahora **dos cosas**, no una:
+Un criterio declara ahora **dos campos**, no uno. Sintaxis única en todo el
+corpus, sin variantes entre paréntesis ni comas:
 
 ```text
-Evidencia: <nivel>[ + <nivel>]      obligatorio, enum de 7 (01 §4)
-Clase:     <clase>                  obligatorio si el nivel incluye TEST
+- `AC-XXX-NN` — Enunciado verificable. Evidencia: `TEST`. Clase: `unidad`.
+- `AC-XXX-NN` — Enunciado verificable. Evidencia: `TEST` + `USER`. Clase: `e2e`.
+- `AC-XXX-NN` — Enunciado verificable. Evidencia: `CODE`.
 ```
+
+`Evidencia:` es obligatoria siempre y sale del enum de 7 de `01` §4.
+`Clase:` es obligatoria **si y solo si** el nivel incluye `TEST`, y sale del
+enum de §6.1. Un criterio con clase y sin `TEST` es un error de forma, igual
+que uno con `TEST` y sin clase.
 
 ### 6.1 El enum de clases
 
-| Clase | Qué es | Dónde vive | Criterios |
-|---|---|---|---|
-| `unidad` | Función o regla de negocio aislada | `*.test.ts` junto al código | 541, sin desglosar |
-| `integracion` | Ruta de API con base de datos real de prueba | `tests/api/` | incluido arriba |
-| `e2e` | Recorrido de usuario en navegador | `tests/e2e/` (Playwright) | 7 |
-| `lint` | Regla estática sobre el árbol de código | `eslint` local | 5 |
-| `build` | Falla la compilación, no solo la suite | Gate de arranque | 1 |
-| `presupuesto` | Límite numérico sobre un artefacto (bundle, consultas, llamadas) | CI | 1 |
-| `contenido` | Assert sobre texto publicado (páginas legales) | `tests/contenido/` | 1 |
-| `corpus` | Assert sobre los documentos de `documentacion/app_web/` | `tests/corpus/` | 11 |
-| **Total** | | | **567** |
+| Clase | Qué es | Dónde vive |
+|---|---|---|
+| `unidad` | Función o regla de negocio aislada | `*.test.ts` junto al código |
+| `integracion` | Ruta de API contra base de datos de prueba | `tests/api/` |
+| `e2e` | Recorrido de usuario en navegador | `tests/e2e/` (Playwright) |
+| `lint` | Regla estática sobre el árbol de código | `eslint` local |
+| `build` | Falla la compilación, no solo la suite | Gate de arranque |
+| `presupuesto` | Límite numérico sobre un artefacto (bundle, consultas, llamadas) | CI |
+| `contenido` | Assert sobre texto publicado (páginas legales) | `tests/contenido/` |
+| `corpus` | Assert sobre los documentos de `documentacion/app_web/` | `tests/corpus/` |
 
-Las siete clases distintas de `unidad`/`integracion` son las que los
-documentos ya habían anotado entre paréntesis; las 541 restantes las reparte
-el documento `51`, que es quien conoce el árbol de pruebas. Este documento fija
-el enum y exige que el campo exista.
+De las 625, **567 exigen `TEST` y solo 27 tienen clase decidible sin abrir el
+árbol de pruebas**: las diecisiete que ya venían anotadas entre paréntesis y
+las diez que §6.2 y §6.3 convierten. El reparto vivo, con los criterios del
+bloque `07` incluidos, está en `50` §3.
 
-Los 567 salen de los 557 que ya exigían `TEST` más los diez que se convierten:
-ocho `DOC` en §6.3 y dos "revisión" en §6.2. Las once de clase `corpus` son
-esos diez más `AC-MOTOR-10` — *"cualquier cosa que se pueda hacer en la
-interfaz se puede pedir hablando"*, que ya venía anotado como "cobertura del
-catálogo" y es exactamente un test de corpus: cruza los `ACT-` declarados en
-las §9 de los dieciséis módulos contra los 95 comandos de `40` §7. Ese sigue
-además exigiendo `USER`, así que vive en `G3`.
+**Las 540 restantes las asigna el documento `51`**, que es quien define el
+árbol de pruebas y sabe qué se puede probar dónde. Este documento fija el enum
+y exige que el campo exista.
+
+Este documento **no deja el cambio declarado**: los diez criterios de §6.2 y
+§6.3 están reescritos en los documentos donde viven, y los diecisiete que
+usaban anotaciones entre paréntesis están normalizados a la sintaxis de
+arriba. Declarar una corrección sin aplicarla es la forma más limpia de tener
+dos verdades, y es lo que este documento acaba de reprochar en §3.
+
+`AC-MOTOR-10` — *"cualquier cosa que se pueda hacer en la interfaz se puede
+pedir hablando"* — venía anotado como "cobertura del catálogo" y es
+exactamente un test de corpus: cruza los `ACT-` declarados en las §9 de los
+dieciséis módulos contra los 95 comandos de `40` §7. Sigue además exigiendo
+`USER`, así que vive en `G3`.
 
 La única de clase `contenido` es `AC-CONF-08`, que verifica la mención de
 Limited Use **contra el texto publicado en `/privacidad`**, no contra el que
@@ -551,7 +582,7 @@ producto funciona, que es distinto y llega después.
 
 ## 10. Reglas anti-autoengaño
 
-Los 625 criterios solo valen si cerrarlos cuesta más que no cerrarlos. Cinco
+Los criterios solo valen si cerrarlos cuesta más que no cerrarlos. Cinco
 reglas, todas nacidas de formas concretas en que este proyecto ya se engañó o
 podría hacerlo.
 
@@ -575,7 +606,7 @@ para el catálogo: la desincronización falla el build en vez de acumularse.
 Si al implementarlo se descubre que estaba mal planteado, se cambia — pero el
 cambio va al decision log con el motivo, y el criterio anterior queda
 `retirado`, no editado en silencio. Editar el criterio hasta que el código lo
-cumpla es la forma más limpia de tener 625 criterios cumplidos y un producto
+cumpla es la forma más limpia de tener todos los criterios cumplidos y un producto
 que no funciona.
 
 **`RUL-HECHO-05` — El corte no se declara cerrado por quien lo implementó.**
@@ -611,7 +642,7 @@ los nombra para que los llenen sus dueños:
 
 | Hueco | Dónde se resuelve |
 |---|---|
-| La clase de prueba de los 557 criterios `TEST` no está asignada una por una | `51_estrategia_de_pruebas_web.md` |
+| Los 540 criterios `TEST` sin clase asignada | `51_estrategia_de_pruebas_web.md` |
 | Los 138 criterios de `G3` no tienen dueño ni fecha | `50_matriz_de_trazabilidad_web.md` |
 | Los módulos `37` y `46` no tienen criterios de `G3` pese a ser los de mayor riesgo de fatiga | `51`, desde el lado de la estrategia de validación |
 
@@ -620,29 +651,29 @@ los nombra para que los llenen sus dueños:
 ## 12. Criterios de aceptación de este documento
 
 - `AC-HECHO-01` — Ningún identificador del corpus (`SCR-`, `ACT-`, `RUL-`,
-  `ERR-`, `AC-`) está definido en más de un documento. Evidencia: `TEST`,
-  clase `corpus`.
+  `ERR-`, `AC-`) está definido en más de un documento. Evidencia: `TEST`.
+  Clase: `corpus`.
 - `AC-HECHO-02` — Todo token de identificador usado en el corpus está en el
-  registro de `50` §2. Evidencia: `TEST`, clase `corpus`.
-- `AC-HECHO-03` — Los 625 criterios declaran nivel de evidencia y, si incluye
-  `TEST`, clase de prueba. Evidencia: `TEST`, clase `corpus`.
+  registro de `50` §2. Evidencia: `TEST`. Clase: `corpus`.
+- `AC-HECHO-03` — Todo criterio del corpus declara nivel de evidencia y, si incluye
+  `TEST`, clase de prueba. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-HECHO-04` — Ningún criterio declara "revisión" como evidencia.
-  Evidencia: `TEST`, clase `corpus`.
+  Evidencia: `TEST`. Clase: `corpus`.
 - `AC-HECHO-05` — Todo criterio del corpus aparece en la matriz de `50` con
-  estado. Evidencia: `TEST`, clase `corpus`.
+  estado. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-HECHO-06` — Ningún corte del plan `54` se declara cerrado con un
   criterio de `G1` en estado distinto de `verificado` o `derivado`.
-  Evidencia: `TEST`, clase `build`.
+  Evidencia: `TEST`. Clase: `build`.
 - `AC-HECHO-07` — Los criterios de `G3` de un corte cerrado figuran con dueño
-  y fecha, no como cerrados. Evidencia: `TEST`, clase `corpus`.
+  y fecha, no como cerrados. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-HECHO-08` — La suite reporta los tests `skip` con el ID del criterio que
   dejan abierto. Evidencia: `CODE` + `TEST`.
 - `AC-HECHO-09` — Ningún módulo reescribe un criterio transversal sin
-  declararlo como excepción justificada. Evidencia: `TEST`, clase `corpus`.
+  declararlo como excepción justificada. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-HECHO-10` — Un criterio `retirado` tiene entrada en
-  `03_decisiones_producto_web.md`. Evidencia: `TEST`, clase `corpus`.
+  `03_decisiones_producto_web.md`. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-HECHO-11` — Los cuatro criterios derivados de §7.2 apuntan al mismo test
-  que `AC-SEG-01` en la matriz. Evidencia: `TEST`, clase `corpus`.
+  que `AC-SEG-01` en la matriz. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-HECHO-12` — Un `USER` cerrado tiene registro de tres personas en el
   ledger `55`, incluidas las que no completaron la tarea. Evidencia: `DOC`.
 
@@ -737,6 +768,6 @@ falsa, y ninguna de las dos cosas se veía leyendo el documento 47 solo.
 | Documento que depende de este | Qué toma |
 |---|---|
 | `50_matriz_de_trazabilidad_web.md` | El registro de tokens, el inventario de 625, los estados |
-| `51_estrategia_de_pruebas_web.md` | Los 557 `TEST`, el enum de clases, los huecos de §11 |
+| `51_estrategia_de_pruebas_web.md` | Los 567 `TEST` —540 sin clase—, el enum, los huecos de §11 |
 | `54_plan_de_implementacion_web.md` | Los tres portones y la definición de corte cerrado |
 | `55_ledger_construccion_web.md` | El registro de `USER` y `METRIC` |

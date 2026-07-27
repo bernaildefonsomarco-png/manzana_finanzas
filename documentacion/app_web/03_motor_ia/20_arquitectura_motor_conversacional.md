@@ -472,7 +472,7 @@ umbrales vive en `23_runtime_ia_modos_costo_y_degradacion.md`.
   provenga de datos consultados en ese turno. Evidencia: `TEST`.
 - `AC-MOTOR-09` — Como máximo un hallazgo por turno. Evidencia: `TEST`.
 - `AC-MOTOR-10` — Cualquier cosa que se pueda hacer en la interfaz se puede
-  pedir hablando. Evidencia: `TEST` (cobertura del catálogo) + `USER`.
+  pedir hablando. Evidencia: `TEST` + `USER`. Clase: `corpus`.
 - `AC-MOTOR-11` — El motor no contiene ninguna referencia a un canal
   concreto fuera del puerto y los presentadores. Evidencia: `TEST`.
 - `AC-MOTOR-12` — Ningún texto afirma que algo se registró antes de que el

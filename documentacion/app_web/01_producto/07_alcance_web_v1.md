@@ -235,11 +235,11 @@ producto ("no es contable", "no es multiusuario") se mantienen.
 
 - `AC-ALCANCE-01` — Cada uno de los 16 documentos de módulo declara en su §2
   un alcance idéntico al fijado aquí; cualquier divergencia se resuelve
-  actualizando este documento primero. Evidencia: `DOC`.
+  actualizando este documento primero. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-ALCANCE-02` — Ninguna funcionalidad marcada `FUERA` aparece
-  especificada como activa en ningún documento del corpus. Evidencia: `DOC`.
+  especificada como activa en ningún documento del corpus. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-ALCANCE-03` — Las funcionalidades `V1.1` no bloquean el modelo de datos:
   `13_modelo_datos_web_v1.md` deja el espacio necesario sin implementarlas.
   Evidencia: `DOC`.
 - `AC-ALCANCE-04` — Los cuatro trabajos de `06_tesis_app_web.md` §2 tienen
-  cobertura completa por los módulos `IN`. Evidencia: `DOC`.
+  cobertura completa por los módulos `IN`. Evidencia: `TEST`. Clase: `corpus`.

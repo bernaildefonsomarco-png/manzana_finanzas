@@ -201,7 +201,7 @@ restaurar — se verifican manualmente antes de cada lanzamiento.
 ## 11. Criterios de aceptación
 
 - `AC-A11Y-01` — Todo flujo crítico se completa solo con teclado.
-  Evidencia: `TEST` (E2E).
+  Evidencia: `TEST`. Clase: `e2e`.
 - `AC-A11Y-02` — Ningún elemento elimina el indicador de foco sin
   reemplazarlo. Evidencia: `TEST`.
 - `AC-A11Y-03` — Todo par de tokens cumple contraste AA en modo claro y

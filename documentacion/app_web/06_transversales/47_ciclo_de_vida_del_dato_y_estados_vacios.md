@@ -311,7 +311,7 @@ para qué sirve la pantalla y una acción.
 - `AC-VIDA-01` — Los cuatro tramos de presentación son los mismos en todos los
   módulos y coinciden con `39` §5. Evidencia: `DOC` + `TEST`.
 - `AC-VIDA-02` — Ninguna §12 usa "pocos" o "muchos" sin declarar el corte.
-  Evidencia: `DOC`.
+  Evidencia: `TEST`. Clase: `corpus`.
 - `AC-VIDA-03` — Los cinco estados genéricos usan los nombres de
   `RUL-VIDA-03`. Evidencia: `CODE` + `TEST`.
 - `AC-VIDA-04` — `vacío` y `sin resultados` producen mensajes distintos, y

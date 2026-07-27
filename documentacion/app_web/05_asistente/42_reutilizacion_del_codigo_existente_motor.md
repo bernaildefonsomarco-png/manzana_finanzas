@@ -435,7 +435,7 @@ tirar la herramienta antes de hacer el trabajo.
 
 - `AC-REU-01` — Ningún documento del bloque `03_motor_ia/` se modificó después
   de leer el código. El diseño no se ajustó a lo implementado.
-  Evidencia: `DOC` (historial de git).
+  Evidencia: `DOC`.
 - `AC-REU-02` — `channel` no aparece en ningún tipo del núcleo fuera de la
   entrada y del registro. Evidencia: `CODE` + `TEST`.
 - `AC-REU-03` — La prueba de agnosticismo de `21` §8 es escribible y pasa.
@@ -446,7 +446,7 @@ tirar la herramienta antes de hacer el trabajo.
   `can_model_mutate_financial_data` siguen siendo tipos literales.
   Evidencia: `CODE`.
 - `AC-REU-06` — El arranque falla si `production_safe` es falso en producción.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `build`.
 - `AC-REU-07` — No queda ningún enum cerrado de herramientas de lectura.
   Evidencia: `CODE`.
 - `AC-REU-08` — El presupuesto de llamadas al modelo por turno baja de cuatro

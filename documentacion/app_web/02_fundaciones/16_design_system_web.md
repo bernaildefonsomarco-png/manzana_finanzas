@@ -293,7 +293,7 @@ sin accesibilidad propia.
 ## 12. Criterios de aceptación
 
 - `AC-DS-01` — Ningún componente escribe un color, espaciado o radio literal;
-  todos usan tokens. Evidencia: `TEST` (regla de lint).
+  todos usan tokens. Evidencia: `TEST`. Clase: `lint`.
 - `AC-DS-02` — Todo token semántico tiene valor en modo claro y oscuro.
   Evidencia: `TEST`.
 - `AC-DS-03` — Todo contraste de texto cumple 4.5:1 en ambos modos.

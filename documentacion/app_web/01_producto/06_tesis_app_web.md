@@ -202,10 +202,10 @@ presentador. El checklist de lo que queda listo para ese momento vive en
 
 - `AC-TESIS-01` — Ningún documento del corpus define una capacidad de la app
   web por contraste con WhatsApp ("no debe competir con", "no tan rápido
-  como"). Evidencia: `DOC`.
+  como"). Evidencia: `TEST`. Clase: `corpus`.
 - `AC-TESIS-02` — Los cuatro trabajos de §2 tienen al menos un módulo
-  asignado en `07_alcance_web_v1.md`. Evidencia: `DOC`.
+  asignado en `07_alcance_web_v1.md`. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-TESIS-03` — Las ocho condiciones de verdad de §8 tienen documento
-  responsable asignado y criterio de aceptación propio. Evidencia: `DOC`.
+  responsable asignado y criterio de aceptación propio. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-TESIS-04` — Un usuario nuevo real obtiene una respuesta útil sobre su
   dinero en su primera sesión. Evidencia: `USER`.

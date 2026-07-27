@@ -298,13 +298,13 @@ el `trace_id` disponible para soporte.
 - `AC-ARQ-02` — Cada segmento de `(app)` tiene `loading.tsx` y `error.tsx`,
   propios o heredados deliberadamente. Evidencia: `CODE`.
 - `AC-ARQ-03` — Abrir el Inicio no descarga el código de reportes, del
-  importador ni del asistente. Evidencia: `TEST` (presupuesto de bundle).
+  importador ni del asistente. Evidencia: `TEST`. Clase: `presupuesto`.
 - `AC-ARQ-04` — Ningún componente de UI supera 150 líneas sin justificación
-  registrada. Evidencia: `TEST` (regla de lint).
+  registrada. Evidencia: `TEST`. Clase: `lint`.
 - `AC-ARQ-05` — Ningún Client Component importa repositorios ni clientes de
-  base de datos. Evidencia: `TEST` (regla de lint).
+  base de datos. Evidencia: `TEST`. Clase: `lint`.
 - `AC-ARQ-06` — Ninguna mutación recarga el listado completo; invalida solo
   las claves afectadas. Evidencia: `CODE` + `TEST`.
 - `AC-ARQ-07` — `core/` no importa React ni Next.js. Evidencia: `TEST`.
 - `AC-ARQ-08` — Abrir un detalle desde un listado muestra un panel y cambia
-  la URL; recargar esa URL muestra la pantalla completa. Evidencia: `TEST` (E2E).
+  la URL; recargar esa URL muestra la pantalla completa. Evidencia: `TEST`. Clase: `e2e`.

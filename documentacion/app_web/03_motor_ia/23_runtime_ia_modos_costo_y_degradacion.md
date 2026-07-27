@@ -303,7 +303,7 @@ evidencia lo sustenta. Acertar la cifra sin poder mostrarla no cuenta.
 ## 11. Criterios de aceptación
 
 - `AC-RT-01` — El proceso no arranca si en producción el proveedor por
-  defecto es el de prueba. Evidencia: `TEST` + `LIVE`.
+  defecto es el de prueba. Evidencia: `TEST` + `LIVE`. Clase: `build`.
 - `AC-RT-02` — Cada componente declara su proveedor explícitamente; ninguno
   lo hereda. Evidencia: `CODE` + `TEST`.
 - `AC-RT-03` — La verificación de estado devuelve error si algún componente

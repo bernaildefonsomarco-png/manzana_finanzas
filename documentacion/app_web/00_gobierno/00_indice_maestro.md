@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 156 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 164 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -58,7 +58,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | # | Documento | Estado | Notas |
 |---|---|---|---|
 | 12 | `12_arquitectura_app_web.md` | aprobado | App Router real: frontera servidor/cliente, rutas interceptadas, dónde vive cada tipo de estado. |
-| 13 | `13_modelo_datos_web_v1.md` | aprobado | Documenta por primera vez las migraciones 042-046. Añade 21 tablas y 24 enums (migraciones 047-063), incluidas las del panorama, el perfil y el ciclo de promoción. |
+| 13 | `13_modelo_datos_web_v1.md` | aprobado | Documenta por primera vez las migraciones 042-046. Añade las tablas de los módulos nuevos en las migraciones 047-065 (dos de ellas, `049` y `050`, diferidas a V1.1 y no aplicadas), incluidas las del panorama, el perfil y el ciclo de promoción. |
 | 14 | `14_contratos_api_web.md` | aprobado | Paginación por cursor, filtros server-side, límite de peticiones, CSRF. |
 | 15 | `15_seguridad_autorizacion_y_rls.md` | aprobado | Política RLS-first. 48 de 58 rutas usan service-role hoy; lista blanca + test que falla el build. |
 | 16 | `16_design_system_web.md` | aprobado | 18 primitivas faltantes + 12 componentes de dominio. Elimina el `modal-accessibility-guard`. |
@@ -135,16 +135,16 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | # | Documento | Estado | Nota |
 |---|---|---|---|
 | 49 | `49_criterios_de_aceptacion_globales.md` | aprobado | **Agregación.** 625 criterios, tres portones, definición de "hecho". 69 identificadores ambiguos corregidos. |
-| 50 | `50_matriz_de_trazabilidad_web.md` | vivo | Registro de tokens (fuente única) y censo de 1.458 IDs. La matriz se genera, no se escribe. 16 rutas que el mapa no conocía. |
-| 51 | `51_estrategia_de_pruebas_web.md` | no iniciado | |
+| 50 | `50_matriz_de_trazabilidad_web.md` | vivo | Registro de tokens (fuente única) y **único censo vivo** del corpus: 1.495 IDs. La matriz se genera, no se escribe. 16 rutas que el mapa no conocía. |
+| 51 | `51_estrategia_de_pruebas_web.md` | aprobado | Árbol de decisión de clase de prueba. Seis comprobaciones que fallan el build. RLS por tabla. La cobertura nunca se había medido: el proveedor no estaba instalado. |
 | 52 | `52_inventario_reutilizacion_codigo_src.md` | no iniciado | |
 | 53 | `53_deuda_tecnica_y_saneamiento.md` | no iniciado | |
 | 54 | `54_plan_de_implementacion_web.md` | no iniciado | |
 | 55 | `55_ledger_construccion_web.md` | no iniciado | |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado | |
 
-**Progreso: 53/60 documentos aprobados o vivos.** Olas 1 a 12 completas y la
-13 en marcha. Quedan seis documentos, todos del bloque de calidad y ejecución.
+**Progreso: 54/60 documentos aprobados o vivos.** Olas 1 a 12 completas y la
+13 en marcha. Quedan cinco documentos, todos del bloque de calidad y ejecución.
 
 ## 5. Orden de lectura por rol
 

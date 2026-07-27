@@ -267,11 +267,11 @@ ofrece salida.
 ## 11. Criterios de aceptación
 
 - `AC-PAT-01` — Ninguna pantalla implementa a mano el patrón de obtención de
-  datos. Evidencia: `TEST` (regla de lint).
+  datos. Evidencia: `TEST`. Clase: `lint`.
 - `AC-PAT-02` — Ninguna mutación invalida claves no relacionadas.
   Evidencia: `CODE` + `TEST`.
 - `AC-PAT-03` — Todo listado recorre su conjunto completo mediante cursor.
-  Evidencia: `TEST` (E2E).
+  Evidencia: `TEST`. Clase: `e2e`.
 - `AC-PAT-04` — Ningún filtro se aplica en el cliente sobre datos ya
   descargados. Evidencia: `TEST`.
 - `AC-PAT-05` — "Vacío" y "sin resultados" son estados distintos con

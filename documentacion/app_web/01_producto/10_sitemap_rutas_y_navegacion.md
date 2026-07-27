@@ -263,11 +263,11 @@ Proyecciones, Reportes, Asistente, Memoria) se definen en
 ## 11. Criterios de aceptación
 
 - `AC-NAV-01` — Toda pantalla listada en §3.2 responde en su propia URL y se
-  puede cargar directamente. Evidencia: `TEST` (E2E).
+  puede cargar directamente. Evidencia: `TEST`. Clase: `e2e`.
 - `AC-NAV-02` — El botón atrás del navegador devuelve a la pantalla anterior
-  con sus filtros intactos. Evidencia: `TEST` (E2E).
+  con sus filtros intactos. Evidencia: `TEST`. Clase: `e2e`.
 - `AC-NAV-03` — Copiar la URL de un listado filtrado y abrirla en otra
-  pestaña reproduce exactamente el mismo resultado. Evidencia: `TEST` (E2E).
+  pestaña reproduce exactamente el mismo resultado. Evidencia: `TEST`. Clase: `e2e`.
 - `AC-NAV-04` — Ninguna ruta de la aplicación usa `?view=`. Evidencia: `TEST`.
 - `AC-NAV-05` — Cada segmento tiene `loading.tsx` y `error.tsx`, propios o
   heredados deliberadamente. Evidencia: `CODE`.

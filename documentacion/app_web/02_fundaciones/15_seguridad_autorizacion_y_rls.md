@@ -185,8 +185,7 @@ desconectar, sin que el esquema obligue a conservar un secreto.
 ## 11. Criterios de aceptación
 
 - `AC-SEG-01` — Ninguna ruta de `/api/v1` importa `createServiceClient`
-  salvo las de la lista blanca justificada. Evidencia: `TEST` (falla la
-  compilación).
+  salvo las de la lista blanca justificada. Evidencia: `TEST`. Clase: `build`.
 - `AC-SEG-02` — Para cada tabla con datos de usuario existe una prueba que
   verifica que el cliente autenticado no puede leer ni escribir filas de
   otro usuario. Evidencia: `TEST`.

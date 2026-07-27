@@ -955,7 +955,7 @@ Los índices de las tablas existentes se conservan según
 - `AC-DATOS-06` — Un presupuesto no modifica ningún saldo ni el dinero libre.
   Evidencia: `TEST`.
 - `AC-DATOS-07` — Las migraciones 042 a 046 quedan documentadas y sus
-  capacidades tienen módulo responsable asignado. Evidencia: `DOC`.
+  capacidades tienen módulo responsable asignado. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-DATOS-08` — Cada listado paginado tiene un índice que cubre su orden
   estable. Evidencia: `CODE` + `TEST`.
 - `AC-DATOS-09` — Un hecho de perfil observado no entra en
@@ -969,6 +969,6 @@ Los índices de las tablas existentes se conservan según
 - `AC-DATOS-13` — Un cálculo marcado `conocimiento_mundo` nunca alcanza el
   estado `candidato`. Evidencia: `TEST`.
 - `AC-DATOS-14` — `conversation_summaries` no contiene transcripción ni
-  detalle de categorías sensibles. Evidencia: `TEST` + revisión.
+  detalle de categorías sensibles. Evidencia: `TEST`. Clase: `unidad`.
 - `AC-DATOS-15` — Exportar los datos del usuario incluye su perfil completo, y
   eliminar la cuenta lo elimina. Evidencia: `TEST`.

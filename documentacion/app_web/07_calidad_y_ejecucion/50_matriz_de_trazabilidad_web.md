@@ -4,7 +4,7 @@
 **Alcance:** V1
 **Estado:** vivo
 **Fecha de última actualización:** 26 de julio de 2026
-**Docs fuente:** los 52 documentos del corpus con identificadores
+**Docs fuente:** los documentos del corpus con identificadores (51 a fecha de hoy)
 **Documentos que dependen de este:** `51` (pruebas), `54` (plan), `55` (ledger)
 
 ---
@@ -17,14 +17,14 @@ La matriz une cada requisito con su implementación real:
 ID → documento y sección → ruta URL → endpoint → componente → test → evidencia → estado
 ```
 
-**No es una tabla escrita a mano.** El corpus tiene **1.458 identificadores**.
-Una tabla de 1.458 filas mantenida a mano estaría desactualizada la primera
+**No es una tabla escrita a mano.** El corpus tiene **1.495 identificadores** (§3).
+Una tabla de ese tamaño mantenida a mano estaría desactualizada la primera
 semana de implementación, y el corpus ya sabe exactamente cómo termina eso:
 `C-03` fue una lista de tools mantenida a mano junto a otra lista de tools,
 divergiendo en silencio hasta que alguien las contó.
 
-Así que este documento contiene **cuatro cosas** y ninguna de ellas son 1.458
-filas:
+Así que este documento contiene **cuatro cosas**, y ninguna de ellas es la
+lista completa de filas:
 
 1. **El registro de tokens** (§2) — la única fuente de verdad del corpus para
    los nombres cortos de módulo. Se mantiene a mano porque cabe en una
@@ -36,7 +36,7 @@ filas:
 4. **Las reglas que la mantienen viva** (§8) y lo que reveló al cruzarse por
    primera vez (§9).
 
-La matriz de 1.458 filas **se genera**: sale de leer los documentos y el árbol
+La matriz completa **se genera**: sale de leer los documentos y el árbol
 de código, y un test falla si el generador encuentra un ID que no puede
 resolver. Ese es el mismo mecanismo con el que `40` §2 cerró `C-03` y con el
 que `WEB-D147` convierte los criterios sobre el corpus en tests.
@@ -116,8 +116,9 @@ tabla de datos y no con la pantalla.
 | `48` | `AYUDA` | Ayuda, explicabilidad y soporte |
 | `49` | `HECHO` | Criterios de aceptación globales |
 | `50` | `TRAZ` | Trazabilidad y registro de identificadores |
+| `51` | `PRUEBA` | Estrategia de pruebas |
 
-**47 tokens en total.** Los seis documentos de `00_gobierno/` no tienen: no
+**48 tokens en total.** Los seis documentos de `00_gobierno/` no tienen: no
 definen reglas ni criterios propios, gobiernan el proceso de escritura. Los
 del bloque `07` que aún no existen tomarán el suyo aquí antes de usarlo
 (`RUL-TRAZ-02`).
@@ -144,30 +145,62 @@ que incumplía su propia regla.
 
 ## 3. Censo de identificadores
 
-Vista generada, con este documento ya dentro. **1.479 identificadores** en 50
-documentos.
+**Este es el único censo vivo del corpus.** El `49` §2 agrega los 625
+criterios que existían antes del bloque `07` y deliberadamente no publica
+totales: los documentos de este bloque siguen añadiendo identificadores, y un
+total escrito en un documento `aprobado` nace desactualizado.
+
+Última regeneración: 26 de julio de 2026, tras el documento `51`.
+**1.495 identificadores en 51 documentos.**
 
 | Familia | Únicos | Qué identifica |
 |---|---|---|
 | `MOD-` | 17 | Módulo funcional completo |
 | `SCR-` | 119 | Pantalla, panel o componente de superficie |
 | `ACT-` | 232 | Acción que el usuario puede disparar |
-| `RUL-` | 303 | Regla de negocio verificable |
+| `RUL-` | 305 | Regla de negocio verificable |
 | `ERR-` | 159 | Error de dominio con mensaje visible |
-| `AC-` | 649 | Criterio de aceptación |
-| **Total** | **1.479** | |
+| `AC-` | 663 | Criterio de aceptación |
+| **Total** | **1.495** | |
 
 **Ningún identificador citado queda sin definición.** Se verificó familia por
 familia; los tres colgantes que había estaban en la tabla de ejemplos de `01`
 §3 y se corrigieron (`RUL-TRAZ-04`).
 
-Los 649 `AC-` son los 625 que el `49` inventarió, más sus 12 `AC-HECHO-`, más
-los 12 `AC-TRAZ-` de este documento.
+Los 663 `AC-` son los 625 del `49` §2, más 12 `AC-HECHO-`, 12 `AC-TRAZ-` y 14
+`AC-PRUEBA-`.
 
-Sesenta cadenas distintas aparecen como token en algún identificador: los 47
-del registro más los trece `MOD-` de nombre largo que no coinciden con su
-token corto (`MOD-MOVIMIENTOS` frente a `MOV`). Las dos formas conviven a
-propósito y el test las distingue por familia.
+Sesenta y una cadenas distintas aparecen como token: los 48 del registro más
+los trece `MOD-` de nombre largo que no coinciden con su token corto
+(`MOD-MOVIMIENTOS` frente a `MOV`). Las dos formas conviven a propósito y el
+test las distingue por familia.
+
+### 3.1 Los criterios, por portón y por clase
+
+| Portón | Criterios |
+|---|---|
+| `G1` construido | 513 |
+| `G2` probado en real | 11 |
+| `G3` validado | 139 |
+| **Total** | **663** |
+
+| Clase de prueba | Asignadas |
+|---|---|
+| `corpus` | 30 |
+| `build` | 9 |
+| `e2e` | 8 |
+| `lint` | 6 |
+| `presupuesto` | 2 |
+| `contenido` | 1 |
+| `integracion` | 1 |
+| `unidad` | 1 |
+| **Con clase** | **58** |
+| **Con `TEST` y sin clase** | **542** |
+| **Total con `TEST`** | **600** |
+
+Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
+posible. Las 542 sin clase las reparte el `51` §4 al escribir cada prueba, y
+`AC-HECHO-03` impide que ninguna llegue a `verificado` sin ella.
 
 ---
 
@@ -443,28 +476,27 @@ Documentos corregidos: `39` §8, `44` §8, `10` §3.1, `12` §5, `07` §3.16.
 ## 10. Criterios de aceptación
 
 - `AC-TRAZ-01` — Todo identificador del corpus tiene fila en la matriz.
-  Evidencia: `TEST`, clase `corpus`.
+  Evidencia: `TEST`. Clase: `corpus`.
 - `AC-TRAZ-02` — Ningún token usado está fuera del registro de §2.
-  Evidencia: `TEST`, clase `corpus`.
-- `AC-TRAZ-03` — Ningún ID citado carece de definición. Evidencia: `TEST`,
-  clase `corpus`.
+  Evidencia: `TEST`. Clase: `corpus`.
+- `AC-TRAZ-03` — Ningún ID citado carece de definición. Evidencia: `TEST`.
+  Clase: `corpus`.
 - `AC-TRAZ-04` — Las 119 superficies declaran una línea `**Ruta:**`, con ruta
-  o con tratamiento. Evidencia: `TEST`, clase `corpus`.
+  o con tratamiento. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-TRAZ-05` — El inventario de rutas del mapa de `10` §3 coincide
-  exactamente con el declarado por las §8. Evidencia: `TEST`, clase `build`.
+  exactamente con el declarado por las §8. Evidencia: `TEST`. Clase: `build`.
 - `AC-TRAZ-06` — Ninguna página publicada carece de documento dueño.
-  Evidencia: `TEST`, clase `corpus`.
+  Evidencia: `TEST`. Clase: `corpus`.
 - `AC-TRAZ-07` — La matriz se regenera sin edición manual y el resultado es
   idéntico ejecutándola dos veces. Evidencia: `TEST`.
 - `AC-TRAZ-08` — Ningún criterio en estado `verificado` tiene su test en
-  `skip`. Evidencia: `TEST`, clase `build`.
+  `skip`. Evidencia: `TEST`. Clase: `build`.
 - `AC-TRAZ-09` — Ninguna funcionalidad marcada `FUERA` en `07` §3 tiene fila
-  con `componente` no vacío. Evidencia: `TEST`, clase `build`.
+  con `componente` no vacío. Evidencia: `TEST`. Clase: `build`.
 - `AC-TRAZ-10` — Todo criterio de `G3` cerrado como corte tiene `dueño` y
-  `fecha_revision`. Evidencia: `TEST`, clase `corpus`.
+  `fecha_revision`. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-TRAZ-11` — Ningún endpoint de los 187 llega a producción con
-  service-role fuera de la lista blanca de `15`. Evidencia: `TEST`, clase
-  `build`.
+  service-role fuera de la lista blanca de `15`. Evidencia: `TEST`. Clase: `build`.
 - `AC-TRAZ-12` — Una regeneración posterior al último commit de cada corte
   existe antes de declararlo cerrado. Evidencia: `DOC`.
 
@@ -476,7 +508,7 @@ Este documento no asigna clases de prueba (es del `51`), no reparte el código
 existente (es del `52`), no define los cortes (es del `54`) y no lleva el
 registro de sesiones con usuarios (es del `55`).
 
-Tampoco es un panel: no muestra progreso porcentual. Un porcentaje sobre 1.458
+Tampoco es un panel: no muestra progreso porcentual. Un porcentaje sobre mil quinientos
 identificadores heterogéneos no significa nada, y `WEB-D146` ya prohibió
 cerrar portones parcialmente.
 

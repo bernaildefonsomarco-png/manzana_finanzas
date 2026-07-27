@@ -498,7 +498,7 @@ rubros comerciales ni la estacionalidad.
 - `AC-SEM-01` — El `user_id` lo inyecta el compilador; el lenguaje no puede
   expresarlo. Evidencia: `TEST`.
 - `AC-SEM-02` — El modelo del dominio no contiene conocimiento del mundo
-  (feriados, rubros, estacionalidad). Evidencia: `DOC` + revisión.
+  (feriados, rubros, estacionalidad). Evidencia: `TEST`. Clase: `corpus`.
 - `AC-SEM-03` — Cuando el motor usa conocimiento del mundo en un cálculo, lo
   declara como supuesto visible. Evidencia: `TEST` + `USER`.
 - `AC-SEM-04` — El panorama cargado se mantiene por debajo de su presupuesto
@@ -525,6 +525,6 @@ rubros comerciales ni la estacionalidad.
 - `AC-SEM-14` — Se registra cada cálculo generado con su frecuencia de uso y
   número de usuarios, para alimentar el ciclo de promoción. Evidencia: `METRIC`.
 - `AC-SEM-15` — Ningún conocimiento del mundo se promueve al vocabulario,
-  sea cual sea su frecuencia de uso. Evidencia: `DOC` + revisión.
+  sea cual sea su frecuencia de uso. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-SEM-16` — La proporción de turnos que requieren cálculo aislado se
   revisa periódicamente y tiende a bajar. Evidencia: `METRIC`.
