@@ -4,7 +4,7 @@
 **Alcance:** V1
 **Estado:** vivo
 **Fecha de última actualización:** 26 de julio de 2026
-**Docs fuente:** los documentos del corpus con identificadores (52 a fecha de hoy)
+**Docs fuente:** los documentos del corpus con identificadores (53 a fecha de hoy)
 **Documentos que dependen de este:** `51` (pruebas), `54` (plan), `55` (ledger)
 
 ---
@@ -17,7 +17,7 @@ La matriz une cada requisito con su implementación real:
 ID → documento y sección → ruta URL → endpoint → componente → test → evidencia → estado
 ```
 
-**No es una tabla escrita a mano.** El corpus tiene **1.508 identificadores** (§3).
+**No es una tabla escrita a mano.** El corpus tiene **1.515 identificadores** (§3).
 Una tabla de ese tamaño mantenida a mano estaría desactualizada la primera
 semana de implementación, y el corpus ya sabe exactamente cómo termina eso:
 `C-03` fue una lista de tools mantenida a mano junto a otra lista de tools,
@@ -118,8 +118,9 @@ tabla de datos y no con la pantalla.
 | `50` | `TRAZ` | Trazabilidad y registro de identificadores |
 | `51` | `PRUEBA` | Estrategia de pruebas |
 | `52` | `INV` | Inventario y reutilización del código |
+| `53` | `DEUDA` | Deuda técnica y saneamiento |
 
-**49 tokens en total.** Los seis documentos de `00_gobierno/` no tienen: no
+**50 tokens en total.** Los seis documentos de `00_gobierno/` no tienen: no
 definen reglas ni criterios propios, gobiernan el proceso de escritura. Los
 del bloque `07` que aún no existen tomarán el suyo aquí antes de usarlo
 (`RUL-TRAZ-02`).
@@ -151,8 +152,8 @@ criterios que existían antes del bloque `07` y deliberadamente no publica
 totales: los documentos de este bloque siguen añadiendo identificadores, y un
 total escrito en un documento `aprobado` nace desactualizado.
 
-Última regeneración: 26 de julio de 2026, tras el documento `52`.
-**1.508 identificadores en 52 documentos.**
+Última regeneración: 26 de julio de 2026, tras el documento `53`.
+**1.515 identificadores en 53 documentos.**
 
 | Familia | Únicos | Qué identifica |
 |---|---|---|
@@ -161,17 +162,17 @@ total escrito en un documento `aprobado` nace desactualizado.
 | `ACT-` | 232 | Acción que el usuario puede disparar |
 | `RUL-` | 306 | Regla de negocio verificable |
 | `ERR-` | 159 | Error de dominio con mensaje visible |
-| `AC-` | 675 | Criterio de aceptación |
-| **Total** | **1.508** | |
+| `AC-` | 682 | Criterio de aceptación |
+| **Total** | **1.515** | |
 
 **Ningún identificador citado queda sin definición.** Se verificó familia por
 familia; los tres colgantes que había estaban en la tabla de ejemplos de `01`
 §3 y se corrigieron (`RUL-TRAZ-04`).
 
-Los 675 `AC-` son los 625 del `49` §2, más 12 `AC-HECHO-`, 12 `AC-TRAZ-`, 14
-`AC-PRUEBA-` y 12 `AC-INV-`.
+Los 682 `AC-` son los 625 del `49` §2, más 12 `AC-HECHO-`, 12 `AC-TRAZ-`, 14
+`AC-PRUEBA-`, 12 `AC-INV-` y 7 `AC-DEUDA-`.
 
-Sesenta y dos cadenas distintas aparecen como token: los 49 del registro más
+Sesenta y tres cadenas distintas aparecen como token: los 50 del registro más
 los trece `MOD-` de nombre largo que no coinciden con su token corto
 (`MOD-MOVIMIENTOS` frente a `MOV`). Las dos formas conviven a propósito y el
 test las distingue por familia.
@@ -180,24 +181,24 @@ test las distingue por familia.
 
 | Portón | Criterios |
 |---|---|
-| `G1` construido | 525 |
+| `G1` construido | 532 |
 | `G2` probado en real | 11 |
 | `G3` validado | 139 |
-| **Total** | **675** |
+| **Total** | **682** |
 
 | Clase de prueba | Asignadas |
 |---|---|
-| `corpus` | 32 |
-| `lint` | 11 |
-| `build` | 10 |
+| `corpus` | 33 |
+| `lint` | 12 |
+| `build` | 11 |
 | `e2e` | 8 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
 | `integracion` | 1 |
 | `unidad` | 1 |
-| **Con clase** | **66** |
+| **Con clase** | **69** |
 | **Con `TEST` y sin clase** | **544** |
-| **Total con `TEST`** | **610** |
+| **Total con `TEST`** | **613** |
 
 Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
 posible. Las 544 sin clase las reparte el `51` §4 al escribir cada prueba, y
