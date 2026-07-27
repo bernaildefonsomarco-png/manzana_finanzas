@@ -118,7 +118,7 @@ usar el rol de servicio sin motivo.
 | Proveedor | Supabase Auth |
 | Transporte | Cookie `HttpOnly`, `Secure`, `SameSite=Lax` |
 | Alternativa | `Authorization: Bearer` para clientes no navegador |
-| Refresco | Middleware en cada petición (ya implementado) |
+| Refresco | Proxy en cada petición (`src/proxy.ts`; en Next 16 el middleware se llama Proxy) |
 | Verificación de sesión | Una vez en el layout de `(app)`, no en cada página |
 | Expiración | Aviso sobre la pantalla actual sin destruir el trabajo en curso |
 

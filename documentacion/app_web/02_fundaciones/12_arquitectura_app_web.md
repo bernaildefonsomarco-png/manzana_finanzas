@@ -60,7 +60,7 @@ mano en cada pantalla**.
 ┌────────────────────────▼────────────────────────────────────┐
 │  Next.js — capa web                                         │
 │  Server Components (lectura) · Route Handlers (/api/v1)     │
-│  Middleware de sesión · Layouts · loading/error/not-found   │
+│  Proxy de sesión · Layouts · loading/error/not-found        │
 └────────────────────────┬────────────────────────────────────┘
                          │
 ┌────────────────────────▼────────────────────────────────────┐
@@ -219,14 +219,30 @@ respuesta del servidor.
 
 ## 10. Sesión y protección de rutas
 
-- El middleware refresca la sesión de Supabase en cada petición. Ya existe
-  (`src/proxy.ts`) y es correcto.
+**En Next.js 16 el middleware se llama Proxy.** El fichero es `src/proxy.ts`,
+al mismo nivel que `app/`, y exporta una función llamada `proxy`. Solo se
+admite uno por proyecto. Quien cree `middleware.ts` obtendrá un fichero que
+**no se ejecuta y no avisa de nada**, que es la peor forma posible de fallar
+en una capa de sesión.
+
+- El proxy refresca la sesión de Supabase en cada petición. Ya existe
+  (`src/proxy.ts`, 59 líneas) y su mecánica de cookies es correcta.
+- El proxy **no** decide permisos de datos. Eso es responsabilidad de RLS y de
+  los repositorios (`15_seguridad_autorizacion_y_rls.md`). La propia
+  documentación de Next lo dice: el proxy sirve para comprobaciones
+  optimistas, no como solución de autorización.
 - El layout de `(app)` verifica la sesión una sola vez; sin sesión redirige
   a `/entrar?redirigir=<ruta>`.
-- El middleware **no** decide permisos de datos. Eso es responsabilidad de
-  RLS y de los repositorios (`15_seguridad_autorizacion_y_rls.md`).
+- **`/` redirige desde el proxy** (`WEB-D151`): sin sesión a `/entrar`, con
+  sesión a `/inicio`.
 - Una sesión que expira durante el uso muestra un aviso sobre la pantalla
   actual sin destruir el trabajo en curso.
+
+**La lista de rutas públicas del proxy está incompleta hoy.** Contiene las
+cinco páginas legales, `/api/health` y el webhook de WhatsApp, pero no
+`/entrar`, `/crear-cuenta`, `/recuperar-clave`, `/restablecer-clave`,
+`/verificar`, `/auth/callback`, `/baja` ni `/estado`, que este corpus declara
+públicas en `10` §3.1 y `50` §5.2. Se completa en el corte que toque auth.
 
 ## 11. Organización del código
 

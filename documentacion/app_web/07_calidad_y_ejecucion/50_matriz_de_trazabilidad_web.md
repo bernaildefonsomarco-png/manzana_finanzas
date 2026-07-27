@@ -4,7 +4,7 @@
 **Alcance:** V1
 **Estado:** vivo
 **Fecha de última actualización:** 26 de julio de 2026
-**Docs fuente:** los documentos del corpus con identificadores (51 a fecha de hoy)
+**Docs fuente:** los documentos del corpus con identificadores (52 a fecha de hoy)
 **Documentos que dependen de este:** `51` (pruebas), `54` (plan), `55` (ledger)
 
 ---
@@ -17,7 +17,7 @@ La matriz une cada requisito con su implementación real:
 ID → documento y sección → ruta URL → endpoint → componente → test → evidencia → estado
 ```
 
-**No es una tabla escrita a mano.** El corpus tiene **1.495 identificadores** (§3).
+**No es una tabla escrita a mano.** El corpus tiene **1.508 identificadores** (§3).
 Una tabla de ese tamaño mantenida a mano estaría desactualizada la primera
 semana de implementación, y el corpus ya sabe exactamente cómo termina eso:
 `C-03` fue una lista de tools mantenida a mano junto a otra lista de tools,
@@ -117,8 +117,9 @@ tabla de datos y no con la pantalla.
 | `49` | `HECHO` | Criterios de aceptación globales |
 | `50` | `TRAZ` | Trazabilidad y registro de identificadores |
 | `51` | `PRUEBA` | Estrategia de pruebas |
+| `52` | `INV` | Inventario y reutilización del código |
 
-**48 tokens en total.** Los seis documentos de `00_gobierno/` no tienen: no
+**49 tokens en total.** Los seis documentos de `00_gobierno/` no tienen: no
 definen reglas ni criterios propios, gobiernan el proceso de escritura. Los
 del bloque `07` que aún no existen tomarán el suyo aquí antes de usarlo
 (`RUL-TRAZ-02`).
@@ -150,27 +151,27 @@ criterios que existían antes del bloque `07` y deliberadamente no publica
 totales: los documentos de este bloque siguen añadiendo identificadores, y un
 total escrito en un documento `aprobado` nace desactualizado.
 
-Última regeneración: 26 de julio de 2026, tras el documento `51`.
-**1.495 identificadores en 51 documentos.**
+Última regeneración: 26 de julio de 2026, tras el documento `52`.
+**1.508 identificadores en 52 documentos.**
 
 | Familia | Únicos | Qué identifica |
 |---|---|---|
 | `MOD-` | 17 | Módulo funcional completo |
 | `SCR-` | 119 | Pantalla, panel o componente de superficie |
 | `ACT-` | 232 | Acción que el usuario puede disparar |
-| `RUL-` | 305 | Regla de negocio verificable |
+| `RUL-` | 306 | Regla de negocio verificable |
 | `ERR-` | 159 | Error de dominio con mensaje visible |
-| `AC-` | 663 | Criterio de aceptación |
-| **Total** | **1.495** | |
+| `AC-` | 675 | Criterio de aceptación |
+| **Total** | **1.508** | |
 
 **Ningún identificador citado queda sin definición.** Se verificó familia por
 familia; los tres colgantes que había estaban en la tabla de ejemplos de `01`
 §3 y se corrigieron (`RUL-TRAZ-04`).
 
-Los 663 `AC-` son los 625 del `49` §2, más 12 `AC-HECHO-`, 12 `AC-TRAZ-` y 14
-`AC-PRUEBA-`.
+Los 675 `AC-` son los 625 del `49` §2, más 12 `AC-HECHO-`, 12 `AC-TRAZ-`, 14
+`AC-PRUEBA-` y 12 `AC-INV-`.
 
-Sesenta y una cadenas distintas aparecen como token: los 48 del registro más
+Sesenta y dos cadenas distintas aparecen como token: los 49 del registro más
 los trece `MOD-` de nombre largo que no coinciden con su token corto
 (`MOD-MOVIMIENTOS` frente a `MOV`). Las dos formas conviven a propósito y el
 test las distingue por familia.
@@ -179,27 +180,27 @@ test las distingue por familia.
 
 | Portón | Criterios |
 |---|---|
-| `G1` construido | 513 |
+| `G1` construido | 525 |
 | `G2` probado en real | 11 |
 | `G3` validado | 139 |
-| **Total** | **663** |
+| **Total** | **675** |
 
 | Clase de prueba | Asignadas |
 |---|---|
-| `corpus` | 30 |
-| `build` | 9 |
+| `corpus` | 32 |
+| `lint` | 11 |
+| `build` | 10 |
 | `e2e` | 8 |
-| `lint` | 6 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
 | `integracion` | 1 |
 | `unidad` | 1 |
-| **Con clase** | **58** |
-| **Con `TEST` y sin clase** | **542** |
-| **Total con `TEST`** | **600** |
+| **Con clase** | **66** |
+| **Con `TEST` y sin clase** | **544** |
+| **Total con `TEST`** | **610** |
 
 Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
-posible. Las 542 sin clase las reparte el `51` §4 al escribir cada prueba, y
+posible. Las 544 sin clase las reparte el `51` §4 al escribir cada prueba, y
 `AC-HECHO-03` impide que ninguna llegue a `verificado` sin ella.
 
 ---
