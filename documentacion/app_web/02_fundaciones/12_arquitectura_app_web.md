@@ -112,7 +112,7 @@ src/app/
 ├── layout.tsx                    raíz: fuentes, tokens, providers globales
 ├── global-error.tsx              fallo total (único en toda la app)
 ├── (publico)/                    sin sesión
-│   ├── page.tsx                  portada
+│   ├── page.tsx                  solo redirige: `/entrar` o `/inicio`
 │   ├── entrar/, crear-cuenta/, recuperar-clave/, restablecer-clave/
 │   ├── verificar/, auth/callback/
 │   └── privacidad/, terminos/, empresa/, contacto/, eliminar-datos/

@@ -516,7 +516,7 @@ límite se respeta, no que el límite sea el correcto.
 solo en `G3`.
 
 **No se añaden criterios aquí.** Este documento agrega, no diseña — y añadir
-un `AC-NOTIF-21` desde fuera del módulo rompe la regla de que cada documento
+un criterio nuevo desde fuera del módulo rompe la regla de que cada documento
 es dueño de lo suyo. Lo que sí hace es dejarlo registrado como hueco conocido,
 con nombre, para que el documento `51` lo cubra desde su lado (§9 de este
 documento) y el `54` no cierre el corte de recordatorios creyendo que 20 de 20
@@ -555,30 +555,30 @@ Los 625 criterios solo valen si cerrarlos cuesta más que no cerrarlos. Cinco
 reglas, todas nacidas de formas concretas en que este proyecto ya se engañó o
 podría hacerlo.
 
-**`RUL-AC-01` — Un test marcado `skip` cuenta como `pendiente`.**
+**`RUL-HECHO-01` — Un test marcado `skip` cuenta como `pendiente`.**
 La suite en verde con tests desactivados es peor que la suite en rojo, porque
 comunica lo contrario de lo que pasa. El informe de CI lista los `skip` con
 el ID del criterio que dejan abierto.
 
-**`RUL-AC-02` — Un test que pasaría sin la funcionalidad no verifica nada.**
+**`RUL-HECHO-02` — Un test que pasaría sin la funcionalidad no verifica nada.**
 Antes de dar por cerrado un criterio, se revierte el cambio que lo implementa
 y se comprueba que el test **falla**. Un test que pasa con y sin la función
 mide la existencia del archivo, no el comportamiento.
 
-**`RUL-AC-03` — La evidencia se declara con nivel y clase, y las dos son
+**`RUL-HECHO-03` — La evidencia se declara con nivel y clase, y las dos son
 obligatorias.**
 Un criterio sin clase de prueba no entra en la matriz del `50`, y lo que no
 entra en la matriz no se implementa. Es el mismo mecanismo que `40` §2 usa
 para el catálogo: la desincronización falla el build en vez de acumularse.
 
-**`RUL-AC-04` — Un criterio no se reescribe para que pase.**
+**`RUL-HECHO-04` — Un criterio no se reescribe para que pase.**
 Si al implementarlo se descubre que estaba mal planteado, se cambia — pero el
 cambio va al decision log con el motivo, y el criterio anterior queda
 `retirado`, no editado en silencio. Editar el criterio hasta que el código lo
 cumpla es la forma más limpia de tener 625 criterios cumplidos y un producto
 que no funciona.
 
-**`RUL-AC-05` — El corte no se declara cerrado por quien lo implementó.**
+**`RUL-HECHO-05` — El corte no se declara cerrado por quien lo implementó.**
 `G1` lo cierra CI, que no tiene opinión. `G2` y `G3` los cierra quien produce
 la evidencia, y esa persona no es la que escribió el código.
 

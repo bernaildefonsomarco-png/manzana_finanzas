@@ -171,8 +171,14 @@ mensual habría que recrearlo a mano cada mes.
 | Nivel | Funcionalidad |
 |---|---|
 | **IN** | Estado financiero actual con dinero libre como cifra principal. Siguiente mejor acción priorizada. Pendientes destacados. Próximos compromisos. Descubrimiento destacado. Movimientos recientes. Avance de presupuestos. Estados progresivos: vacío, temprano, funcional, completo. Adaptación al uso real (si no usa deudas, no se le llena la pantalla de deudas). |
-| **V1.1** | Personalización del orden de las secciones por el usuario. Widgets configurables. |
+| **V1.1** | Personalización del orden de las secciones por el usuario. Widgets configurables. **Portada pública de venta en `/`** (`WEB-D151`): en V1 esa ruta solo redirige — sin sesión a `/entrar`, con sesión a `/inicio`. |
 | **FUERA** | Panel de administración. Vista comparativa con otros periodos como pantalla principal (vive en Reportes). |
+
+El Inicio vive en `/inicio`, no en `/`. Esto se decidió al cruzar el mapa de
+rutas del documento `10` contra las superficies declaradas por los módulos
+(`50` §5): `10` y `12` decían `/inicio`, `39` y `44` decían `/`, y el alcance
+no tenía entrada para una portada pública que resolviera el empate. Ahora la
+tiene.
 
 ### 3.17 `MOD-ASISTENTE` — Asistente IA en la app (docs 20-23, 40-42) — **NUEVO**
 

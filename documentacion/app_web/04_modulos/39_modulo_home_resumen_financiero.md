@@ -380,7 +380,7 @@ las tarjetas se conservan de `16_design_system_web.md`.
 
 ### `SCR-HOME-01` — Inicio
 
-**Ruta:** `/`
+**Ruta:** `/inicio`
 
 ```text
 ┌──────────────────────────────────────────────────┐

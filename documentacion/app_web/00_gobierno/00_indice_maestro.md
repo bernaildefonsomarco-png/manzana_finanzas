@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 154 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 156 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -135,7 +135,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | # | Documento | Estado | Nota |
 |---|---|---|---|
 | 49 | `49_criterios_de_aceptacion_globales.md` | aprobado | **Agregación.** 625 criterios, tres portones, definición de "hecho". 69 identificadores ambiguos corregidos. |
-| 50 | `50_matriz_de_trazabilidad_web.md` | no iniciado | |
+| 50 | `50_matriz_de_trazabilidad_web.md` | vivo | Registro de tokens (fuente única) y censo de 1.458 IDs. La matriz se genera, no se escribe. 16 rutas que el mapa no conocía. |
 | 51 | `51_estrategia_de_pruebas_web.md` | no iniciado | |
 | 52 | `52_inventario_reutilizacion_codigo_src.md` | no iniciado | |
 | 53 | `53_deuda_tecnica_y_saneamiento.md` | no iniciado | |
@@ -143,8 +143,8 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | 55 | `55_ledger_construccion_web.md` | no iniciado | |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado | |
 
-**Progreso: 52/60 documentos aprobados o vivos.** Olas 1 a 12 completas y la
-13 empezada. Quedan siete documentos, todos del bloque de calidad y ejecución.
+**Progreso: 53/60 documentos aprobados o vivos.** Olas 1 a 12 completas y la
+13 en marcha. Quedan seis documentos, todos del bloque de calidad y ejecución.
 
 ## 5. Orden de lectura por rol
 

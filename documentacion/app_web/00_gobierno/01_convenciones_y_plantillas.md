@@ -49,11 +49,18 @@ necesite referenciar tiene un ID estable con este formato:
 | Prefijo | Qué identifica | Ejemplo |
 |---|---|---|
 | `MOD-` | Un módulo funcional completo (uno por documento de `04_modulos/`) | `MOD-MOVIMIENTOS` |
-| `SCR-` | Una pantalla o superficie de UI dentro de un módulo | `SCR-MOVIMIENTOS-01` (listado), `SCR-MOVIMIENTOS-02` (detalle) |
-| `ACT-` | Una acción que el usuario puede disparar | `ACT-MOVIMIENTOS-03` (eliminar movimiento) |
+| `SCR-` | Una pantalla o superficie de UI dentro de un módulo | `SCR-MOV-01` (listado), `SCR-MOV-02` (detalle) |
+| `ACT-` | Una acción que el usuario puede disparar | `ACT-MOV-04` (eliminar movimiento) |
 | `RUL-` | Una regla de negocio verificable | `RUL-CUENTAS-05` (fórmula de dinero libre) |
-| `ERR-` | Un error de dominio con mensaje visible | `ERR-DEUDAS-02` (cuota ya pagada) |
-| `AC-` | Un criterio de aceptación | `AC-PENDIENTES-04` |
+| `ERR-` | Un error de dominio con mensaje visible | `ERR-DEUDAS-02` (deuda cerrada) |
+| `AC-` | Un criterio de aceptación | `AC-PEND-04` |
+
+Los ejemplos de esta tabla son identificadores **reales del corpus**, no
+ilustrativos. La versión anterior los inventaba con tokens largos
+(*MOVIMIENTOS*, *PENDIENTES*) que ningún documento usa: el documento que
+define el sistema de IDs era el único que lo incumplía, y el test de
+`AC-HECHO-02` habría fallado sobre él. Un ejemplo inventado en la plantilla es
+un token no registrado esperando a que alguien lo copie.
 
 `<MOD>` es el **token del módulo**, en mayúsculas (ej. `MOVIMIENTOS`,
 `CUENTAS`, `DEUDAS`, `PRESUPUESTOS`). `<NN>` es un número de dos dígitos,
@@ -210,8 +217,12 @@ Docs que dependen de este
    numérico en soles**.
 7. **Validaciones** — por campo: obligatoriedad, rango, normalización, zona
    horaria, redondeo, colisiones.
-8. **Superficies** — por pantalla, ID `SCR-<MOD>-NN`, **una sola ruta URL
-   real** (no dos candidatas separadas por "o"), layout, jerarquía,
+8. **Superficies** — por pantalla, ID `SCR-<MOD>-NN`, y **siempre una línea
+   `**Ruta:**`** (`WEB-D152`): o una sola ruta URL real —no dos candidatas
+   separadas por "o"— o el tratamiento explícito de lo que no tiene ruta
+   propia: `ninguna — modal sobre /x`, `ninguna — panel …`,
+   `ninguna — componente, §N`. La distinción ruta/modal la fija `10` §4.
+   Además: layout, jerarquía,
    mobile/desktop, y **referencia visual**: o bien
    `docs/fase_6_visual/32_especificacion_hifi.md` con su carpeta de frames en
    `stitch_manzana_v1/`, o bien la declaración explícita de que **no existe

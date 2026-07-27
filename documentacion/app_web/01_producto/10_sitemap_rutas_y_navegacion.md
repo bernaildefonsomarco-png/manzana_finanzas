@@ -58,7 +58,7 @@ regla queda derogada.**
 
 | Ruta | Pantalla | Notas |
 |---|---|---|
-| `/` | Portada pública | Con sesión activa, redirige a `/inicio`. |
+| `/` | Solo redirección | Sin sesión, a `/entrar`. Con sesión, a `/inicio`. **No renderiza nada propio en V1**; la portada pública de venta es `V1.1` (`WEB-D151`). |
 | `/entrar` | Iniciar sesión | `AUTH_LOGIN` |
 | `/crear-cuenta` | Registro | |
 | `/recuperar-clave` | Solicitar recuperación de contraseña | Hoy inexistente. |
