@@ -38,7 +38,7 @@ Definidos en `01_convenciones_y_plantillas.md` §5: `borrador`, `revisión`,
 | 00 | `00_indice_maestro.md` | vivo | Este documento. |
 | 01 | `01_convenciones_y_plantillas.md` | aprobado | Plantilla de 22 secciones, sistema de IDs, niveles de evidencia. |
 | 02 | `02_mapa_herencia_corpus_legacy.md` | aprobado | Clasificación de los 56 documentos legacy (54 de `docs/` + 2 raíz). |
-| 03 | `03_decisiones_producto_web.md` | vivo | 168 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
+| 03 | `03_decisiones_producto_web.md` | vivo | 169 decisiones. `WEB-D014` a `WEB-D025` son el diseño del motor, tomadas con el usuario. |
 | 04 | `04_glosario_y_lenguaje_visible.md` | aprobado | Migración de `12_lenguaje_producto.md` + vocabulario de los módulos nuevos. |
 | 05 | `05_contradicciones_heredadas_cierre.md` | vivo | Las 17 contradicciones `C-01`..`C-17` con destino de cierre asignado. |
 
@@ -135,16 +135,16 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | # | Documento | Estado | Nota |
 |---|---|---|---|
 | 49 | `49_criterios_de_aceptacion_globales.md` | aprobado | **Agregación.** 625 criterios, tres portones, definición de "hecho". 69 identificadores ambiguos corregidos. |
-| 50 | `50_matriz_de_trazabilidad_web.md` | vivo | Registro de tokens (fuente única) y **único censo vivo** del corpus: 1.515 IDs. La matriz se genera, no se escribe. 16 rutas que el mapa no conocía. |
+| 50 | `50_matriz_de_trazabilidad_web.md` | vivo | Registro de tokens (fuente única) y **único censo vivo** del corpus: 1.527 IDs. La matriz se genera, no se escribe. 16 rutas que el mapa no conocía. |
 | 51 | `51_estrategia_de_pruebas_web.md` | aprobado | Árbol de decisión de clase de prueba. Seis comprobaciones que fallan el build. RLS por tabla. La cobertura nunca se había medido: el proveedor no estaba instalado. |
 | 52 | `52_inventario_reutilizacion_codigo_src.md` | aprobado | Veredicto sobre las 88.168 líneas de producción. Tres de cada cuatro sobreviven. 28 ficheros de `core/` mencionan WhatsApp: la prueba de agnosticismo no compila hoy. |
 | 53 | `53_deuda_tecnica_y_saneamiento.md` | aprobado | Cuatro deudas bloqueantes con evidencia de resolución exigida, siete con gate asignado, dos riesgos aceptados con condición. No se salda deuda en código condenado. |
-| 54 | `54_plan_de_implementacion_web.md` | no iniciado | |
+| 54 | `54_plan_de_implementacion_web.md` | aprobado | **Veinte cortes** `W-01`..`W-20` con entrega comprobable, precondición y grafo. Siete de cimientos antes de la primera función. Prompt de corte para agentes. |
 | 55 | `55_ledger_construccion_web.md` | no iniciado | |
 | 56 | `56_puente_a_fase_whatsapp.md` | no iniciado | |
 
-**Progreso: 56/60 documentos aprobados o vivos.** Olas 1 a 12 completas y la
-13 en marcha. Quedan tres documentos: el plan de implementación, el ledger y el puente a WhatsApp.
+**Progreso: 57/60 documentos aprobados o vivos.** Olas 1 a 12 completas y la
+13 en marcha. Quedan dos: el ledger de construcción y el puente a la fase WhatsApp.
 
 ## 5. Orden de lectura por rol
 
@@ -163,7 +163,7 @@ documentos en orden de escritura:
 ## 6. Orden de escritura (olas) y dependencias
 
 ```
-OLA 0   SANEAMIENTO — completada (ver 53_deuda_tecnica_y_saneamiento.md cuando exista;
+OLA 0   SANEAMIENTO — completada (ver 53_deuda_tecnica_y_saneamiento.md §6;
         evidencia provisional en 03_decisiones_producto_web.md, WEB-D009)
 OLA 1   00 01 02 03 04 05         — COMPLETADA (25 de julio de 2026)
 OLA 2   06 07 08 09 10 11         — COMPLETADA (25 de julio de 2026)
@@ -172,12 +172,12 @@ OLA 4   20 20b 20c 21 22 23       — COMPLETADA (25 de julio de 2026), disenada
 OLA 5   24 25 26 27               — COMPLETADA (26 de julio de 2026)
 OLA 6   28 29 30 31               — COMPLETADA (26 de julio de 2026)
 OLA 7   32 33                     — COMPLETADA (26 de julio de 2026)
-OLA 8   34 35 36
-OLA 9   37 38 39
-OLA 10  40 41
-OLA 11  42                        — primer contacto autorizado con el código del motor
-OLA 12  43 44 45 46 47 48
-OLA 13  49 50 51 52 53 54 55 56
+OLA 8   34 35 36                  — COMPLETADA (26 de julio de 2026)
+OLA 9   37 38 39                  — COMPLETADA (26 de julio de 2026)
+OLA 10  40 41                     — COMPLETADA (26 de julio de 2026)
+OLA 11  42                        — COMPLETADA (26 de julio de 2026). Primer contacto autorizado con el código del motor
+OLA 12  43 44 45 46 47 48         — COMPLETADA (26 de julio de 2026)
+OLA 13  49 50 51 52 53 54 55 56   — en curso
 ```
 
 Aristas que no se pueden invertir (detalle completo en el plan de sesión):
