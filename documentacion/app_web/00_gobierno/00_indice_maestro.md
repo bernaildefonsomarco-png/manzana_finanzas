@@ -135,10 +135,10 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 | # | Documento | Estado | Nota |
 |---|---|---|---|
 | 49 | `49_criterios_de_aceptacion_globales.md` | aprobado | **Agregación.** 625 criterios, tres portones, definición de "hecho". 69 identificadores ambiguos corregidos. |
-| 50 | `50_matriz_de_trazabilidad_web.md` | vivo | Registro de tokens (fuente única) y **único censo vivo** del corpus: 1.550 IDs. La matriz se genera, no se escribe. 16 rutas que el mapa no conocía. |
+| 50 | `50_matriz_de_trazabilidad_web.md` | vivo | Registro de tokens (fuente única) y **único censo vivo** del corpus: 1.551 IDs. La matriz se genera, no se escribe. 16 rutas que el mapa no conocía. |
 | 51 | `51_estrategia_de_pruebas_web.md` | aprobado | Árbol de decisión de clase de prueba. Seis comprobaciones que fallan el build. RLS por tabla. La cobertura nunca se había medido: el proveedor no estaba instalado. |
 | 52 | `52_inventario_reutilizacion_codigo_src.md` | aprobado | Veredicto sobre las 88.168 líneas de producción. Tres de cada cuatro sobreviven. 28 ficheros de `core/` mencionan WhatsApp: la prueba de agnosticismo no compila hoy. |
-| 53 | `53_deuda_tecnica_y_saneamiento.md` | aprobado | Cuatro deudas bloqueantes con evidencia de resolución exigida, siete con gate asignado, dos riesgos aceptados con condición. No se salda deuda en código condenado. |
+| 53 | `53_deuda_tecnica_y_saneamiento.md` | aprobado | **Cinco** deudas bloqueantes con evidencia de resolución exigida, siete con gate asignado, dos riesgos aceptados con condición. `D-12`: el repositorio no compila desde el commit inicial. No se salda deuda en código condenado. |
 | 54 | `54_plan_de_implementacion_web.md` | aprobado | **Veinte cortes** `W-01`..`W-20` con entrega comprobable, precondición y grafo. Siete de cimientos antes de la primera función. Prompt de corte para agentes. |
 | 55 | `55_ledger_construccion_web.md` | vivo | Sucesor del `23b`, que tenía 8.082 líneas, cinco entradas y cero menciones de las migraciones que se aplicaron mientras estaba abierto. Tres mecanismos para que no se pare en silencio. |
 | 56 | `56_puente_a_fase_whatsapp.md` | aprobado | **Cierra el corpus.** Qué queda listo, qué se descongela de `docs/` y qué no, y las cinco listas que divergieron. |

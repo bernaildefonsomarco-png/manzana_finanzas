@@ -28,16 +28,42 @@ Lo que queda son tres categorías, y las tres son cortas.
 
 | Categoría | Cuántas | Qué las define |
 |---|---|---|
-| **Bloqueante** | 4 | Impiden que un corte del `54` pueda cerrarse. Exigen evidencia de resolución |
+| **Bloqueante** | 5 | Impiden que un corte del `54` pueda cerrarse. Exigen evidencia de resolución |
 | **Con gate asignado** | 7 | No bloquean hoy; tienen un corte concreto donde se pagan |
 | **Riesgo aceptado** | 2 | Se conocen, se registran y se convive con ellas hasta una fecha |
 
 ---
 
-## 2. Las cuatro bloqueantes
+## 2. Las cinco bloqueantes
 
 Una deuda es bloqueante cuando **algo que el corpus da por cierto no lo es**.
 No cuando molesta.
+
+### 2.0 `D-12` — El repositorio no compila
+
+| | |
+|---|---|
+| **Qué** | `npm run build` falla. Cuatro errores de tipos: tres códigos de error lanzados en `command-dispatcher.ts` que no están en la unión `CoreErrorCode` de `src/core/finance/errors.ts`, y un `Json \| undefined` en `experience-preferences.repository.ts` |
+| **Desde cuándo** | Desde el commit de baseline. **El repositorio nunca ha compilado en la historia que este proyecto tiene registrada** |
+| **Por qué bloquea** | No hay nada que discutir: no se puede desplegar. Y `W-01` no puede cerrar `G1` sobre un árbol que no compila |
+| **Evidencia de resolución** | `npm run build` termina en verde, y `npm run typecheck` con cero errores |
+| **Corte** | `W-01`. Es lo primero |
+
+**Los 863 tests pasan sobre código que no compila**, porque Vitest no
+comprueba tipos. Es la ilustración más literal posible del argumento del `51`:
+una suite verde no dice que el código funcione, dice que las pruebas que
+existen pasan.
+
+Se descubrió el 26 de julio de 2026, al terminar el corpus y ejecutar por
+primera vez `npm run build`. **No estaba en ninguna lista de deuda porque
+nadie lo había ejecutado** — ni el diagnóstico inicial, que dio por buena la
+línea base sin comprobarla. Queda registrado así, con la fecha, porque el
+`AC-DEUDA-06` obliga a preguntarse qué gate faltaba: faltaba ejecutar el
+comando.
+
+Los tres códigos que faltan son `MOVEMENT_NOT_DELETED`,
+`MOVEMENT_REQUIRES_SPECIALIZED_ENGINE` y `MOVEMENT_REVERSED_NOT_RESTORABLE`.
+La reparación son cuatro líneas; el hallazgo vale más que la reparación.
 
 ### 2.1 `D-01` — El canal está dentro del núcleo
 
@@ -208,7 +234,7 @@ remedio y ninguna se resolvió pidiendo más cuidado.
 
 ## 8. Criterios de aceptación
 
-- `AC-DEUDA-01` — Las cuatro bloqueantes tienen evidencia de resolución
+- `AC-DEUDA-01` — Las cinco bloqueantes tienen evidencia de resolución
   registrada antes de que ningún corte se declare cerrado. Evidencia: `TEST`.
   Clase: `build`.
 - `AC-DEUDA-02` — Toda deuda de §3 tiene corte asignado en el `54`.
@@ -224,6 +250,8 @@ remedio y ninguna se resolvió pidiendo más cuidado.
   mecanismo. Evidencia: `DOC`.
 - `AC-DEUDA-07` — La lista de excepciones temporales de service-role está
   vacía antes del lanzamiento. Evidencia: `CODE`.
+- `AC-DEUDA-08` — `npm run build` y `npm run typecheck` terminan sin errores.
+  Evidencia: `TEST`. Clase: `build`.
 
 `AC-DEUDA-06` es el único que no se puede automatizar y el que más vale. Cada
 deuda nueva que aparezca obliga a preguntarse qué gate faltaba, en vez de
@@ -261,4 +289,4 @@ necesita hecho, no un coste que la fase web asume por elegancia.
 
 | Documento que depende de este | Qué toma |
 |---|---|
-| `54_plan_de_implementacion_web.md` | Las cuatro bloqueantes como precondición de corte, y los siete gates |
+| `54_plan_de_implementacion_web.md` | Las cinco bloqueantes como precondición de corte, y los siete gates |

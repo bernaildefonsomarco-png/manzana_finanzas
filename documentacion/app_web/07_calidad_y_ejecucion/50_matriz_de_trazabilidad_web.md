@@ -17,7 +17,7 @@ La matriz une cada requisito con su implementación real:
 ID → documento y sección → ruta URL → endpoint → componente → test → evidencia → estado
 ```
 
-**No es una tabla escrita a mano.** El corpus tiene **1.550 identificadores** (§3).
+**No es una tabla escrita a mano.** El corpus tiene **1.551 identificadores** (§3).
 Una tabla de ese tamaño mantenida a mano estaría desactualizada la primera
 semana de implementación, y el corpus ya sabe exactamente cómo termina eso:
 `C-03` fue una lista de tools mantenida a mano junto a otra lista de tools,
@@ -156,7 +156,7 @@ totales: los documentos de este bloque siguen añadiendo identificadores, y un
 total escrito en un documento `aprobado` nace desactualizado.
 
 Última regeneración: 26 de julio de 2026, tras el documento `56`. **El corpus queda cerrado.**
-**1.550 identificadores en 57 documentos.**
+**1.551 identificadores en 57 documentos.**
 
 | Familia | Únicos | Qué identifica |
 |---|---|---|
@@ -165,15 +165,15 @@ total escrito en un documento `aprobado` nace desactualizado.
 | `ACT-` | 232 | Acción que el usuario puede disparar |
 | `RUL-` | 316 | Regla de negocio verificable |
 | `ERR-` | 159 | Error de dominio con mensaje visible |
-| `AC-` | 707 | Criterio de aceptación |
-| **Total** | **1.550** | |
+| `AC-` | 708 | Criterio de aceptación |
+| **Total** | **1.551** | |
 
 **Ningún identificador citado queda sin definición.** Se verificó familia por
 familia; los tres colgantes que había estaban en la tabla de ejemplos de `01`
 §3 y se corrigieron (`RUL-TRAZ-04`).
 
-Los 707 `AC-` son los 625 del `49` §2, más 12 `AC-HECHO-`, 12 `AC-TRAZ-`, 14
-`AC-PRUEBA-`, 13 `AC-INV-`, 7 `AC-DEUDA-`, 9 `AC-PLAN-`, 8 `AC-LEDGER-` y 7 `AC-PUENTE-`.
+Los 708 `AC-` son los 625 del `49` §2, más 12 `AC-HECHO-`, 12 `AC-TRAZ-`, 14
+`AC-PRUEBA-`, 13 `AC-INV-`, 8 `AC-DEUDA-`, 9 `AC-PLAN-`, 8 `AC-LEDGER-` y 7 `AC-PUENTE-`.
 
 Sesenta y seis cadenas distintas aparecen como token: los 53 del registro más
 los trece `MOD-` de nombre largo que no coinciden con su token corto
@@ -184,24 +184,24 @@ test las distingue por familia.
 
 | Portón | Criterios |
 |---|---|
-| `G1` construido | 557 |
+| `G1` construido | 558 |
 | `G2` probado en real | 11 |
 | `G3` validado | 139 |
-| **Total** | **707** |
+| **Total** | **708** |
 
 | Clase de prueba | Asignadas |
 |---|---|
 | `corpus` | 45 |
-| `build` | 14 |
+| `build` | 15 |
 | `lint` | 13 |
 | `e2e` | 8 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
 | `integracion` | 1 |
 | `unidad` | 1 |
-| **Con clase** | **85** |
+| **Con clase** | **86** |
 | **Con `TEST` y sin clase** | **545** |
-| **Total con `TEST`** | **630** |
+| **Total con `TEST`** | **631** |
 
 Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
 posible. Las 545 sin clase las reparte el `51` §4 al escribir cada prueba, y

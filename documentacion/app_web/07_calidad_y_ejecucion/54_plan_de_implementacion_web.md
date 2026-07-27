@@ -19,9 +19,9 @@ cerrado antes, qué documentos implementa y cómo se sabe que terminó. No hay
 estimaciones de tiempo: el corpus no tiene datos para producirlas y una
 estimación inventada solo sirve para incumplirse.
 
-**Lo que este documento no hace es repartir los 682 criterios uno por uno.**
+**Lo que este documento no hace es repartir los 707 criterios uno por uno.**
 Cada corte declara qué documentos implementa; la matriz del `50` deriva qué
-criterios son. Mantener a mano un mapeo de 682 filas sería el sexto caso del
+criterios son. Mantener a mano un mapeo de 707 filas sería el sexto caso del
 mismo defecto que este corpus lleva encontrando desde el `40`.
 
 ---
@@ -73,17 +73,20 @@ vez produciría exactamente el mismo resultado con más código.
 
 | | |
 |---|---|
-| **Entrega** | El repositorio describe lo que contiene. Un árbol de migraciones, un README cierto, `/` redirige |
+| **Entrega** | **El repositorio compila**, describe lo que contiene, tiene un árbol de migraciones, un README cierto y `/` redirige |
 | **Implementa** | `52` §11, §12; `53` §3, §4 |
 | **Precondición** | Ninguna |
-| **Paga** | `D-05` (dos ramas), `D-10` (README), `D-11` (carpetas) |
-| **Cierra** | `AC-INV-07`, `AC-INV-08`, `AC-INV-09`, `AC-INV-10`, `AC-DEUDA-04` |
+| **Paga** | `D-12` (no compila), `D-05` (dos ramas), `D-10` (README), `D-11` (carpetas) |
+| **Cierra** | `AC-INV-07`, `AC-INV-08`, `AC-INV-09`, `AC-INV-10`, `AC-DEUDA-04`, `AC-DEUDA-08` |
 
 Contenido concreto: `supabase/migrations/` como rama única y
 `migrations.test.ts` leyendo de ella; borrar las seis carpetas con solo
 `.gitkeep` y conservar las cuatro que el diseño llenará; corregir las ocho
 afirmaciones falsas del README; completar `PUBLIC_PATHS` del proxy con las
 ocho rutas públicas que faltan y añadir la redirección de `/` (`WEB-D151`).
+
+Y antes que nada, los cuatro errores de tipos de `D-12`: hoy `npm run build`
+falla, y ha fallado desde el commit inicial.
 
 Es el corte más pequeño y va primero porque **todo lo demás se apoya en creer
 lo que el repositorio dice**.
@@ -418,7 +421,7 @@ se ve.
   Evidencia: `TEST`. Clase: `corpus`.
 - `AC-PLAN-05` — Todo documento del corpus con criterios está asignado a
   exactamente un corte. Evidencia: `TEST`. Clase: `corpus`.
-- `AC-PLAN-06` — Las cuatro deudas bloqueantes de `53` §2 están pagadas antes
+- `AC-PLAN-06` — Las cinco deudas bloqueantes de `53` §2 están pagadas antes
   de que cierre `W-08`. Evidencia: `TEST`. Clase: `build`.
 - `AC-PLAN-07` — Cada una de las cuatro librerías se elige con su caso difícil
   escrito antes. Evidencia: `DOC`.
