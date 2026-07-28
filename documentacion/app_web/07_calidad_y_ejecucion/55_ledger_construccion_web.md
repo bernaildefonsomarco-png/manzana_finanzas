@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` y `W-02` cerraron `G1` y `G2`. Ninguno de
-los dos tiene criterios de `G3` propios.
+**La construcción avanza.** `W-01`, `W-02` y `W-03` cerraron `G1` y `G2`.
+Ninguno de los tres tiene criterios de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 2 de 20 |
-| Criterios `verificado` | 16 de 708 |
+| Cortes cerrados | 3 de 20 |
+| Criterios `verificado` | 23 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -374,6 +374,111 @@ riesgo aceptado) sigue abierto hasta que esa lista llegue a cero.
   `AC-SEG-05/06/08` de lo que cierra; añade `AC-PRUEBA-05` a la tabla de
   excepciones de `RUL-PLAN-04` (documento `51`/`W-03`, cierra en `W-02`).
 - `03_decisiones_producto_web.md`: `WEB-D168` (nueva).
+
+---
+
+## W-03 — Infraestructura de pruebas
+
+**Cerrado:** 2026-07-27
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-27, con `npm run matriz:generar`, posterior al
+commit `[pendiente: se registra tras el commit de cierre]` (`AC-TRAZ-12`).
+
+### Qué se entregó
+
+`AC-PRUEBA-01` cierra: un test de clase `corpus` falla el build si aparece
+una fila `verificado` con evidencia `TEST` y sin `Clase:`. `AC-PRUEBA-06`
+cierra: `@vitest/coverage-v8` mide sobre `src/**` completo, con reporte
+`html`, no solo sobre lo que ya tenía test. `AC-PRUEBA-07` cierra: los cuatro
+tests de humo (`*.api-smoke.test.ts`, dinero real de agentes) viven en su
+propio proyecto de Vitest (`vitest.smoke.config.ts`, `npm run
+test:smoke:agents`), fuera de `npm test`. `AC-PRUEBA-08` cierra: los seis
+gates que paran el build tienen mecanismo real, no declarado — cuatro en
+`prebuild` (`service-role-en-rutas`, `mapa-de-rutas`, `sin-tests-en-skip`,
+`sin-regresion-de-alcance`) y dos en `src/instrumentation.ts` al arrancar el
+servidor (`AC-RT-01`, `AC-REU-06`, heredados de `W-02`). `AC-PRUEBA-10`
+cierra: `vitest.config.ts` excluye `tests/rls/**` de la suite por defecto y
+ningún `.test.ts` fuera de ese directorio construye un cliente Supabase
+contra una URL real. `AC-PRUEBA-11` cierra: `npm test` corre en 43 segundos,
+por debajo del presupuesto de 120s, con un gate propio
+(`scripts/gates/presupuesto-npm-test.mjs`) que lo vuelve a medir. `AC-PRUEBA-12`
+cierra: ningún test de los ocho adaptadores de WhatsApp lee variables de
+entorno, y el script de humo de WhatsApp no está en el `include` de Vitest.
+Además, sin ser lo que el corte cierra formalmente (`AC-PRUEBA-09` es de los
+cortes de módulo que crean cada ruta): Playwright está instalado, corre sin
+advertencias, y los doce recorridos de `44` §5 y los cuatro flujos
+irreversibles existen como `test.fixme()` declarados. Cinco de las ocho
+reglas de lint de `51` §6.4 están activas y en verde
+(`frontera-core`, `frontera-cliente`, `sin-view-query`, `tamano-componente`,
+`dialogo-unico`); las otras tres quedan definidas y sin activar (`WEB-D169`).
+El mapa de rutas de `10` §3.1/§3.2 ahora declara las 16 rutas que faltaban
+frente al árbol real de superficies, y un gate de `prebuild` lo mantiene así
+(`AC-TRAZ-05`). `npm run typecheck`, `npm run lint`, `npm run build`,
+`npm test` (173 ficheros, 995 tests) y `npm run test:rls` (48 tests, contra
+Supabase local real) terminan sin errores.
+
+### Qué sorprendió
+
+Tres cosas.
+
+La primera, la más cara de las tres: `instrumentation.ts` de Next.js 16
+**no acepta `process.exit` en su nivel superior**, aunque esté detrás de un
+guard de runtime (`if (process.env.NEXT_RUNTIME !== "nodejs") return`). El
+analizador estático de Next lo marca como incompatible con Edge Runtime de
+todas formas, y `next build` lo advierte. La documentación de Next no dice
+esto en ningún sitio que mencione `instrumentation.ts` directamente; el
+patrón para evitarlo —dividir en un despachador fino que hace `import()`
+dinámico de un módulo separado con la lógica de Node— aparece solo en su
+documentación general sobre módulos exclusivos de Node. Se corrigió
+partiendo el fichero en tres: `instrumentation.ts` (despachador),
+`instrumentation.node.ts` (el `process.exit`) e `instrumentation-check.ts`
+(la lógica pura, ya la de `W-02`, ahora testable sin tocar ninguno de los
+otros dos). Verificado de nuevo con `next build` real: la advertencia
+desapareció y el comportamiento en caliente (`next start` con configuración
+peligrosa) siguió matando el proceso como antes.
+
+La segunda: el patrón `include` de `vitest.config.ts`
+(`tests/**/*.{test,spec}.{ts,tsx}`) coincidía también con los `.spec.ts` de
+Playwright recién creados bajo `tests/e2e/`, porque Vitest y Playwright
+comparten la extensión `.spec.ts` por convención y el patrón no distinguía
+directorios. Vitest intentaba cargarlos y fallaba con
+`test.fixme() can only be called inside test, describe block or fixture` —
+un error de carga, no de aserción: las 995 pruebas reales seguían en verde,
+pero 12 ficheros marcaban el run como roto. Se corrigió añadiendo
+`tests/e2e/**` a la exclusión común de ambos proyectos de Vitest.
+
+La tercera: al medir qué reglas de lint de `51` §6.4 se podían activar hoy
+sin violaciones, tres de las ocho fallaban contra código real y legítimo que
+todavía no tiene su corte — 55 menciones de WhatsApp en `core/` (de `W-04`),
+literales de estilo sin que exista aún la paleta de `W-06`, y llamadas a
+`fetch` a mano sin que exista aún la librería elegida en `W-07`. Activarlas
+ahora habría sido saldar deuda en código condenado (`WEB-D164`) o, en el
+caso de estilo, inventar una definición de "literal" sin la paleta que la
+sustenta. Se documentó como `WEB-D169`: cinco activas desde ya, tres con
+fecha de activación fijada a su propio corte.
+
+### Qué quedó abierto
+
+Ningún criterio de `G3` propio. `AC-PRUEBA-09` no cierra aquí — el arnés de
+los doce recorridos existe (`test.fixme`, Playwright sin advertencias) pero
+ninguno pasa todavía: cada uno cierra cuando su corte de módulo construye la
+ruta que recorre (`W-08` en adelante). Las tres reglas de lint diferidas por
+`WEB-D169` (`sin-canal-en-el-nucleo`, `sin-literales-de-estilo`,
+`fetch-a-mano`) se activan en `W-04`, `W-06` y `W-07` respectivamente.
+
+### Documentos corregidos
+
+- `10` §3.1: añadidas `/estado` y `/baja`, ya construidas en `W-01` pero
+  ausentes del mapa.
+- `10` §3.2: añadidas 14 rutas más declaradas por superficies existentes del
+  corpus (`/recordatorios`, `/configuracion/categorias[/[id]]`,
+  `/configuracion/correo/estado`, `/configuracion/plantillas`,
+  `/configuracion/personas`, `/configuracion/memoria/[id]`,
+  `/configuracion/voz`, `/reportes/guardadas`, `/buscar/guardadas`,
+  `/asistente/hilos`, `/ayuda[/[tema]|/contacto]`).
+- `50` §5.2: actualizado, el hueco entre mapa y superficies que describía ya
+  está cerrado.
+- `03_decisiones_producto_web.md`: `WEB-D169` (nueva).
 
 ---
 

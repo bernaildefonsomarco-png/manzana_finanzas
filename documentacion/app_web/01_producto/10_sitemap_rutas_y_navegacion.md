@@ -66,6 +66,8 @@ regla queda derogada.**
 | `/verificar` | Verificación de correo | Incluye reenvío. |
 | `/auth/callback` | Retorno de OAuth | Hoy inexistente; requerido por Supabase. |
 | `/privacidad`, `/terminos`, `/empresa`, `/contacto`, `/eliminar-datos` | Páginas legales | Ya existen. |
+| `/estado` | Estado del producto | Pública, sin sesión. `48` `SCR-AYUDA-06` (`50` §5.2). |
+| `/baja` | Baja de correo en un clic | Con `?t=<token>` firmado, sin sesión. `46` `SCR-MAIL-02` (`50` §5.2). |
 
 ### 3.2 Rutas de la aplicación (con sesión)
 
@@ -100,6 +102,20 @@ regla queda derogada.**
 | `/configuracion/correo` | Conexión de buzones | nuevo |
 | `/configuracion/memoria` | Lo que Manzana aprendió | nuevo |
 | `/configuracion/datos` | Exportar y eliminar | nuevo |
+| `/recordatorios` | Bandeja de recordatorios | `37` (`50` §5.2) |
+| `/configuracion/categorias` | Gestión de categorías | `25` (`50` §5.2) |
+| `/configuracion/categorias/[id]` | Detalle de categoría | `25` (`50` §5.2) |
+| `/configuracion/correo/estado` | Salud de la detección | `28` (`50` §5.2) |
+| `/configuracion/plantillas` | Plantillas de registro rápido | `29` (`50` §5.2) |
+| `/configuracion/personas` | Personas de las deudas | `31` (`50` §5.2) |
+| `/configuracion/memoria/[id]` | Un aprendizaje en detalle | `36` (`50` §5.2) |
+| `/configuracion/voz` | Cómo habla Manzana | `45` (`50` §5.2) |
+| `/reportes/guardadas` | Vistas guardadas | `35` (`50` §5.2) |
+| `/buscar/guardadas` | Búsquedas guardadas | `38` (`50` §5.2) |
+| `/asistente/hilos` | Historial de conversaciones | `41` (`50` §5.2) |
+| `/ayuda` | Índice de ayuda | `48` (`50` §5.2) |
+| `/ayuda/[tema]` | Artículo | `48` (`50` §5.2) |
+| `/ayuda/contacto` | Contacto de soporte | `48` (`50` §5.2) |
 | `/bienvenida` | Onboarding | `ONBOARDING_*` |
 
 **Cambio relevante:** `/configuracion` se convierte en un índice con

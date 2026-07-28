@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readAgentRuntimeConfig } from "@/agents/runtime/config";
-import { verificarArranqueSeguro } from "./instrumentation";
+import { verificarArranqueSeguro } from "./instrumentation-check";
 
 describe("AC-RT-01 / AC-REU-06: gate de arranque seguro (53 D-04)", () => {
   it("no lanza fuera de producción, aunque local_fixture esté activo", () => {

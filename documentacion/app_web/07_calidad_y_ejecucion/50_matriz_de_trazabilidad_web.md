@@ -291,7 +291,9 @@ cuando lo hace el último.
 ### 5.2 Las rutas declaradas por los módulos
 
 59 rutas. Las que el mapa de `10` §3 ya listaba se omiten aquí; estas son las
-**16 que los módulos declararon y el mapa no conocía**:
+**16 que los módulos declararon y el mapa no conocía** — añadidas a `10` §3
+en `W-03`, con el gate de `AC-TRAZ-05` (§10) que impide que vuelvan a
+divergir:
 
 | Ruta | Módulo | Qué es |
 |---|---|---|
