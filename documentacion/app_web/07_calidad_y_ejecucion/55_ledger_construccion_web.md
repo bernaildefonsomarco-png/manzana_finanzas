@@ -382,7 +382,7 @@ riesgo aceptado) sigue abierto hasta que esa lista llegue a cero.
 **Cerrado:** 2026-07-27
 **Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
 **Matriz regenerada:** 2026-07-27, con `npm run matriz:generar`, posterior al
-commit `[pendiente: se registra tras el commit de cierre]` (`AC-TRAZ-12`).
+commit `7042945` (`AC-TRAZ-12`).
 
 ### Qué se entregó
 
