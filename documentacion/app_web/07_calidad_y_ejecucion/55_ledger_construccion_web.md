@@ -605,7 +605,8 @@ conversacional para que no dependa del canal.
 
 **Cerrado:** 2026-07-28
 **Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
-**Matriz regenerada:** 2026-07-28, con `npm run matriz:generar`.
+**Matriz regenerada:** 2026-07-28, con `npm run matriz:generar`, posterior al
+commit `58b0a0e` (`AC-TRAZ-12`).
 
 ### Qué se entregó
 
