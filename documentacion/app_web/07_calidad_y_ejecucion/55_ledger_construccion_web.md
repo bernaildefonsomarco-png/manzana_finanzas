@@ -222,10 +222,8 @@ Esta tabla se actualiza con cada corte y es lo primero que se lee.
 
 **Cerrado:** 2026-07-27
 **Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
-**Matriz regenerada:** 2026-07-27, con `npm run matriz:generar`. **Commit: pendiente** —
-este corte no incluye el commit de cierre; `AC-TRAZ-12` exige una regeneración
-posterior al último commit, así que la entrada queda con el hash pendiente
-hasta que el usuario decida hacer ese commit.
+**Matriz regenerada:** 2026-07-27, con `npm run matriz:generar`, posterior al
+commit `098cbad` (`AC-TRAZ-12`).
 
 ### Qué se entregó
 
