@@ -13,11 +13,11 @@ import {
 } from "lucide-react";
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { ApiClientError } from "@/features/movements/movements-api";
-import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
-import { Input, Select } from "@/shared/ui/field";
-import { EmptyState, ErrorState } from "@/shared/ui/states";
-import { cn } from "@/shared/ui/cn";
+import { Button } from "@/ui/primitivas/button";
+import { Card } from "@/ui/primitivas/card";
+import { Input, Select } from "@/ui/primitivas/field";
+import { EmptyState, ErrorState } from "@/ui/primitivas/states";
+import { cn } from "@/ui/primitivas/cn";
 import {
   runNaturalSearch,
   type NaturalSearchResult,

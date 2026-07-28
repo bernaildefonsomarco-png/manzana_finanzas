@@ -32,11 +32,11 @@ import {
 } from "lucide-react";
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { useDiscreetMode } from "@/shared/privacy/discreet-mode-context";
-import { Button } from "@/shared/ui/button";
-import { Input, Select } from "@/shared/ui/field";
-import { MoneyText } from "@/shared/ui/money";
-import { EmptyState, ErrorState, LoadingBlock } from "@/shared/ui/states";
-import { cn } from "@/shared/ui/cn";
+import { Button } from "@/ui/primitivas/button";
+import { Input, Select } from "@/ui/primitivas/field";
+import { MoneyText } from "@/ui/primitivas/money";
+import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
+import { cn } from "@/ui/primitivas/cn";
 import type { CategoryId, Movement, MovementType } from "@/shared/types/domain";
 import type { ClassificationCatalog } from "@/data/repositories/classification.repository";
 import {

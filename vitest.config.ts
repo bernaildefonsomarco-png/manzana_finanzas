@@ -16,13 +16,20 @@ const EXCLUDE_COMUN = [
   "**/*.api-smoke.test.ts",
 ];
 
-// Solo ocho ficheros —pantallas de src/features/— importan React Testing
-// Library y necesitan un DOM real. El resto (core/, shared/, agents/, data/,
-// workers/, tests/lint, tests/corpus) prueba lógica pura. Separar los dos en
-// proyectos evita pagar el arranque de jsdom en los ~160 ficheros que no lo
-// necesitan — es la mayor parte de los 254s originales (`51` §11.1) — y deja
-// `npm test` por debajo de 120s (`AC-PRUEBA-11`).
-const PATRON_DOM = ["src/features/**/*.test.tsx"];
+// Los ficheros que importan React Testing Library necesitan un DOM real:
+// las pantallas de src/features/, el catálogo de primitivas de src/ui/
+// (16 §10) y, desde W-06, el proveedor único de modo discreto/tema de
+// src/shared/privacy/ (consume hooks de React, no lógica pura). El resto
+// (core/, agents/, data/, workers/, tests/lint, tests/corpus) prueba
+// lógica pura. Separar los dos en proyectos evita pagar el arranque de
+// jsdom en los ficheros que no lo necesitan — es la mayor parte de los
+// 254s originales (`51` §11.1) — y deja `npm test` por debajo de 120s
+// (`AC-PRUEBA-11`).
+const PATRON_DOM = [
+  "src/features/**/*.test.tsx",
+  "src/ui/**/*.test.tsx",
+  "src/shared/privacy/**/*.test.tsx",
+];
 
 export default defineConfig({
   test: {

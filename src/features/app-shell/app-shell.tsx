@@ -18,8 +18,8 @@ import {
   WalletCards,
 } from "lucide-react";
 import { useDiscreetMode } from "@/shared/privacy/discreet-mode-context";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/ui/cn";
+import { Button } from "@/ui/primitivas/button";
+import { cn } from "@/ui/primitivas/cn";
 
 export type AppView =
   | "home"

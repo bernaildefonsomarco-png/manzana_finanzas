@@ -26,10 +26,10 @@ import { useDiscreetMode } from "@/shared/privacy/discreet-mode-context";
 import { categoryLabels } from "@/features/movements/movement-view-model";
 import { ApiClientError } from "@/features/movements/movements-api";
 import type { InsightCandidate, InsightType } from "@/shared/types/domain";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/ui/cn";
-import { DiscreetValue } from "@/shared/ui/money";
-import { EmptyState, ErrorState, LoadingBlock } from "@/shared/ui/states";
+import { Button } from "@/ui/primitivas/button";
+import { cn } from "@/ui/primitivas/cn";
+import { DiscreetValue } from "@/ui/primitivas/money";
+import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import {
   dismissInsight,
   getInsightDetail,

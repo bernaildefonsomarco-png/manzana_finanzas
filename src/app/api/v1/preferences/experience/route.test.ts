@@ -23,6 +23,7 @@ const preferences = {
   insights_whatsapp_opt_in: false,
   weekly_summary_enabled: true,
   weekly_summary_channel: "dashboard",
+  theme_preference: "system",
 };
 
 beforeEach(() => {

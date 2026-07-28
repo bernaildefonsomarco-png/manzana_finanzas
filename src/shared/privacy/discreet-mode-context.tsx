@@ -10,21 +10,21 @@ import {
   useState,
 } from "react";
 import type { ExperiencePreferences } from "@/data/repositories/experience-preferences.repository";
-
-const DEFAULT_PREFERENCES: ExperiencePreferences = {
-  discreet_mode_enabled: false,
-  insights_whatsapp_opt_in: false,
-  weekly_summary_enabled: false,
-  weekly_summary_channel: "dashboard",
-};
+import {
+  DEFAULT_PREFERENCES,
+  applyThemePreference,
+  requestExperiencePreferences,
+} from "./experience-preferences-client";
 
 type DiscreetModeContextValue = {
   discreet: boolean;
+  theme: ExperiencePreferences["theme_preference"];
   preferences: ExperiencePreferences;
   loading: boolean;
   saving: boolean;
   error: string | null;
   setDiscreet: (enabled: boolean) => Promise<void>;
+  setTheme: (theme: ExperiencePreferences["theme_preference"]) => Promise<void>;
   updatePreferences: (
     preferences: ExperiencePreferences,
   ) => Promise<ExperiencePreferences>;
@@ -32,11 +32,13 @@ type DiscreetModeContextValue = {
 
 const DiscreetModeContext = createContext<DiscreetModeContextValue>({
   discreet: false,
+  theme: "system",
   preferences: DEFAULT_PREFERENCES,
   loading: false,
   saving: false,
   error: null,
   setDiscreet: async () => undefined,
+  setTheme: async () => undefined,
   updatePreferences: async (preferences) => preferences,
 });
 
@@ -67,6 +69,10 @@ export function DiscreetModeProvider({ children }: { children: ReactNode }) {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    applyThemePreference(preferences.theme_preference);
+  }, [preferences.theme_preference]);
 
   const updatePreferences = useCallback(
     async (nextPreferences: ExperiencePreferences) => {
@@ -101,17 +107,29 @@ export function DiscreetModeProvider({ children }: { children: ReactNode }) {
     [preferences, updatePreferences],
   );
 
+  const setTheme = useCallback(
+    async (theme: ExperiencePreferences["theme_preference"]) => {
+      await updatePreferences({
+        ...preferences,
+        theme_preference: theme,
+      });
+    },
+    [preferences, updatePreferences],
+  );
+
   const value = useMemo<DiscreetModeContextValue>(
     () => ({
       discreet: preferences.discreet_mode_enabled,
+      theme: preferences.theme_preference,
       preferences,
       loading,
       saving,
       error,
       setDiscreet,
+      setTheme,
       updatePreferences,
     }),
-    [error, loading, preferences, saving, setDiscreet, updatePreferences],
+    [error, loading, preferences, saving, setDiscreet, setTheme, updatePreferences],
   );
 
   return (
@@ -123,26 +141,4 @@ export function DiscreetModeProvider({ children }: { children: ReactNode }) {
 
 export function useDiscreetMode(): DiscreetModeContextValue {
   return useContext(DiscreetModeContext);
-}
-
-async function requestExperiencePreferences(
-  preferences?: ExperiencePreferences,
-): Promise<ExperiencePreferences> {
-  const response = await fetch("/api/v1/preferences/experience", {
-    method: preferences ? "PUT" : "GET",
-    credentials: "same-origin",
-    headers: preferences ? { "content-type": "application/json" } : undefined,
-    body: preferences ? JSON.stringify(preferences) : undefined,
-  });
-  const payload = (await response.json()) as {
-    ok: boolean;
-    data?: { preferences?: ExperiencePreferences };
-    error?: { message?: string };
-  };
-  if (!response.ok || !payload.ok || !payload.data?.preferences) {
-    throw new Error(
-      payload.error?.message ?? "No se pudo actualizar la preferencia.",
-    );
-  }
-  return payload.data.preferences;
 }

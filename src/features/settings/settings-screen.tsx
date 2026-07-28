@@ -24,10 +24,10 @@ import {
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { useDiscreetMode } from "@/shared/privacy/discreet-mode-context";
 import { ApiClientError } from "@/features/movements/movements-api";
-import { Button } from "@/shared/ui/button";
-import { FieldShell, Input } from "@/shared/ui/field";
-import { EmptyState, ErrorState, LoadingBlock } from "@/shared/ui/states";
-import { Switch } from "@/shared/ui/switch";
+import { Button } from "@/ui/primitivas/button";
+import { FieldShell, Input } from "@/ui/primitivas/field";
+import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
+import { Switch } from "@/ui/primitivas/switch";
 import type { Profile } from "@/shared/types/domain";
 import {
   disconnectGmail,

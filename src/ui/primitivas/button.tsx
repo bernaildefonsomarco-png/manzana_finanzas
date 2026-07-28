@@ -20,7 +20,7 @@ const variantClasses: Record<ButtonVariant, string> = {
   ghost:
     "bg-transparent text-text-secondary border-transparent hover:bg-bg-surface hover:text-text",
   danger:
-    "bg-error text-white border-error hover:bg-red-700 active:bg-red-800",
+    "bg-error text-text-inverse border-error hover:brightness-95 active:brightness-90",
   quiet:
     "bg-brand-subtle text-text-brand border-transparent hover:bg-success-subtle",
 };

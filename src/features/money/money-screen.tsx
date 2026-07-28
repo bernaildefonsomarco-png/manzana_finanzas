@@ -21,11 +21,11 @@ import {
 } from "lucide-react";
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { ApiClientError } from "@/features/movements/movements-api";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/ui/cn";
-import { FieldShell, Input, Select } from "@/shared/ui/field";
-import { MoneyText } from "@/shared/ui/money";
-import { EmptyState, ErrorState, LoadingBlock } from "@/shared/ui/states";
+import { Button } from "@/ui/primitivas/button";
+import { cn } from "@/ui/primitivas/cn";
+import { FieldShell, Input, Select } from "@/ui/primitivas/field";
+import { MoneyText } from "@/ui/primitivas/money";
+import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import type { AccountType, BoxType } from "@/shared/types/domain";
 import {
   createAccount,

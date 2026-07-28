@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-05` cerraron `G1` y `G2`. Ninguno
+**La construcción avanza.** `W-01` a `W-06` cerraron `G1` y `G2`. Ninguno
 tiene criterios de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 5 de 20 |
-| Criterios `verificado` | 39 de 708 |
+| Cortes cerrados | 6 de 20 |
+| Criterios `verificado` | 50 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -717,6 +717,135 @@ no cierra: la familia `assistant` no existe.
 - `03_decisiones_producto_web.md`: `WEB-D175` a `WEB-D182` (nuevas);
   `WEB-D170` corregida (el tipo `Canal` real es `"whatsapp" | "dashboard"`,
   no `"web" | "whatsapp"` como decía por error desde `W-04`).
+
+---
+
+## W-06 — Sistema de diseño
+
+**Cerrado:** 2026-07-28
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-28, con `npm run matriz:generar`.
+
+### Qué se entregó
+
+`src/shared/ui/` (8 ficheros) se mueve a `src/ui/primitivas/` (`16` §10),
+con `src/ui/tokens.ts` nuevo para acceso tipado. Los 7 componentes
+existentes se amplían: `Button` (variante `danger` corregida de rojo
+literal a `--color-error`), `Card` (`CardLink`, toda la tarjeta como
+enlace), `Field` (`aria-describedby`/`aria-invalid` automáticos vía
+`cloneElement`, prefijo/sufijo en `Input`, asterisco de requerido),
+`States` (`SkeletonRow`/`SkeletonCard` con la forma real del contenido),
+`Money` (`value: number | null` → "—" nunca `S/0.00`, variante `compact`,
+y un defecto real corregido: `Intl` deja un espacio entre "S/" y la
+cifra que `18` §9.1 no permite), `Badge` (tonos `amber-800`/`blue-800`
+literales corregidos a tokens, tonos `budget-*` nuevos), `Switch`
+(`loading`).
+
+18 primitivas nuevas en `src/ui/primitivas/`: `Dialog`/`AlertDialog`
+(foco atrapado propio en `internal/use-focus-trap.ts`, sin librería
+headless nueva — `Escape`, `Tab`/`Shift+Tab` cíclico, retorno de foco al
+disparador, `DialogTitle` obligatorio que falla en desarrollo si falta),
+`Sheet` (mismo contrato, posición lateral/inferior), `Popover`/
+`DropdownMenu`/`Combobox`/`Command` (capa no modal compartida,
+`internal/use-dismissable-layer.ts` — `Escape` y clic fuera cierran, sin
+atrapar foco), `Tooltip` (aparece con foco de teclado, no solo ratón),
+`Tabs`/`RadioGroup` (flechas + `Home`/`End`), `Checkbox` (indeterminado
+real vía la propiedad DOM, no solo visual), `Textarea` (autoajuste de
+altura + contador), `Progress`/`Avatar`/`Separator`/`ScrollArea`/
+`VisuallyHidden`/`Table`/`Pagination` (botones reales, reemplaza el "Ver
+más" sin manejador — pero solo el componente; `movements-screen.tsx`
+sigue con el suyo, `WEB-D182`), y `DatePicker`/`DateRangePicker`
+(entrada por texto siempre disponible, calendario nativo con
+`Intl`/`Date` en `internal/date-lima.ts` — sin elegir librería de fechas,
+esa decisión es de `W-07`, `WEB-D165`).
+
+Tokens nuevos en `globals.css`: paleta categórica de 8 colores para
+gráficos, semáforo `budget-ok/warning/over`, superficies del asistente
+(alias de tokens ya verificados), y cuatro `--color-*-on-subtle` para
+texto sobre fondo `-subtle` (ver "Qué sorprendió"). Modo oscuro manual:
+migración `048` añade `theme_preference` (`system`/`light`/`dark`) a
+`set_experience_preferences`; `DiscreetModeProvider` (ya el único
+proveedor del modo discreto) lo aplica a `<html data-theme>` en vez de
+crear un segundo proveedor paralelo. `globals.css` gana un bloque
+`:root[data-theme="dark"]` gemelo del `@media` existente, con un test
+que falla si los dos divergen.
+
+`sin-literales-de-estilo` (`AC-DS-01`) se activa (`WEB-D169` la dejaba
+definida sin activar hasta que existiera la paleta de tokens): tres
+comprobaciones —paleta por defecto de Tailwind, sintaxis de valor
+arbitrario, `style` en línea con color/tamaño literal— sobre `src/`
+fuera de `src/features/**`. Infraestructura de accesibilidad nueva:
+`tests/lint/contraste.test.ts` (fórmula real de luminancia relativa de
+WCAG sobre los hexadecimales de `globals.css`, no una aprobación
+visual) y `tests/lint/foco-sin-reemplazo.test.ts` (`outline-none` exige
+un anillo, otro contorno o un cambio de fondo en la misma cadena de
+clases). `npx tsc --noEmit`, `npx eslint .`, `npm test` (212 ficheros,
+1.190 pruebas) terminan sin errores.
+
+### Qué sorprendió
+
+La medición de contraste encontró un defecto real, no fabricado: los
+tonos semánticos (`success`, `warning`, `error`, `info`) como texto sobre
+su propio fondo `-subtle` no llegan a 4.5:1 en modo claro —2.88, 1.85,
+3.44 y 2.37, medidos con la fórmula real, no estimados—. Afectaba
+directamente al `Badge` que este mismo corte amplía. Se corrigió con
+cuatro tokens `--color-*-on-subtle` (oscurecidos hasta cruzar 4.5:1
+contra su "-subtle" en claro; en oscuro el semántico base ya cumplía de
+sobra, así que ahí se repite el mismo valor) en vez de declarar el
+criterio cerrado sobre un par que no pasaba.
+
+La segunda: `jsdom` no calcula layout, así que `offsetParent` es
+siempre `null` — el primer `useFocusTrap` filtraba los elementos
+enfocables por `offsetParent !== null`, lo que en las pruebas dejaba el
+atrapado de foco operando sobre una lista vacía sin que ningún test lo
+notara al principio (el foco nunca se movía, así que la aserción de
+"vuelve al disparador" pasaba por una razón equivocada: el foco nunca
+se había ido). Se cambió el filtro a `hidden`/`aria-hidden` explícitos,
+y se re-verificó cada prueba de foco con `RUL-HECHO-02` para confirmar
+que ahora sí ejercita el atrapado real.
+
+La tercera, la misma tensión que `WEB-D182` ya resolvió para
+`movements-screen.tsx`: `54` describe que
+`modal-accessibility-guard.tsx` "desaparece porque deja de haber
+diálogos mal construidos, no porque se borra" — medido, el 100 % de
+los diálogos mal construidos conocidos (los 17 modales a mano) viven
+dentro de las 5 carpetas `REEMPLAZAR` de `52` §5. Borrar el guard ahora
+les quitaría el atrapado de foco que hoy tienen en producción, sin que
+ninguna migración real los sustituya todavía — `WEB-D183` lo deja
+montado hasta que cada pantalla condenada migre sus propios modales.
+
+La cuarta: de los diez `AC-A11Y-*` que `54` lista como "Cierra" de
+`W-06`, dos (`01`, `08`) dependen de los doce recorridos de
+`tests/e2e/recorridos/`/`irreversibles/`, que ya existían como
+`test.fixme()` con su propio corte dueño anotado desde `W-03` —ninguno
+es de `W-06`— y dos más (`04`, `06`) piden evidencia `USER` que exige el
+protocolo de tres personas de `WEB-D149`. `WEB-D185` documenta el
+reparto real: seis cierran completos, dos parcialmente (`TEST` sí,
+`USER` no), uno es agregado, y dos no cierran.
+
+### Qué quedó abierto
+
+`AC-DS-05` (borrar el guard) y los 17 modales a mano: migran cuando cada
+corte de módulo (`W-08` a `W-19`) reconstruya su pantalla. `AC-DS-10`
+sobre el "Ver más" de `movements-screen.tsx`: mismo tratamiento,
+`WEB-D182`. `AC-A11Y-01`/`08` (e2e/visual) y la mitad `USER` de
+`AC-DS-08`/`AC-A11Y-04`/`06`: fuera del alcance de este corte
+(`WEB-D185`). Los 12 componentes de dominio de `16` §4.3
+(`MovementRow`, `ConfirmationCard`, `Chart`, etc.): los construye el
+corte de módulo que primero los necesite (`WEB-D184`). El arrastrar
+hacia abajo para cerrar `Sheet` en móvil (`16` §4.2) no se implementó —
+simplificación no documentada como decisión porque no genera una
+contradicción de criterios, solo queda pendiente.
+
+### Documentos corregidos
+
+- `16` §12: `Clase:` añadida a `AC-DS-01` a `10` (o nota de por qué no
+  cierra); `AC-DS-05` marcado sin cerrar (`WEB-D183`).
+- `18` §11: `Clase:` añadida a los diez `AC-A11Y-*` (o nota de por qué
+  no cierra/es agregado), `WEB-D185`.
+- `50` §3.1: censo de clases actualizado (117 con clase, no 105; `lint`
+  21, no 15; `unidad` 20, no 14).
+- `03_decisiones_producto_web.md`: `WEB-D183` a `WEB-D185` (nuevas).
 
 ---
 

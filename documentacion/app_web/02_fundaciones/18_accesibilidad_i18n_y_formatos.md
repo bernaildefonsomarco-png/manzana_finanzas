@@ -201,21 +201,40 @@ restaurar — se verifican manualmente antes de cada lanzamiento.
 ## 11. Criterios de aceptación
 
 - `AC-A11Y-01` — Todo flujo crítico se completa solo con teclado.
-  Evidencia: `TEST`. Clase: `e2e`.
+  Evidencia: `TEST`. Clase: `e2e`. **No cierra en `W-06`** (`WEB-D185`):
+  los doce recorridos de `tests/e2e/recorridos/` e `irreversibles/` son
+  `test.fixme()` con su propio corte dueño anotado (`W-07` en adelante);
+  ninguno es de `W-06`.
 - `AC-A11Y-02` — Ningún elemento elimina el indicador de foco sin
-  reemplazarlo. Evidencia: `TEST`.
+  reemplazarlo. Evidencia: `TEST`. Clase: `lint`.
+  `tests/lint/foco-sin-reemplazo.test.ts` (`W-06`; sobre `src/` fuera de
+  `src/features/**`, `WEB-D164`).
 - `AC-A11Y-03` — Todo par de tokens cumple contraste AA en modo claro y
-  oscuro. Evidencia: `TEST`.
+  oscuro. Evidencia: `TEST`. Clase: `lint`.
+  Mismo mecanismo que `AC-DS-03`: `tests/lint/contraste.test.ts` (`W-06`).
 - `AC-A11Y-04` — Ningún estado se comunica solo por color.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `unidad` (la parte `TEST`, igual
+  alcance que `AC-DS-08`). La parte `USER` no cierra en `W-06`
+  (`WEB-D185`).
 - `AC-A11Y-05` — Todo control tiene nombre accesible.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`.
+  `src/ui/primitivas/button.test.tsx` (`W-06`): un `Button size="icon"`
+  oculta el texto visualmente (`sr-only`) pero nunca lo omite del DOM.
 - `AC-A11Y-06` — Los montos se anuncian con moneda y signo.
-  Evidencia: `USER`.
+  Evidencia: `USER`. No cierra en `W-06` (`WEB-D185`): evidencia
+  enteramente `USER`, protocolo de tres personas de `WEB-D149`.
 - `AC-A11Y-07` — Ningún texto visible está en inglés ni proviene sin traducir
-  de un proveedor. Evidencia: `TEST`.
+  de un proveedor. Evidencia: `TEST`. Criterio agregado (`WEB-D185`):
+  cierra para `src/ui/primitivas/` (ya en español, verificado al escribir
+  cada componente) y crece con cada corte de módulo que reemplaza su
+  porción de `src/features/**`.
 - `AC-A11Y-08` — La aplicación funciona a 200% de zoom y a 320px de ancho sin
-  desplazamiento horizontal. Evidencia: `TEST`.
+  desplazamiento horizontal. Evidencia: `TEST`. **No cierra en `W-06`**
+  (`WEB-D185`): la evidencia es visual/e2e sobre pantallas reales, que
+  hoy son `REEMPLAZAR` o no existen.
 - `AC-A11Y-09` — Un dato inexistente se muestra como `—`, nunca como
-  `S/0.00`. Evidencia: `TEST`.
+  `S/0.00`. Evidencia: `TEST`. Clase: `unidad`.
+  `src/ui/primitivas/money.test.tsx` (`W-06`).
 - `AC-A11Y-10` — Se respeta `prefers-reduced-motion`. Evidencia: `TEST`.
+  Clase: `lint`. `tests/lint/movimiento-reducido.test.ts` (`W-06`; la
+  regla en `globals.css` ya existía, ahora tiene prueba).

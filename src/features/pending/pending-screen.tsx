@@ -22,11 +22,11 @@ import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { useDiscreetMode } from "@/shared/privacy/discreet-mode-context";
 import { ApiClientError } from "@/features/movements/movements-api";
 import { categoryLabels } from "@/features/movements/movement-view-model";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/ui/cn";
-import { FieldShell, Input, Select } from "@/shared/ui/field";
-import { MoneyText } from "@/shared/ui/money";
-import { EmptyState, ErrorState, LoadingBlock } from "@/shared/ui/states";
+import { Button } from "@/ui/primitivas/button";
+import { cn } from "@/ui/primitivas/cn";
+import { FieldShell, Input, Select } from "@/ui/primitivas/field";
+import { MoneyText } from "@/ui/primitivas/money";
+import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import type {
   Account,
   CategoryId,

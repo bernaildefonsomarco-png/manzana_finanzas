@@ -56,6 +56,50 @@
   --color-progress-low:      #E5A93D;
   --color-progress-track:    #E5E4E0;
 
+  /* Variantes de texto sobre fondo "-subtle" del mismo semántico (p. ej.
+     `Badge`, `bg-success-subtle` + este texto): medido con la fórmula de
+     luminancia relativa de WCAG, el semántico base no llega a 4.5:1 en
+     modo claro contra su propio "-subtle" (success 2.88:1, warning
+     1.85:1, error 3.44:1, info 2.37:1 — `tests/lint/contraste.test.ts`
+     los mide). En modo oscuro el semántico base ya cumple de sobra
+     (5.6–6.8:1), así que los bloques oscuros más abajo alían este token
+     al valor semántico normal en vez de definir uno nuevo.
+     Valores calculados: el semántico oscurecido hasta cruzar 4.5:1
+     contra su "-subtle" en claro. */
+  --color-success-on-subtle: #28754D;
+  --color-warning-on-subtle: #8C6825;
+  --color-error-on-subtle:   #AA4545;
+  --color-info-on-subtle:    #4A6D89;
+
+  /* Presupuesto — alias de los semánticos con nombre propio (16 §3),
+     para no acoplar el significado "sobre presupuesto" al color "error".
+     Usa la variante "-on-subtle" (no el semántico base) porque el
+     patrón de uso previsto es texto sobre su fondo "-subtle" (`Badge`).
+     Sin valor propio en modo oscuro: al ser `var()` de otro token,
+     heredan su valor oscuro automáticamente sin duplicar la cascada. */
+  --color-budget-ok:         var(--color-success-on-subtle);
+  --color-budget-warning:    var(--color-warning-on-subtle);
+  --color-budget-over:       var(--color-error-on-subtle);
+
+  /* Superficies del asistente — alias de tokens ya verificados en ambos
+     modos, por la misma razón que el presupuesto. */
+  --color-assistant-user-bg:        var(--color-brand-subtle);
+  --color-assistant-user-text:      var(--color-text-primary);
+  --color-assistant-response-bg:    var(--color-bg-surface-raised);
+  --color-assistant-response-text:  var(--color-text-primary);
+
+  /* Paleta categórica de gráficos — 8 colores distinguibles sin depender
+     solo del matiz (35_modulo_reportes...). Seis son alias de tokens ya
+     verificados; violeta y turquesa son los dos únicos valores nuevos. */
+  --color-chart-1: var(--color-brand-primary);
+  --color-chart-2: var(--color-accent);
+  --color-chart-3: var(--color-info);
+  --color-chart-4: var(--color-warning);
+  --color-chart-5: var(--color-debt);
+  --color-chart-6: #8E6BC5;
+  --color-chart-7: #4A8C8C;
+  --color-chart-8: var(--color-text-muted);
+
   /* Tipografía */
   --font-family-heading: "DM Sans", system-ui, sans-serif;
   --font-family-body:    "Inter", system-ui, sans-serif;
@@ -161,9 +205,32 @@
   --color-info:              var(--color-info);
   --color-info-subtle:       var(--color-info-subtle);
 
+  --color-success-on-subtle: var(--color-success-on-subtle);
+  --color-warning-on-subtle: var(--color-warning-on-subtle);
+  --color-error-on-subtle:   var(--color-error-on-subtle);
+  --color-info-on-subtle:    var(--color-info-on-subtle);
+
   --color-debt:              var(--color-debt);
   --color-debt-subtle:       var(--color-debt-subtle);
   --color-debt-paid:         var(--color-debt-paid);
+
+  --color-budget-ok:         var(--color-budget-ok);
+  --color-budget-warning:    var(--color-budget-warning);
+  --color-budget-over:       var(--color-budget-over);
+
+  --color-assistant-user-bg:       var(--color-assistant-user-bg);
+  --color-assistant-user-text:     var(--color-assistant-user-text);
+  --color-assistant-response-bg:   var(--color-assistant-response-bg);
+  --color-assistant-response-text: var(--color-assistant-response-text);
+
+  --color-chart-1: var(--color-chart-1);
+  --color-chart-2: var(--color-chart-2);
+  --color-chart-3: var(--color-chart-3);
+  --color-chart-4: var(--color-chart-4);
+  --color-chart-5: var(--color-chart-5);
+  --color-chart-6: var(--color-chart-6);
+  --color-chart-7: var(--color-chart-7);
+  --color-chart-8: var(--color-chart-8);
 
   --font-heading: var(--font-family-heading);
   --font-body:    var(--font-family-body);
@@ -201,8 +268,18 @@ html {
   text-rendering: optimizeLegibility;
 }
 
+/*
+ * Modo oscuro: el sistema decide por defecto (`prefers-color-scheme`), pero
+ * la preferencia manual del usuario (`theme_preference`, persistida junto al
+ * resto de preferencias de experiencia) puede forzarlo en cualquier
+ * dirección. `data-theme` lo escribe `src/shared/theme/theme-context.tsx`
+ * en `<html>`. `:not([data-theme="light"])` deja que el forzado a claro
+ * gane sobre un sistema en oscuro; el bloque `[data-theme="dark"]` fuera de
+ * la media query cubre el caso contrario (forzar oscuro con el sistema en
+ * claro, donde la media query nunca aplicaría por sí sola).
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --color-bg-primary:        #111512;
     --color-bg-surface:        #18201A;
     --color-bg-surface-raised: #202823;
@@ -240,6 +317,16 @@ html {
     --color-info:              #8CBCE0;
     --color-info-subtle:       #223544;
 
+    /* El semántico oscuro ya cumple 4.5:1 contra su "-subtle" (medido:
+       success 6.32, warning 6.84, error 5.60, info 6.25), así que aquí
+       la variante "-on-subtle" repite el mismo valor en vez de otro
+       oscurecido — oscurecer más lo dejaría sin contraste con el fondo
+       de por sí ya oscuro. */
+    --color-success-on-subtle: #6FCC92;
+    --color-warning-on-subtle: #F0C063;
+    --color-error-on-subtle:   #EF8989;
+    --color-info-on-subtle:    #8CBCE0;
+
     --color-debt:              #E5A38E;
     --color-debt-subtle:       #402B25;
     --color-debt-paid:         #6FCC92;
@@ -247,12 +334,81 @@ html {
     --color-progress-low:      #F0C063;
     --color-progress-track:    #344039;
 
+    --color-chart-6: #B79EE0;
+    --color-chart-7: #7FC2C2;
+
     --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.22);
     --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.28);
     --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.34);
     --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.4);
     --shadow-xl: 0 24px 70px rgba(0, 0, 0, 0.48);
   }
+}
+
+/*
+ * Mismos valores que el bloque de arriba, para el caso "oscuro forzado con
+ * el sistema en claro" que la media query no cubre por sí sola. Un test
+ * (`tests/lint/tema-oscuro-manual.test.ts`) falla si estos dos bloques
+ * llegan a divergir.
+ */
+:root[data-theme="dark"] {
+  --color-bg-primary:        #111512;
+  --color-bg-surface:        #18201A;
+  --color-bg-surface-raised: #202823;
+  --color-bg-discrete:       #303832;
+  --color-bg-inverse:        #F4F7F4;
+
+  --color-brand-primary:     #70BC87;
+  --color-brand-hover:       #85CB99;
+  --color-brand-active:      #5AA972;
+  --color-brand-subtle:      #243B2B;
+
+  --color-accent:            #E08A72;
+  --color-accent-hover:      #EC9A84;
+  --color-accent-subtle:     #462B25;
+
+  --color-text-primary:      #F1F5F1;
+  --color-text-secondary:    #C4CEC5;
+  --color-text-muted:        #98A49A;
+  --color-text-disabled:     #68736A;
+  --color-text-inverse:      #101411;
+  --color-text-discrete:     #AEB8B0;
+  --color-text-brand:        #8DD0A0;
+
+  --color-border-default:    #344039;
+  --color-border-strong:     #506057;
+  --color-border-focus:      #8DD0A0;
+  --color-border-error:      #EF8989;
+
+  --color-success:           #6FCC92;
+  --color-success-subtle:    #1F3A2B;
+  --color-warning:           #F0C063;
+  --color-warning-subtle:    #45371C;
+  --color-error:             #EF8989;
+  --color-error-subtle:      #442526;
+  --color-info:              #8CBCE0;
+  --color-info-subtle:       #223544;
+
+  --color-success-on-subtle: #6FCC92;
+  --color-warning-on-subtle: #F0C063;
+  --color-error-on-subtle:   #EF8989;
+  --color-info-on-subtle:    #8CBCE0;
+
+  --color-debt:              #E5A38E;
+  --color-debt-subtle:       #402B25;
+  --color-debt-paid:         #6FCC92;
+  --color-progress-fill:     #70BC87;
+  --color-progress-low:      #F0C063;
+  --color-progress-track:    #344039;
+
+  --color-chart-6: #B79EE0;
+  --color-chart-7: #7FC2C2;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.28);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.34);
+  --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.4);
+  --shadow-xl: 0 24px 70px rgba(0, 0, 0, 0.48);
 }
 
 body {

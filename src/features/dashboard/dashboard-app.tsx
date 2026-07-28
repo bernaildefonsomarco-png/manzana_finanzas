@@ -13,7 +13,7 @@ import { NaturalSearchScreen } from "@/features/search/natural-search-screen";
 import { SettingsScreen } from "@/features/settings/settings-screen";
 import { UpcomingScreen } from "@/features/upcoming/upcoming-screen";
 import { createClient } from "@/data/supabase/client";
-import { Button } from "@/shared/ui/button";
+import { Button } from "@/ui/primitivas/button";
 
 const defaultView: AppView = "home";
 const appViews = new Set<AppView>([

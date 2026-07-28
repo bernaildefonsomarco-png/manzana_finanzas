@@ -17,12 +17,12 @@ import {
 } from "lucide-react";
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { ApiClientError } from "@/features/movements/movements-api";
-import { Badge } from "@/shared/ui/badge";
-import { Button } from "@/shared/ui/button";
-import { DiscreetValue } from "@/shared/ui/money";
-import { cn } from "@/shared/ui/cn";
-import { FieldShell, Input, Select } from "@/shared/ui/field";
-import { EmptyState, ErrorState, LoadingBlock } from "@/shared/ui/states";
+import { Badge } from "@/ui/primitivas/badge";
+import { Button } from "@/ui/primitivas/button";
+import { DiscreetValue } from "@/ui/primitivas/money";
+import { cn } from "@/ui/primitivas/cn";
+import { FieldShell, Input, Select } from "@/ui/primitivas/field";
+import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import type { Account, DebtDirection, DebtKind } from "@/shared/types/domain";
 import {
   createDebt,

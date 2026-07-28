@@ -8,6 +8,7 @@ export type ExperiencePreferences = {
   insights_whatsapp_opt_in: boolean;
   weekly_summary_enabled: boolean;
   weekly_summary_channel: "dashboard" | "whatsapp";
+  theme_preference: "system" | "light" | "dark";
 };
 
 export async function getExperiencePreferences(
@@ -33,6 +34,7 @@ export async function getExperiencePreferences(
       metadata.weekly_summary_channel === "whatsapp"
         ? "whatsapp"
         : "dashboard",
+    theme_preference: asThemePreference(metadata.theme_preference),
   };
 }
 
@@ -55,6 +57,7 @@ export async function setExperiencePreferences(
     p_weekly_summary_channel:
       input.preferences.weekly_summary_channel,
     p_idempotency_key: input.idempotencyKey,
+    p_theme_preference: input.preferences.theme_preference,
   });
   if (error) throw error;
   const value = asRecord(data);
@@ -67,6 +70,7 @@ export async function setExperiencePreferences(
       value.weekly_summary_channel === "whatsapp"
         ? "whatsapp"
         : "dashboard",
+    theme_preference: asThemePreference(value.theme_preference),
   };
 }
 
@@ -74,4 +78,8 @@ function asRecord(value: Json | undefined): Record<string, Json | undefined> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value
     : {};
+}
+
+function asThemePreference(value: Json | undefined): "system" | "light" | "dark" {
+  return value === "light" || value === "dark" ? value : "system";
 }

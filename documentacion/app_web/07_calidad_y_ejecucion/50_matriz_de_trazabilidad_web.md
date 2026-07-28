@@ -201,14 +201,14 @@ test las distingue por familia.
 |---|---|
 | `corpus` | 45 |
 | `build` | 15 |
-| `lint` | 15 |
+| `lint` | 21 |
 | `e2e` | 8 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
 | `integracion` | 5 |
-| `unidad` | 14 |
-| **Con clase** | **105** |
-| **Con `TEST` y sin clase** | **526** |
+| `unidad` | 20 |
+| **Con clase** | **117** |
+| **Con `TEST` y sin clase** | **514** |
 | **Total con `TEST`** | **631** |
 
 `lint` sube de 13 a 14 en `W-01`: `AC-INV-10` recibe su clase al escribir su

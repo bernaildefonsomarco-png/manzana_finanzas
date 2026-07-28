@@ -28,10 +28,10 @@ import {
 } from "@/features/movements/movement-view-model";
 import { ApiClientError } from "@/features/movements/movements-api";
 import { startDashboardOnboarding } from "@/features/onboarding/onboarding-api";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/ui/cn";
-import { MoneyText } from "@/shared/ui/money";
-import { ErrorState, LoadingBlock } from "@/shared/ui/states";
+import { Button } from "@/ui/primitivas/button";
+import { cn } from "@/ui/primitivas/cn";
+import { MoneyText } from "@/ui/primitivas/money";
+import { ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import { dismissHomeNudge, getHomeDashboard } from "./home-api";
 import type {
   HomeDashboardSummary,

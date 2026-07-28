@@ -97,3 +97,38 @@ export function SkeletonLine({ className }: { className?: string }) {
     />
   );
 }
+
+/** La forma de una fila de lista: icono + dos líneas + monto — la forma
+ * real de `MovementRow`/`PendingRow`, no una barra genérica (`16` §4.1). */
+export function SkeletonRow({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn("flex items-center gap-3 py-3", className)}
+      aria-hidden="true"
+    >
+      <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-bg-surface" />
+      <div className="flex-1 space-y-2">
+        <div className="h-3.5 w-2/5 animate-pulse rounded-sm bg-bg-surface" />
+        <div className="h-3 w-1/4 animate-pulse rounded-sm bg-bg-surface" />
+      </div>
+      <div className="h-4 w-16 shrink-0 animate-pulse rounded-sm bg-bg-surface" />
+    </div>
+  );
+}
+
+/** La forma de una tarjeta de resumen: título + cifra grande + línea. */
+export function SkeletonCard({ className }: { className?: string }) {
+  return (
+    <div
+      className={cn(
+        "rounded-xl border border-border bg-bg-surface-raised p-5",
+        className
+      )}
+      aria-hidden="true"
+    >
+      <div className="h-3 w-1/3 animate-pulse rounded-sm bg-bg-surface" />
+      <div className="mt-3 h-7 w-1/2 animate-pulse rounded-sm bg-bg-surface" />
+      <div className="mt-2 h-3 w-2/3 animate-pulse rounded-sm bg-bg-surface" />
+    </div>
+  );
+}

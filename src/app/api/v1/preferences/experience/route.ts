@@ -23,6 +23,7 @@ const PreferencesSchema = z.object({
   insights_whatsapp_opt_in: z.boolean(),
   weekly_summary_enabled: z.boolean(),
   weekly_summary_channel: z.enum(["dashboard", "whatsapp"]),
+  theme_preference: z.enum(["system", "light", "dark"]),
 });
 
 export async function GET(request: Request) {

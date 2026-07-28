@@ -21,12 +21,12 @@ import {
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import type { DebtScreenIntent } from "@/features/debts/debts-types";
 import { ApiClientError } from "@/features/movements/movements-api";
-import { Badge } from "@/shared/ui/badge";
-import { Button } from "@/shared/ui/button";
-import { cn } from "@/shared/ui/cn";
-import { FieldShell, Input, Select } from "@/shared/ui/field";
-import { EmptyState, ErrorState, LoadingBlock } from "@/shared/ui/states";
-import { DiscreetValue } from "@/shared/ui/money";
+import { Badge } from "@/ui/primitivas/badge";
+import { Button } from "@/ui/primitivas/button";
+import { cn } from "@/ui/primitivas/cn";
+import { FieldShell, Input, Select } from "@/ui/primitivas/field";
+import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
+import { DiscreetValue } from "@/ui/primitivas/money";
 import type {
   Account,
   CategoryId,

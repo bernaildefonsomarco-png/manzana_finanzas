@@ -294,21 +294,50 @@ sin accesibilidad propia.
 
 - `AC-DS-01` — Ningún componente escribe un color, espaciado o radio literal;
   todos usan tokens. Evidencia: `TEST`. Clase: `lint`.
+  `tests/lint/sin-literales-de-estilo.test.ts` (`W-06`; activada tras
+  `WEB-D169`, que la dejó definida sin activar hasta que existiera la
+  paleta de tokens que compara).
 - `AC-DS-02` — Todo token semántico tiene valor en modo claro y oscuro.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `lint`.
+  `tests/lint/tema-oscuro-manual.test.ts` (`W-06`).
 - `AC-DS-03` — Todo contraste de texto cumple 4.5:1 en ambos modos.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `lint`.
+  `tests/lint/contraste.test.ts` (`W-06`; fórmula real de luminancia
+  relativa de WCAG sobre los valores hexadecimales de `globals.css`. Midió
+  y corrigió un defecto real: `success`/`warning`/`error`/`info` como
+  texto sobre su propio `-subtle` no llegaban a 4.5:1 en modo claro —
+  tokens `--color-*-on-subtle` nuevos, `WEB-D185`).
 - `AC-DS-04` — No existe ningún `role="dialog"` fuera del componente
-  `Dialog`. Evidencia: `TEST`.
+  `Dialog`. Evidencia: `TEST`. Clase: `lint`.
+  Cierra desde `W-03` (`tests/lint/dialogo-unico.test.ts`, `WEB-D169`);
+  sigue en verde sin cambios en `W-06` (`WEB-D183`).
 - `AC-DS-05` — `modal-accessibility-guard.tsx` ha sido eliminado.
-  Evidencia: `CODE`.
+  Evidencia: `CODE`. **No cierra en `W-06`** (`WEB-D183`): los 17 modales a
+  mano que el guard todavía protege viven en pantallas `REEMPLAZAR`
+  (`52` §5); cierra cuando el último migre a `Dialog`/`AlertDialog`.
 - `AC-DS-06` — Un `Dialog` sin título accesible falla en desarrollo.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`.
+  `src/ui/primitivas/dialog.test.tsx`, `sheet.test.tsx` (`W-06`).
 - `AC-DS-07` — Todo componente interactivo es operable solo con teclado.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Agregado: verificado por componente
+  (`dialog`, `alert-dialog`, `sheet`, `popover`, `dropdown-menu`,
+  `tooltip`, `combobox`, `command`, `tabs`, `radio-group`, `checkbox`,
+  `date-picker` — cada uno con su propia prueba de teclado, `W-06`), no
+  con una única prueba transversal.
 - `AC-DS-08` — Ningún estado se comunica únicamente por color.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `unidad` (la parte `TEST`).
+  La parte `TEST` cierra por construcción en los componentes nuevos
+  (`Badge` siempre exige texto, `Progress` expone `aria-valuenow`,
+  `Checkbox`/`Switch` cambian de ícono además de color); la parte `USER`
+  no cierra en `W-06` (`WEB-D185`, protocolo de tres personas de
+  `WEB-D149`).
 - `AC-DS-09` — El modo discreto se aplica desde un único proveedor, no por
   decisión de cada pantalla. Evidencia: `CODE`.
+  Ya existía (`DiscreetModeProvider`, `src/shared/privacy/`); `W-06`
+  añade la preferencia de tema manual al mismo proveedor en vez de crear
+  uno paralelo (`src/shared/privacy/discreet-mode-context.test.tsx`).
 - `AC-DS-10` — Ningún control visible carece de manejador funcional.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Cierra por construcción para las primitivas nuevas
+  (`Pagination` reemplaza el "Ver más" sin manejador, con manejadores
+  reales). El caso conocido dentro de código condenado
+  (`movements-screen.tsx`) sigue diferido por `WEB-D182`.

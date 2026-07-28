@@ -4,9 +4,9 @@ import { type FormEvent, type ReactNode, useState } from "react";
 import { useRouter } from "next/navigation";
 import { LockKeyhole, MessageCircle, Sparkles } from "lucide-react";
 import { createClient } from "@/data/supabase/client";
-import { Button } from "@/shared/ui/button";
-import { Card } from "@/shared/ui/card";
-import { FieldShell, Input } from "@/shared/ui/field";
+import { Button } from "@/ui/primitivas/button";
+import { Card } from "@/ui/primitivas/card";
+import { FieldShell, Input } from "@/ui/primitivas/field";
 
 type AuthMode = "login" | "signup";
 
