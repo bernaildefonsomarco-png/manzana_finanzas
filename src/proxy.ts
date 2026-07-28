@@ -107,6 +107,19 @@ export async function proxy(request: NextRequest) {
   // Refrescar sesión para que no expire
   const { data: userData } = await supabase.auth.getUser();
 
+  // `12` §10: el layout de `(app)` decide con qué mostrar la sesión, pero
+  // solo el proxy tiene la URL completa para construir `redirigir`
+  // (`10` §8) — un layout de Server Component no la recibe directamente.
+  // Comprobación optimista, no de autorización de datos (`12` §10, `15`).
+  if (!request.nextUrl.pathname.startsWith("/api") && !userData.user) {
+    const redirectUrl = new URL("/entrar", request.url);
+    redirectUrl.searchParams.set(
+      "redirigir",
+      request.nextUrl.pathname + request.nextUrl.search
+    );
+    return applySecurityHeaders(NextResponse.redirect(redirectUrl));
+  }
+
   if (request.nextUrl.pathname.startsWith("/api/v1")) {
     const meta = { trace_id: getTraceId(request) };
 

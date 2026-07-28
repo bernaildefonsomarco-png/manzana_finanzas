@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DiscreetModeProvider, useDiscreetMode } from "./discreet-mode-context";
 
@@ -6,6 +7,11 @@ function Probe() {
   const { theme, loading } = useDiscreetMode();
   if (loading) return <span>cargando</span>;
   return <span>tema:{theme}</span>;
+}
+
+function renderWithQueryClient(children: React.ReactNode) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>);
 }
 
 function mockPreferencesResponse(theme_preference: "system" | "light" | "dark") {
@@ -34,7 +40,7 @@ describe("DiscreetModeProvider — tema manual", () => {
   it("AC-DS-09 / 16 §3.1: theme_preference='dark' escribe data-theme en <html>", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockPreferencesResponse("dark")));
 
-    render(
+    renderWithQueryClient(
       <DiscreetModeProvider>
         <Probe />
       </DiscreetModeProvider>
@@ -50,7 +56,7 @@ describe("DiscreetModeProvider — tema manual", () => {
     document.documentElement.dataset.theme = "dark";
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockPreferencesResponse("system")));
 
-    render(
+    renderWithQueryClient(
       <DiscreetModeProvider>
         <Probe />
       </DiscreetModeProvider>

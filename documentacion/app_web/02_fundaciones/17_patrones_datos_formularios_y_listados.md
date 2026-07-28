@@ -267,22 +267,41 @@ ofrece salida.
 ## 11. Criterios de aceptación
 
 - `AC-PAT-01` — Ninguna pantalla implementa a mano el patrón de obtención de
-  datos. Evidencia: `TEST`. Clase: `lint`.
+  datos. Evidencia: `TEST`. Clase: `lint`. `tests/lint/fetch-a-mano.test.ts`
+  (`W-07`, diferida desde `WEB-D169` hasta elegir la librería): excluye
+  `src/features/**` (`WEB-D164`). Encontró y corrigió un infractor real fuera
+  de esa exclusión (`discreet-mode-context.tsx`, migrado a TanStack Query).
 - `AC-PAT-02` — Ninguna mutación invalida claves no relacionadas.
-  Evidencia: `CODE` + `TEST`.
+  Evidencia: `CODE` + `TEST`. Clase: `unidad`.
+  `src/shared/data/invalidation.test.ts` (`W-07`): caso difícil de
+  `WEB-D165` — crear un movimiento invalida movimientos/resumen/presupuestos,
+  nunca deudas ni preferencias.
 - `AC-PAT-03` — Todo listado recorre su conjunto completo mediante cursor.
-  Evidencia: `TEST`. Clase: `e2e`.
+  Evidencia: `TEST`. Clase: `e2e`. No cierra en `W-07`: pide un listado real
+  con paginación, que las pantallas condenadas no tienen (`WEB-D182`).
 - `AC-PAT-04` — Ningún filtro se aplica en el cliente sobre datos ya
-  descargados. Evidencia: `TEST`.
+  descargados. Evidencia: `TEST`. No cierra en `W-07`: no existe todavía un
+  listado nuevo fuera de `src/features/**` que filtre nada.
 - `AC-PAT-05` — "Vacío" y "sin resultados" son estados distintos con
-  mensajes y acciones distintos. Evidencia: `TEST` + `USER`.
+  mensajes y acciones distintos. Evidencia: `TEST` + `USER`. No cierra en
+  `W-07`: pide un listado real con ambos estados.
 - `AC-PAT-06` — Ningún control interactivo carece de manejador.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra en `W-07`: los controles decorativos conocidos
+  (`17` §1) viven en pantallas condenadas (`WEB-D164`).
 - `AC-PAT-07` — Un formulario que falla conserva todos los valores escritos.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. `src/shared/forms/use-zod-form.test.tsx`
+  (`W-07`), con el patrón base+por tipo de §5.2 (ejemplo genérico, no el
+  formulario real de movimiento — `RUL-HECHO-04`).
 - `AC-PAT-08` — Los 11 tipos de movimiento se guardan desde el propio
-  formulario. Evidencia: `TEST` + `USER`.
+  formulario. Evidencia: `TEST` + `USER`. No cierra en `W-07`: pide el
+  formulario real de movimiento (`W-09`).
 - `AC-PAT-09` — Existe un único módulo de utilidades de fecha y otro de
-  moneda. Evidencia: `CODE`.
+  moneda. Evidencia: `CODE`. `src/shared/dates/lima.ts` y
+  `src/shared/money/` (`parse-money-input.ts` + `index.ts`, `W-07`); la
+  presentación de dinero sigue en `src/ui/primitivas/money.tsx` (`W-06`), un
+  único componente, no un segundo módulo. Los helpers de fecha duplicados de
+  `17` §1 siguen en pantallas condenadas y desaparecen con ellas (`WEB-D164`).
 - `AC-PAT-10` — Un movimiento registrado a las 23:30 hora de Lima queda con
-  la fecha de ese día. Evidencia: `TEST`.
+  la fecha de ese día. Evidencia: `TEST`. Clase: `unidad`.
+  `src/shared/dates/lima.test.ts` (`W-07`): el caso difícil que `WEB-D165`
+  exige antes de elegir la librería de fechas.

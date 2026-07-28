@@ -24,17 +24,22 @@ npm run lint       # ESLint
 
 ## Estructura
 
-> Esta sección refleja las carpetas reales de `src/` al 27 de julio de 2026.
-> La app autenticada sigue siendo una SPA montada en `src/app/page.tsx` vía
-> `src/features/dashboard/`; no existe todavía un grupo de rutas `(app)` con
-> páginas propias — lo crea `W-07` del plan de implementación. El detalle y
-> el plan de reestructuración viven en `documentacion/app_web/`.
+> Esta sección refleja las carpetas reales de `src/` al 28 de julio de 2026.
+> `W-07` construyó el esqueleto de rutas real: `(publico)` y `(app)` son
+> grupos de rutas de Next.js (no aparecen en la URL). `dashboard-app.tsx` y
+> el enrutado por `?view=` desaparecieron. El detalle y el plan de
+> reestructuración viven en `documentacion/app_web/`.
 
 ```
 src/
   app/
     api/            # Route Handlers (webhooks, endpoints internos, health, /v1)
-    contacto/, empresa/, privacidad/, terminos/, eliminar-datos/  # páginas legales, ya existen
+    (publico)/      # sin sesión: entrar, crear-cuenta, recuperar/restablecer-clave,
+                     # verificar, estado, baja, y las páginas legales
+    (app)/          # con sesión: inicio, movimientos, pendientes, mi-dinero,
+                     # presupuestos, deudas, pagos-que-vienen, descubrimientos,
+                     # reportes, proyecciones, asistente, buscar, configuracion,
+                     # recordatorios, bienvenida — layout único con guard de sesión
     fonts/          # DM Sans e Inter, self-hosted
   core/
     channel/        # Puerto de entrada/salida agnostico de canal (21): Canal, TurnInput, Block
@@ -67,22 +72,32 @@ src/
   workers/
     outbox/         # Publicador de transactional_outbox
     nudges/         # Evaluación y entrega de nudges proactivos
+  ui/
+    primitivas/     # Sistema de diseño (16): Dialog, Sheet, Popover, DropdownMenu, Tooltip,
+                     # Combobox, Command, Tabs, Toast, Table, DatePicker y demás — 30+ componentes
+    tokens.ts       # Accesores tipados de tokens (paleta de gráficos, presupuesto, asistente)
   shared/
-    ui/             # Primitivas de UI (8 componentes: button, card, field, states, money, badge, switch, cn)
     schemas/        # Schemas Zod compartidos
     types/          # Tipos TypeScript globales
-    money/          # Utilidades de dinero (céntimos enteros, formato S/)
+    money/          # Aritmética en céntimos (index.ts) + parseo de entrada de formularios
+                     # (parse-money-input.ts, AC-PAT-09) — la presentación vive en ui/primitivas/money.tsx
+    dates/          # Módulo único de fechas y zona horaria de Lima (lima.ts, AC-PAT-09)
+    data/           # Patrón de obtención de datos (17): TanStack Query, claves de caché,
+                     # invalidación selectiva por mutación, mutación optimista
+    forms/          # Patrón de formularios (17): useZodForm (react-hook-form + Zod)
+    routing/        # Validación de `redirigir` y del deep-link a una deuda
+    legacy-nav/      # Puente entre el `onNavigate(view)` de las pantallas condenadas y las rutas reales
     accessibility/  # Parche de accesibilidad de modales (modal-accessibility-guard)
-    privacy/        # Modo discreto
+    privacy/        # Modo discreto y tema oscuro manual
     telemetry/      # Logger estructurado y trace IDs
-    dates/          # vacía: marcador para el módulo único de fechas (documentacion/app_web/02_fundaciones/17, AC-PAT-09)
+    placeholder-section.tsx  # Marcador para secciones cuyo contenido construye un corte futuro
   data/
     supabase/       # Clientes Supabase (browser, server, service)
     repositories/   # Repositorios de datos
     migrations.test.ts  # Lee y verifica supabase/migrations/ — no hay una segunda copia de los .sql
   features/         # Screens de la app (money, settings, upcoming, movements, debts,
                      # pending, home, insights, search, auth, app-shell, onboarding,
-                     # public-site, dashboard) — SPA con routing por ?view=, en reconstrucción
+                     # public-site) — módulo por módulo, en reconstrucción (52, REEMPLAZAR)
 ```
 
 `supabase/migrations/` es la única rama de migraciones (`WEB-D163`): la fuente

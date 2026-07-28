@@ -13,7 +13,7 @@ import {
   parseIsoDate,
   toIsoDate,
   todayInLima,
-} from "./internal/date-lima";
+} from "@/shared/dates/lima";
 
 type DatePickerProps = {
   /** Fecha ISO `YYYY-MM-DD`, o `null` si no hay ninguna. */

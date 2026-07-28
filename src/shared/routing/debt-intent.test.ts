@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { parseDebtScreenIntent } from "./dashboard-app";
+import { parseDebtScreenIntent } from "./debt-intent";
 
-describe("dashboard debt intent", () => {
+describe("parseDebtScreenIntent", () => {
   it("acepta un deep-link valido de pago de cuota", () => {
     const params = new URLSearchParams({
       debt: "11111111-1111-4111-8111-111111111111",

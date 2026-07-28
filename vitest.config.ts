@@ -18,17 +18,20 @@ const EXCLUDE_COMUN = [
 
 // Los ficheros que importan React Testing Library necesitan un DOM real:
 // las pantallas de src/features/, el catálogo de primitivas de src/ui/
-// (16 §10) y, desde W-06, el proveedor único de modo discreto/tema de
-// src/shared/privacy/ (consume hooks de React, no lógica pura). El resto
-// (core/, agents/, data/, workers/, tests/lint, tests/corpus) prueba
-// lógica pura. Separar los dos en proyectos evita pagar el arranque de
-// jsdom en los ficheros que no lo necesitan — es la mayor parte de los
-// 254s originales (`51` §11.1) — y deja `npm test` por debajo de 120s
-// (`AC-PRUEBA-11`).
+// (16 §10), el proveedor único de modo discreto/tema de src/shared/privacy/
+// y, desde W-07, los patrones compartidos de obtención de datos y
+// formularios de src/shared/data/ y src/shared/forms/ (montan componentes de
+// prueba con hooks de React). El resto (core/, agents/, data/, workers/,
+// tests/lint, tests/corpus) prueba lógica pura. Separar los dos en
+// proyectos evita pagar el arranque de jsdom en los ficheros que no lo
+// necesitan — es la mayor parte de los 254s originales (`51` §11.1) — y
+// deja `npm test` por debajo de 120s (`AC-PRUEBA-11`).
 const PATRON_DOM = [
   "src/features/**/*.test.tsx",
   "src/ui/**/*.test.tsx",
   "src/shared/privacy/**/*.test.tsx",
+  "src/shared/data/**/*.test.tsx",
+  "src/shared/forms/**/*.test.tsx",
 ];
 
 export default defineConfig({

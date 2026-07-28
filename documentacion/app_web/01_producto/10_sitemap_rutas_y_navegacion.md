@@ -279,17 +279,38 @@ Proyecciones, Reportes, Asistente, Memoria) se definen en
 ## 11. Criterios de aceptación
 
 - `AC-NAV-01` — Toda pantalla listada en §3.2 responde en su propia URL y se
-  puede cargar directamente. Evidencia: `TEST`. Clase: `e2e`.
+  puede cargar directamente. Evidencia: `TEST`. Clase: `build` (reclasificado
+  desde `e2e`, `WEB-D187`: no necesita navegador). `W-07`:
+  `tests/lint/ac-nav-01-rutas-declaradas.test.ts` compara cada `page.tsx`
+  real contra el mapa de esta sección, más la generación estática de
+  `npm run build`. Verifica una sola dirección (ninguna página huérfana del
+  mapa); las rutas de §3.2 que pertenece a documentos de módulo futuros
+  (`25`, `28`, `29`, `31`, `35`–`38`, `41`, `45`, `48`) no se exigen todavía.
 - `AC-NAV-02` — El botón atrás del navegador devuelve a la pantalla anterior
-  con sus filtros intactos. Evidencia: `TEST`. Clase: `e2e`.
+  con sus filtros intactos. Evidencia: `TEST`. Clase: `e2e`. **No cierra en
+  `W-07`** (`WEB-D187`): necesita un navegador real y filtros reales en la
+  URL de una pantalla que hoy es `REEMPLAZAR` (`WEB-D182`); cierra cuando el
+  recorrido de movimientos de `W-09` lo ejerza.
 - `AC-NAV-03` — Copiar la URL de un listado filtrado y abrirla en otra
   pestaña reproduce exactamente el mismo resultado. Evidencia: `TEST`. Clase: `e2e`.
+  **No cierra en `W-07`**, mismo motivo que `AC-NAV-02` (`WEB-D187`).
 - `AC-NAV-04` — Ninguna ruta de la aplicación usa `?view=`. Evidencia: `TEST`.
+  Clase: `lint`. `tests/lint/sin-view-query.test.ts` (`W-03`); `W-07` borró
+  `dashboard-app.tsx` y quitó su exclusión — cierra sin excepciones.
 - `AC-NAV-05` — Cada segmento tiene `loading.tsx` y `error.tsx`, propios o
-  heredados deliberadamente. Evidencia: `CODE`.
+  heredados deliberadamente. Evidencia: `CODE`. `(app)/loading.tsx` y
+  `(app)/error.tsx` (`W-07`); todo segmento hijo los hereda deliberadamente,
+  salvo `movimientos` (`WEB-D164`-adjacente: mismo `error.tsx` heredado).
 - `AC-NAV-06` — El menú "Más" en móvil expone todas las secciones que no
-  están en la barra inferior. Evidencia: `TEST` + `USER`.
+  están en la barra inferior. Evidencia: `TEST` + `USER`. Clase: `unidad`
+  (la parte `TEST`). `src/features/app-shell/app-shell.test.tsx` (`W-07`):
+  las once secciones de `AppView` están todas en `navItems`, y las siete que
+  no caben en la barra inferior aparecen en "Más". El `USER` no cierra
+  (`WEB-D149`).
 - `AC-NAV-07` — El parámetro `redirigir` rechaza cualquier destino que no sea
-  una ruta interna conocida. Evidencia: `TEST`.
+  una ruta interna conocida. Evidencia: `TEST`. Clase: `unidad`.
+  `src/shared/routing/known-routes.test.ts` (`W-07`).
 - `AC-NAV-08` — El elemento de navegación activo se anuncia con
-  `aria-current`, no solo con color. Evidencia: `TEST`.
+  `aria-current`, no solo con color. Evidencia: `TEST`. Clase: `unidad`
+  (reclasificado desde `e2e`, `WEB-D187`: no necesita navegador).
+  `src/features/app-shell/app-shell.test.tsx` (`W-07`).

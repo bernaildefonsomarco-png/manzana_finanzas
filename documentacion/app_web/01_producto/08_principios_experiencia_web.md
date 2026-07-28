@@ -321,14 +321,27 @@ Estos principios no son solo copy — condicionan la arquitectura:
 ## 13. Criterios de aceptación
 
 - `AC-EXP-01` — Toda cifra financiera visible tiene una vía de explicación
-  accesible desde la propia pantalla. Evidencia: `TEST` + `USER`.
+  accesible desde la propia pantalla. Evidencia: `TEST` + `USER`. **No cierra
+  en `W-07`** (`WEB-D189`): depende de pantallas reales (Inicio, descubrimientos)
+  que ese corte no construye.
 - `AC-EXP-02` — Ninguna operación de escritura financiera se ejecuta sin
   confirmación explícita del usuario, sea cual sea su origen. Evidencia: `TEST`.
+  Clase: `unidad`. Cierra por herencia (`WEB-D148`, `WEB-D189`) sobre los
+  mecanismos ya probados en cortes anteriores (`financial-action-preflight.ts`,
+  `data-action-policy.ts` para el origen conversacional; `Idempotency-Key`
+  obligatoria en toda escritura REST, `W-05`) y crece cuando nazcan `imports`
+  (`W-10`) y el asistente de experiencia (`W-13`).
 - `AC-EXP-03` — Toda superficie de memoria ofrece ver, corregir, deshacer y
-  olvidar. Evidencia: `TEST` + `USER`.
+  olvidar. Evidencia: `TEST` + `USER`. **No cierra en `W-07`** (`WEB-D189`):
+  depende del módulo de memoria (`36`, `W-13`).
 - `AC-EXP-04` — Ningún copy visible culpa al usuario ni usa lenguaje de
   fracaso ante presupuestos superados, deudas o inactividad. Evidencia: `USER`.
+  No cierra en `W-07`: evidencia enteramente `USER`, protocolo de `WEB-D149`.
 - `AC-EXP-05` — No aparece ningún porcentaje de confianza numérico en
-  superficies estándar. Evidencia: `TEST`.
+  superficies estándar. Evidencia: `TEST`. Clase: `lint`.
+  `tests/lint/sin-confianza-numerica.test.ts` (`W-07`; sobre `src/` fuera de
+  `src/features/**`, `WEB-D164`).
 - `AC-EXP-06` — Ningún texto afirma que algo se registró antes de que el Core
-  lo confirme. Evidencia: `TEST`.
+  lo confirme. Evidencia: `TEST`. Clase: `unidad`.
+  `src/shared/data/optimistic-mutation.test.tsx` (`W-07`): el texto de éxito
+  solo se muestra tras `onSuccess`, nunca durante `onMutate`.

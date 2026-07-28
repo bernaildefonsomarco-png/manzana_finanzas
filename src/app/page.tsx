@@ -1,23 +1,15 @@
-import { AuthScreen } from "@/features/auth/auth-screen";
-import { DashboardApp } from "@/features/dashboard/dashboard-app";
+import { redirect } from "next/navigation";
 import { createClient } from "@/data/supabase/server";
-import { DiscreetModeProvider } from "@/shared/privacy/discreet-mode-context";
-import { ModalAccessibilityGuard } from "@/shared/accessibility/modal-accessibility-guard";
 
-export default async function HomePage() {
+// `WEB-D151`: `/` no renderiza nada propio en V1. Sin sesión, a `/entrar`;
+// con sesión, a `/inicio`. El proxy ya redirige la mayoría de los casos sin
+// sesión (`src/proxy.ts`); esto cubre el caso con sesión, que el proxy deja
+// pasar tal cual.
+export default async function RootPage() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    return <AuthScreen />;
-  }
-
-  return (
-    <DiscreetModeProvider>
-      <ModalAccessibilityGuard />
-      <DashboardApp />
-    </DiscreetModeProvider>
-  );
+  redirect(user ? "/inicio" : "/entrar");
 }

@@ -11,10 +11,13 @@ import {
   Home,
   ListChecks,
   LogOut,
+  MessageCircle,
   MoreHorizontal,
+  PiggyBank,
   Search,
   Settings,
   ShieldCheck,
+  TrendingUp,
   WalletCards,
 } from "lucide-react";
 import { useDiscreetMode } from "@/shared/privacy/discreet-mode-context";
@@ -30,7 +33,11 @@ export type AppView =
   | "upcoming"
   | "insights"
   | "search"
-  | "settings";
+  | "settings"
+  | "budgets"
+  | "reports"
+  | "projections"
+  | "assistant";
 
 type NavItem = {
   id: AppView;
@@ -40,41 +47,69 @@ type NavItem = {
   icon: ReactNode;
 };
 
+// `href` real de `10` §3.2 en cada elemento: el menú "Más" de móvil debe
+// exponer TODAS las secciones que no están en la barra inferior
+// (`AC-NAV-06`), y hoy faltaban cuatro (`presupuestos`, `reportes`,
+// `proyecciones`, `asistente`) — la barra solo conocía siete de las once.
 const navItems: NavItem[] = [
-  { id: "home", label: "Home", mobileLabel: "Home", href: "#home", icon: <Home className="h-4 w-4" /> },
+  { id: "home", label: "Home", mobileLabel: "Home", href: "/inicio", icon: <Home className="h-4 w-4" /> },
   {
     id: "movements",
     label: "Movimientos",
     mobileLabel: "Movs.",
-    href: "#movimientos",
+    href: "/movimientos",
     icon: <ListChecks className="h-4 w-4" />,
   },
   {
     id: "pending",
     label: "Pendientes",
     mobileLabel: "Pend.",
-    href: "#pendientes",
+    href: "/pendientes",
     icon: <Bell className="h-4 w-4" />,
   },
   {
     id: "money",
     label: "Mi Dinero",
     mobileLabel: "Dinero",
-    href: "#dinero",
+    href: "/mi-dinero",
     icon: <WalletCards className="h-4 w-4" />,
   },
-  { id: "debts", label: "Deudas", href: "#deudas", icon: <ShieldCheck className="h-4 w-4" /> },
+  { id: "debts", label: "Deudas", href: "/deudas", icon: <ShieldCheck className="h-4 w-4" /> },
   {
     id: "upcoming",
     label: "Pagos que vienen",
-    href: "#pagos",
+    href: "/pagos-que-vienen",
     icon: <CalendarDays className="h-4 w-4" />,
   },
   {
     id: "insights",
     label: "Descubrimientos",
-    href: "#descubrimientos",
+    href: "/descubrimientos",
     icon: <Compass className="h-4 w-4" />,
+  },
+  {
+    id: "budgets",
+    label: "Presupuestos",
+    href: "/presupuestos",
+    icon: <PiggyBank className="h-4 w-4" />,
+  },
+  {
+    id: "reports",
+    label: "Reportes",
+    href: "/reportes",
+    icon: <TrendingUp className="h-4 w-4" />,
+  },
+  {
+    id: "projections",
+    label: "Proyecciones",
+    href: "/proyecciones",
+    icon: <CalendarDays className="h-4 w-4" />,
+  },
+  {
+    id: "assistant",
+    label: "Asistente",
+    href: "/asistente",
+    icon: <MessageCircle className="h-4 w-4" />,
   },
 ];
 
@@ -186,11 +221,10 @@ export function AppShell({
             </div>
             <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
               <form
-                action=""
+                action="/buscar"
                 method="get"
                 className="hidden min-w-[260px] max-w-[420px] flex-1 items-center rounded-lg border border-border bg-bg-surface-raised px-3 shadow-xs transition focus-within:border-border-focus focus-within:ring-2 focus-within:ring-brand/15 md:flex"
               >
-                <input type="hidden" name="view" value="search" />
                 <Search className="h-4 w-4 shrink-0 text-text-muted" />
                 <input
                   name="q"
@@ -378,9 +412,16 @@ function NavLink({
       : "text-text-secondary hover:bg-bg-surface hover:text-text"
   );
 
+  // El elemento activo se anuncia con `aria-current="page"`, no solo con
+  // color (`10` §5, `AC-NAV-08`) — antes solo cambiaba la clase.
   if (onNavigate) {
     return (
-      <button type="button" className={className} onClick={() => onNavigate(item.id)}>
+      <button
+        type="button"
+        className={className}
+        aria-current={active ? "page" : undefined}
+        onClick={() => onNavigate(item.id)}
+      >
         {item.icon}
         <span>{item.label}</span>
       </button>
@@ -388,7 +429,7 @@ function NavLink({
   }
 
   return (
-    <a href={item.href} className={className}>
+    <a href={item.href} className={className} aria-current={active ? "page" : undefined}>
       {item.icon}
       <span>{item.label}</span>
     </a>
@@ -413,7 +454,12 @@ function MobileNavLink({
 
   if (onNavigate) {
     return (
-      <button type="button" className={className} onClick={() => onNavigate(item.id)}>
+      <button
+        type="button"
+        className={className}
+        aria-current={active ? "page" : undefined}
+        onClick={() => onNavigate(item.id)}
+      >
         {item.icon}
         <span className="max-w-full truncate">{item.mobileLabel ?? item.label}</span>
       </button>
@@ -421,7 +467,7 @@ function MobileNavLink({
   }
 
   return (
-    <a href={item.href} className={className}>
+    <a href={item.href} className={className} aria-current={active ? "page" : undefined}>
       {item.icon}
       <span className="max-w-full truncate">{item.mobileLabel ?? item.label}</span>
     </a>

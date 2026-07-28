@@ -310,17 +310,35 @@ el `trace_id` disponible para soporte.
 ## 15. Criterios de aceptación
 
 - `AC-ARQ-01` — Ninguna ruta usa `?view=` para decidir qué pantalla mostrar.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `lint`. `tests/lint/sin-view-query.test.ts`
+  (`W-03`); `W-07` borró `dashboard-app.tsx`, su único infractor.
 - `AC-ARQ-02` — Cada segmento de `(app)` tiene `loading.tsx` y `error.tsx`,
-  propios o heredados deliberadamente. Evidencia: `CODE`.
+  propios o heredados deliberadamente. Evidencia: `CODE`. `(app)/loading.tsx`
+  y `(app)/error.tsx` (`W-07`), heredados por todo segmento hijo.
 - `AC-ARQ-03` — Abrir el Inicio no descarga el código de reportes, del
   importador ni del asistente. Evidencia: `TEST`. Clase: `presupuesto`.
+  **No cierra en `W-07`** (`WEB-D188`): medirlo exige auditar antes el formato
+  del manifest de producción de Turbopack (distinto del `app-build-manifest.json`
+  de Webpack que los gates anteriores conocían), y hoy `/reportes`/`/asistente`
+  son marcadores sin ninguna librería pesada que proteger. Cierra en `W-14`,
+  cuando esas rutas tengan contenido real.
 - `AC-ARQ-04` — Ningún componente de UI supera 150 líneas sin justificación
-  registrada. Evidencia: `TEST`. Clase: `lint`.
+  registrada. Evidencia: `TEST`. Clase: `lint`. `tests/lint/tamano-componente.test.ts`
+  (`W-03`), actualizado en `W-07` para la nueva ruta de la página legal movida.
 - `AC-ARQ-05` — Ningún Client Component importa repositorios ni clientes de
-  base de datos. Evidencia: `TEST`. Clase: `lint`.
+  base de datos. Evidencia: `TEST`. Clase: `lint`. `tests/lint/frontera-cliente.test.ts`
+  (`W-03`), sin cambios necesarios en `W-07`.
 - `AC-ARQ-06` — Ninguna mutación recarga el listado completo; invalida solo
-  las claves afectadas. Evidencia: `CODE` + `TEST`.
-- `AC-ARQ-07` — `core/` no importa React ni Next.js. Evidencia: `TEST`.
+  las claves afectadas. Evidencia: `CODE` + `TEST`. Clase: `unidad`.
+  `src/shared/data/invalidation.test.ts` (`W-07`): el mecanismo cierra; las
+  pantallas condenadas que aún llaman `reloadMovements()` (`WEB-D164`) quedan
+  fuera hasta que su corte de módulo las reconstruya sobre este mecanismo.
+- `AC-ARQ-07` — `core/` no importa React ni Next.js. Evidencia: `TEST`. Clase:
+  `lint`. `tests/lint/frontera-core.test.ts` (`W-03`), sin cambios en `W-07`.
 - `AC-ARQ-08` — Abrir un detalle desde un listado muestra un panel y cambia
-  la URL; recargar esa URL muestra la pantalla completa. Evidencia: `TEST`. Clase: `e2e`.
+  la URL; recargar esa URL muestra la pantalla completa. Evidencia: `TEST`.
+  Clase: `e2e`. **No cierra en `W-07`** (`WEB-D187`): el mecanismo (rutas
+  paralelas e interceptadas de `movimientos`, `@panel/(.)[id]` vs.
+  `[id]/page.tsx`) ya existe, pero `WEB-D154` no tiene un recorrido E2E de
+  solo navegación y el listado condenado todavía no enlaza a un detalle.
+  Cierra cuando el recorrido de movimientos de `W-09` lo ejerza.

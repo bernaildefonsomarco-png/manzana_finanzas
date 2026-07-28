@@ -7,12 +7,22 @@ import { createClient } from "@/data/supabase/client";
 import { Button } from "@/ui/primitivas/button";
 import { Card } from "@/ui/primitivas/card";
 import { FieldShell, Input } from "@/ui/primitivas/field";
+import { isKnownInternalRoute } from "@/shared/routing/known-routes";
 
 type AuthMode = "login" | "signup";
 
-export function AuthScreen() {
+export function AuthScreen({
+  initialMode = "login",
+  redirectTo,
+}: { initialMode?: AuthMode; redirectTo?: string } = {}) {
   const router = useRouter();
-  const [mode, setMode] = useState<AuthMode>("login");
+  // `10` §8 / `AC-NAV-07`: `redirigir` solo se sigue si es una ruta interna
+  // conocida — nunca una URL externa, aunque venga de un enlace real.
+  const safeRedirectTo =
+    redirectTo && isKnownInternalRoute(redirectTo) ? redirectTo : "/inicio";
+  // El modo ahora lo decide la URL (`/entrar` o `/crear-cuenta`), no un
+  // estado local: cambiar de pestaña navega de verdad (`AC-NAV-01`).
+  const mode = initialMode;
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -36,6 +46,7 @@ export function AuthScreen() {
         });
 
         if (error) throw error;
+        router.push(safeRedirectTo);
         router.refresh();
         return;
       }
@@ -53,6 +64,7 @@ export function AuthScreen() {
       if (error) throw error;
 
       if (data.session) {
+        router.push(safeRedirectTo);
         router.refresh();
         return;
       }
@@ -89,14 +101,16 @@ export function AuthScreen() {
             <button
               type="button"
               className={tabClass(mode === "login")}
-              onClick={() => setMode("login")}
+              aria-current={mode === "login" ? "page" : undefined}
+              onClick={() => router.push("/entrar")}
             >
               Entrar
             </button>
             <button
               type="button"
               className={tabClass(mode === "signup")}
-              onClick={() => setMode("signup")}
+              aria-current={mode === "signup" ? "page" : undefined}
+              onClick={() => router.push("/crear-cuenta")}
             >
               Crear cuenta
             </button>

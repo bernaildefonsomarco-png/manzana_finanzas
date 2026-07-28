@@ -16,7 +16,7 @@ const LIMITE = 150;
  * registrada" implica que CON justificación sí se permite).
  */
 const JUSTIFICADOS: Record<string, string> = {
-  "app/empresa/page.tsx":
+  "app/(publico)/empresa/page.tsx":
     "Página legal de prosa estática, no un componente interactivo — el límite de 150 líneas gobierna la complejidad de UI, no el texto legal.",
 };
 

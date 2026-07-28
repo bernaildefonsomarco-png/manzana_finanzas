@@ -2,7 +2,10 @@
 // solo `.gitkeep` medidas el 26 de julio de 2026, seis no tenían destino y
 // desaparecen; cuatro las va a llenar el diseño y se conservan como
 // marcadores. Este test impide que las seis reaparezcan vacías y que las
-// cuatro desaparezcan por accidente.
+// tres restantes desaparezcan por accidente. `src/shared/dates` era la
+// cuarta: `W-07` la llenó con el módulo único de fecha (`AC-PAT-09`,
+// `src/shared/dates/lima.ts`), así que sale de la lista de marcadores — ya
+// cumplió su destino, no hay nada que proteger de que "reaparezca vacía".
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -22,7 +25,6 @@ const MARCADORES_QUE_EL_DISEÑO_LLENARA = [
   "src/core/commands",
   "src/core/engines",
   "src/core/validators",
-  "src/shared/dates",
 ];
 
 describe("AC-INV-08: las diez carpetas con solo .gitkeep de 52 §11", () => {

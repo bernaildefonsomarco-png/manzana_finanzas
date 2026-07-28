@@ -269,18 +269,36 @@ disculpa larga.
 ## 14. Criterios de aceptación
 
 - `AC-CONFIANZA-01` — Todo dato financiero visible puede responder fuente, estado
-  e impacto desde su propio detalle. Evidencia: `TEST` + `USER`.
+  e impacto desde su propio detalle. Evidencia: `TEST` + `USER`. **No cierra en
+  `W-07`** (`WEB-D189`): depende de pantallas de detalle reales que ese corte
+  no construye (solo su esqueleto de ruta).
 - `AC-CONFIANZA-02` — Ningún mensaje de error visible está en inglés ni proviene
-  crudo de un proveedor externo. Evidencia: `TEST`.
+  crudo de un proveedor externo. Evidencia: `TEST`. Clase: `unidad`. **Cierra en
+  `W-07`** (`WEB-D189`, medido antes de asumir lo contrario): `src/features/auth/auth-screen.tsx`
+  ya traduce los mensajes de Supabase vía `toAuthErrorMessage()`, con prueba
+  (`auth-screen.test.ts`) que ya existía en el commit base — moverla a `/entrar`
+  tal cual (`WEB-D151`) conserva esta traducción intacta.
 - `AC-CONFIANZA-03` — Todo error visible ofrece al menos una acción de salida.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra en `W-07`: depende de pantallas reales con sus
+  propios errores; `(app)/error.tsx` sí ofrece salida (botón "Reintentar"),
+  pero el criterio pide esto de cada error, no solo del genérico de segmento.
 - `AC-CONFIANZA-04` — Reparar una respuesta y corregir un dato financiero son
-  operaciones distintas, con registros distintos. Evidencia: `TEST`.
+  operaciones distintas, con registros distintos. Evidencia: `TEST`. No cierra
+  en `W-07`: depende del asistente conversacional (`34`, `W-13`).
 - `AC-CONFIANZA-05` — Un movimiento eliminado puede restaurarse y su impacto se
-  recalcula correctamente. Evidencia: `TEST`.
+  recalcula correctamente. Evidencia: `TEST`. No cierra en `W-07`: el comando
+  ya existe (`POST /api/v1/movements/[id]/restore`), pero ninguna pantalla del
+  árbol nuevo lo dispara todavía (`W-09`).
 - `AC-CONFIANZA-06` — Ante un fallo transitorio, la app nunca muestra una pantalla
-  vacía si existían datos previos. Evidencia: `TEST` + `USER`.
+  vacía si existían datos previos. Evidencia: `TEST` + `USER`. Clase: `unidad`
+  (la parte `TEST`). `src/shared/data/optimistic-mutation.test.tsx` (`W-07`):
+  un `refetch` fallido conserva el dato anterior visible, con aviso de error,
+  en vez de una pantalla vacía. El `USER` no cierra (`WEB-D149`).
 - `AC-CONFIANZA-07` — El asistente nunca emite una cifra que no pueda fundamentar.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra en `W-07`: depende del asistente (`34`, `W-13`).
 - `AC-CONFIANZA-08` — Toda acción de la lista de §8 exige confirmación explícita
-  que nombra el elemento concreto afectado. Evidencia: `TEST`.
+  que nombra el elemento concreto afectado. Evidencia: `TEST`. No cierra en
+  `W-07`: depende de confirmaciones reales sobre elementos concretos (borrar
+  un movimiento, cerrar una deuda) que sus pantallas de módulo no construyen
+  todavía; `AlertDialog` (`W-06`) ya exige título+descripción, pero no
+  "nombrar el elemento concreto" sin un llamador real.

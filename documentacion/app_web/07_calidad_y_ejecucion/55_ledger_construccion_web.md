@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-06` cerraron `G1` y `G2`. Ninguno
+**La construcción avanza.** `W-01` a `W-07` cerraron `G1` y `G2`. Ninguno
 tiene criterios de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 6 de 20 |
-| Criterios `verificado` | 50 de 708 |
+| Cortes cerrados | 7 de 20 |
+| Criterios `verificado` | 68 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -847,6 +847,127 @@ contradicción de criterios, solo queda pendiente.
 - `50` §3.1: censo de clases actualizado (117 con clase, no 105; `lint`
   21, no 15; `unidad` 20, no 14).
 - `03_decisiones_producto_web.md`: `WEB-D183` a `WEB-D185` (nuevas).
+
+---
+
+## W-07 — Esqueleto y patrones
+
+**Cerrado:** 2026-07-28
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-28, con `npm run matriz:generar`, posterior
+al commit de cierre de este corte (`AC-TRAZ-12`, hash registrado abajo).
+
+### Qué se entregó
+
+`dashboard-app.tsx` (263 líneas, router manual por `?view=`) desaparece.
+`src/app/(publico)/` y `src/app/(app)/` son grupos de rutas reales: las
+cinco páginas legales se mueven tal cual a `(publico)/`; `entrar` y
+`crear-cuenta` son rutas propias que montan `AuthScreen` con un
+`initialMode` nuevo (las pestañas navegan de verdad en vez de solo
+cambiar estado local); `recuperar-clave`, `restablecer-clave`,
+`verificar`, `estado` y `baja` son marcadores con URL propia
+(`PlaceholderSection`) — su lógica real es de `W-18` o de sus módulos
+dueños. `(app)/layout.tsx` verifica la sesión una vez; `src/proxy.ts`
+gana el redirigido real con `?redirigir=<ruta>` (única capa con la URL
+completa) y `src/shared/routing/known-routes.ts` valida ese parámetro
+contra una lista blanca antes de que `AuthScreen` lo siga tras iniciar
+sesión. Las 30+ rutas de `10` §3.2 existen: las que ya tienen pantalla
+condenada la montan a través de un puente nuevo
+(`src/shared/legacy-nav/legacy-view-routes.ts`, traduce el
+`onNavigate(view)` que esas pantallas ya esperan a rutas reales sin
+tocar su código); el resto son marcadores hasta su corte de módulo.
+`movimientos/` estrena el piloto de rutas paralelas e interceptadas de
+`12` §6: `@panel/default.tsx` + `@panel/(.)[id]/page.tsx` muestran un
+panel sobre el listado en navegación de cliente, `[id]/page.tsx` sirve
+la pantalla completa en carga directa, ambos sobre el mismo
+`MovementDetailView` nuevo (fuera de `src/features/movements/`,
+`WEB-D164`).
+
+Se eligieron tres librerías con el caso difícil escrito antes
+(`WEB-D165`/`WEB-D186`; gráficos se difiere a `W-14`): TanStack Query
+(`src/shared/data/` — claves jerárquicas de `17` §2.2, mapa de
+invalidación selectiva de `17` §2.3, mutación optimista genérica),
+`react-hook-form` + `@hookform/resolvers/zod` (`src/shared/forms/
+use-zod-form.ts`, `mode: "onBlur"`), y `date-fns` junto al módulo único
+de fecha de Lima (`src/shared/dates/lima.ts`, offset fijo -05:00, sin
+tabla de zonas horarias). `sin-view-query` (`W-03`) pierde su exclusión
+de `dashboard-app.tsx` y cierra sin excepciones. `fetch-a-mano`
+(`AC-PAT-01`, diferida por `WEB-D169`) se activa. `sin-confianza-numerica`
+nueva (`AC-EXP-05`).
+
+### Qué sorprendió
+
+El caso difícil de fechas encontró un defecto real antes de firmar la
+elección: `date-fns#addMonths` opera con los getters/setters *locales*
+de `Date`; el primer intento construía la fecha base con `Date.UTC` y
+leía el resultado con `getUTC*`, y bajo `TZ=America/Lima` eso convertía
+el 31 de enero en 1 de marzo en vez de 28 de febrero. Corregido usando
+el constructor y los getters locales de punta a punta — la función solo
+hace aritmética de calendario, nunca un instante real, así que es
+correcto sin importar la zona del proceso.
+
+`fetch-a-mano` encontró una infractora real fuera de `src/features/**`
+apenas se activó: `discreet-mode-context.tsx` (`W-06`) seguía cargando
+sus preferencias con `useEffect` + bandera de cancelación manual — el
+mismo patrón que el propio criterio prohíbe. Se migró a `useQuery` +
+`useOptimisticMutation`, con su test envuelto en `QueryClientProvider`.
+
+Auditar `AC-CONFIANZA-02` antes de asumir que seguía abierto (`11` §9 cita
+literalmente `auth-screen.tsx` publicando `Invalid login credentials`,
+`C-13`) mostró que ese hallazgo no corresponde al estado real del
+repositorio: `toAuthErrorMessage()` ya traduce los mensajes conocidos de
+Supabase al español, con una prueba que ya existía en el commit base,
+antes de que esta reconstrucción empezara. `WEB-D151` había asumido que
+`C-13` seguía vigente al escribir "mejorarla es `W-18`"; el criterio
+cierra en `W-07` sin tocar el fichero, porque moverlo tal cual conserva
+la traducción intacta.
+
+Un primer borrador de esta misma decisión proponía escribir recorridos
+E2E nuevos, más pequeños, para `AC-NAV-01`/`02`/`04`/`05`/`07`/`08` —
+auditado contra `WEB-D154` antes de escribir esas pruebas, la idea
+violaba la decisión de gobierno que ya cierra el conjunto E2E en doce
+recorridos. Corregido con el árbol de `WEB-D153`: seis de esos ocho
+criterios no necesitan un navegador real y cierran con `build`/`lint`/
+`unidad`; los dos que sí lo necesitan (`AC-NAV-02`/`03`, y `AC-ARQ-08`
+del mismo lote) no cierran en este corte.
+
+El manifest de producción de Turbopack no tiene el `app-build-manifest.json`
+plano de los builds de Webpack que un gate de presupuesto necesitaría
+para `AC-ARQ-03` — auditado antes de escribir esa prueba, en vez de
+inventar una comprobación sobre un formato sin verificar.
+
+### Qué quedó abierto
+
+`AC-NAV-02`/`03`, `AC-ARQ-08` (necesitan navegador real, sin recorrido
+E2E propio disponible — cierran cuando el recorrido de movimientos de
+`W-09` los ejerza como parte de un flujo funcional). `AC-ARQ-03`
+(presupuesto, formato de manifest sin auditar y nada pesado que proteger
+todavía — `W-14`). `AC-PAT-03`/`04`/`05`/`06`/`08` (piden un listado o
+formulario real — sus cortes de módulo). `AC-EXP-01`/`03`/`04`,
+`AC-CONFIANZA-01`/`03`/`04`/`05`/`07`/`08` (pantallas reales o `USER`).
+La mitad `USER` de `AC-NAV-06` y `AC-CONFIANZA-06` (`WEB-D149`). El
+listado de movimientos condenado no enlaza todavía a
+`/movimientos/[id]` — el mecanismo de panel existe, pero nadie lo
+dispara desde una fila real hasta que `W-09` reconstruya la pantalla.
+
+### Documentos corregidos
+
+- `08` §13: `Clase:` añadida a `AC-EXP-02`, `05`, `06`; nota de por qué
+  no cierran en `01`, `03`, `04`.
+- `10` §11: `AC-NAV-01` reclasificado de `e2e` a `build`; `Clase:`
+  añadida a `04`, `06` (parte `TEST`), `07`, `08`; nota de por qué no
+  cierran `02`, `03`.
+- `11` §14: `Clase:` añadida a `AC-CONFIANZA-02`, `06` (parte `TEST`);
+  nota de por qué no cierran `01`, `03`, `04`, `05`, `07`, `08`.
+- `12` §15: `Clase:` añadida a `AC-ARQ-01`, `06`, `07`; nota de por qué
+  no cierran `03`, `08`.
+- `17` §11: `Clase:` añadida a `AC-PAT-02`, `07`, `10`; nota de por qué
+  no cierran `03` a `06`, `08`.
+- `50` §3.1: censo de clases actualizado (132 con clase, no 117; `lint`
+  25, no 21; `unidad` 31, no 20; `e2e` 7, no 8; `build` 16, no 15).
+- `03_decisiones_producto_web.md`: `WEB-D186` a `WEB-D189` (nuevas), y
+  correcciones a `WEB-D187`/`188`/`189` tras auditar `WEB-D154` y el
+  estado real de `auth-screen.tsx` antes de firmar la versión final.
 
 ---
 
