@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Debt } from "@/shared/types/domain";
-import { buildDebtInstallmentDrafts } from "./debts.repository";
+import { buildDebtInstallmentDrafts, sortDebtsByNextPaymentDate } from "./debts.repository";
+import type { DebtWithPerson } from "./debts.repository";
 
 const baseDebt: Debt = {
   id: "11111111-1111-4111-8111-111111111111",
@@ -66,5 +67,22 @@ describe("debts repository helpers", () => {
       "pending",
       "pending",
     ]);
+  });
+
+  it("sortDebtsByNextPaymentDate: ordena por vencimiento mas proximo primero, nulls al final", () => {
+    const withDate = (id: string, date: string | null): DebtWithPerson => ({
+      ...baseDebt,
+      id,
+      next_payment_date: date,
+      related_person: null,
+    });
+
+    const sorted = sortDebtsByNextPaymentDate([
+      withDate("c", null),
+      withDate("a", "2026-01-31"),
+      withDate("b", "2026-02-15"),
+    ]);
+
+    expect(sorted.map((debt) => debt.id)).toEqual(["a", "b", "c"]);
   });
 });

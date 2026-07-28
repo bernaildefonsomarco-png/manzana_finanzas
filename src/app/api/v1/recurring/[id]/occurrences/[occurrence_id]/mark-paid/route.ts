@@ -22,6 +22,7 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
+import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
 import type { Account, RecurringOccurrence, RecurringRule } from "@/shared/types/domain";
 import type { MovementInput } from "@/shared/schemas/money";
 import { MarkRecurringPaidRequestSchema } from "./schemas";
@@ -47,12 +48,8 @@ export async function POST(request: Request, context: RouteContext) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
 
-    const idempotencyKey = request.headers.get("idempotency-key")?.trim();
-    if (
-      !idempotencyKey ||
-      idempotencyKey.length < 8 ||
-      idempotencyKey.length > 180
-    ) {
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
       return errorJson(
         "VALIDATION_ERROR",
         "Idempotency-Key invalida para registrar el pago.",

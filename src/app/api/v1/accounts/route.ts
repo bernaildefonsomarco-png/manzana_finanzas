@@ -12,7 +12,12 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
-import { CreateAccountRequestSchema } from "./schemas";
+import {
+  clampLimit,
+  decodeCursor,
+  paginateInMemory,
+} from "@/app/api/_lib/pagination";
+import { CreateAccountRequestSchema, ListAccountsQuerySchema } from "./schemas";
 
 export const dynamic = "force-dynamic";
 
@@ -26,9 +31,22 @@ export async function GET(request: Request) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
 
+    const url = new URL(request.url);
+    const query = ListAccountsQuerySchema.parse(
+      Object.fromEntries(url.searchParams.entries())
+    );
+    const cursor = decodeCursor(query.cursor);
+    if (cursor === "invalid") {
+      return errorJson("VALIDATION_ERROR", "Cursor invalido.", meta, 400);
+    }
+    const limit = clampLimit(query.limit);
+
     const accounts = await getActiveAccounts(auth.client, auth.userId);
-    return okJson({ accounts }, meta);
+    const { data: pageRows, page } = paginateInMemory(accounts, limit, cursor);
+
+    return okJson({ accounts: pageRows }, { ...meta, page });
   } catch (error) {
+    if (isZodLike(error)) return validationError(error, meta);
     return unexpectedError(error, meta);
   }
 }

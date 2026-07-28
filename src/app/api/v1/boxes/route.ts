@@ -21,6 +21,11 @@ import {
   validationError,
 } from "@/app/api/_lib/http";
 import type { Movement } from "@/shared/types/domain";
+import {
+  clampLimit,
+  decodeCursor,
+  paginateInMemory,
+} from "@/app/api/_lib/pagination";
 import { CreateBoxRequestSchema, ListBoxesQuerySchema } from "./schemas";
 
 export const dynamic = "force-dynamic";
@@ -39,9 +44,16 @@ export async function GET(request: Request) {
     const query = ListBoxesQuerySchema.parse(
       Object.fromEntries(url.searchParams.entries())
     );
+    const cursor = decodeCursor(query.cursor);
+    if (cursor === "invalid") {
+      return errorJson("VALIDATION_ERROR", "Cursor invalido.", meta, 400);
+    }
+    const limit = clampLimit(query.limit);
 
     const boxes = await getActiveBoxes(auth.client, auth.userId, query.account_id);
-    return okJson({ boxes }, meta);
+    const { data: pageRows, page } = paginateInMemory(boxes, limit, cursor);
+
+    return okJson({ boxes: pageRows }, { ...meta, page });
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
     return unexpectedError(error, meta);

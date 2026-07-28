@@ -31,3 +31,13 @@ export const ClassificationIdParamsSchema = z.object({
   id: z.string().uuid(),
 });
 
+// `categories`, `subcategories`, `tags` (`14` §10) comparten esta forma de
+// listado: catalogo pequeno y acotado por usuario, paginado en memoria
+// (`pagination.ts`, `paginateInMemory`).
+export const ListClassificationQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().positive().optional(),
+    cursor: z.string().optional(),
+  })
+  .strict();
+

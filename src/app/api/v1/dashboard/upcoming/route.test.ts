@@ -17,6 +17,7 @@ vi.mock("@/data/repositories/debts.repository", () => ({
 
 vi.mock("@/data/repositories/recurring.repository", () => ({
   listRecurringDashboard: mocks.listRecurringDashboard,
+  sortRecurringRulesByNextExpectedDate: (rules: unknown[]) => rules,
 }));
 
 beforeEach(() => {

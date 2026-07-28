@@ -2,6 +2,7 @@ import { createServiceClient } from "@/data/supabase/server";
 import {
   createRecurringRule,
   listRecurringDashboard,
+  sortRecurringRulesByNextExpectedDate,
 } from "@/data/repositories/recurring.repository";
 import { getAccountById } from "@/data/repositories/accounts.repository";
 import { getApiAuth } from "@/app/api/_lib/auth";
@@ -13,6 +14,12 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
+import {
+  buildCursorOrFilter,
+  clampLimit,
+  decodeCursor,
+  paginate,
+} from "@/app/api/_lib/pagination";
 import {
   CreateRecurringRuleRequestSchema,
   ListRecurringQuerySchema,
@@ -34,13 +41,32 @@ export async function GET(request: Request) {
     const query = ListRecurringQuerySchema.parse(
       Object.fromEntries(url.searchParams.entries())
     );
-    const data = await listRecurringDashboard(
-      auth.client,
-      auth.userId,
-      query.status
+    const cursor = decodeCursor(query.cursor);
+    if (cursor === "invalid") {
+      return errorJson("VALIDATION_ERROR", "Cursor invalido.", meta, 400);
+    }
+    const limit = clampLimit(query.limit);
+
+    const data = await listRecurringDashboard(auth.client, auth.userId, query.status, {
+      limit: limit + 1,
+      cursorFilter: cursor
+        ? buildCursorOrFilter("created_at", cursor, "desc")
+        : undefined,
+    });
+
+    const { data: pageRules, page } = paginate(
+      data.rules,
+      limit,
+      (rule) => rule.created_at
     );
 
-    return okJson(data, meta);
+    return okJson(
+      {
+        ...data,
+        rules: sortRecurringRulesByNextExpectedDate(pageRules),
+      },
+      { ...meta, page }
+    );
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
     return unexpectedError(error, meta);

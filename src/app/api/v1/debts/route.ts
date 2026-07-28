@@ -1,7 +1,11 @@
 import { createServiceClient } from "@/data/supabase/server";
 import { refreshDebtLifecycle } from "@/core/debts/debt-lifecycle-service";
 import { recordInitialOnboardingValue } from "@/core/onboarding/onboarding-activation";
-import { createDebt, listDebts } from "@/data/repositories/debts.repository";
+import {
+  createDebt,
+  listDebts,
+  sortDebtsByNextPaymentDate,
+} from "@/data/repositories/debts.repository";
 import { getApiAuth } from "@/app/api/_lib/auth";
 import {
   errorJson,
@@ -11,6 +15,13 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
+import {
+  buildCursorOrFilter,
+  clampLimit,
+  decodeCursor,
+  paginate,
+} from "@/app/api/_lib/pagination";
+import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
 import { CreateDebtRequestSchema, ListDebtsQuerySchema } from "./schemas";
 import { logger } from "@/shared/telemetry/logger";
 
@@ -31,8 +42,25 @@ export async function GET(request: Request) {
       Object.fromEntries(url.searchParams.entries())
     );
 
-    const debts = await listDebts(auth.client, auth.userId, query.status);
-    return okJson({ debts }, meta);
+    const cursor = decodeCursor(query.cursor);
+    if (cursor === "invalid") {
+      return errorJson("VALIDATION_ERROR", "Cursor invalido.", meta, 400);
+    }
+    const limit = clampLimit(query.limit);
+
+    const debts = await listDebts(auth.client, auth.userId, query.status, {
+      limit: limit + 1,
+      cursorFilter: cursor
+        ? buildCursorOrFilter("created_at", cursor, "desc")
+        : undefined,
+    });
+
+    const { data: pageRows, page } = paginate(debts, limit, (row) => row.created_at);
+
+    return okJson(
+      { debts: sortDebtsByNextPaymentDate(pageRows) },
+      { ...meta, page }
+    );
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
     return unexpectedError(error, meta);
@@ -49,11 +77,21 @@ export async function POST(request: Request) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
 
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "Falta Idempotency-Key para crear la deuda.",
+        meta,
+        400
+      );
+    }
+
     const body = await readJsonBody(request);
     const parsed = CreateDebtRequestSchema.parse(body);
     const serviceClient = createServiceClient();
 
-    const debt = await createDebt(serviceClient, {
+    const { debt, idempotent } = await createDebt(serviceClient, {
       userId: auth.userId,
       direction: parsed.direction,
       kind: parsed.kind,
@@ -73,38 +111,45 @@ export async function POST(request: Request) {
         trace_id,
         note: "Debt creation does not affect balances until a payment is recorded through Core.",
       },
+      idempotencyKey,
     });
 
-    try {
-      await refreshDebtLifecycle(serviceClient, auth.userId, {
-        traceId: trace_id,
-      });
-    } catch (error) {
-      logger.error("debts.create_lifecycle_refresh_deferred", {
-        error,
-        user_id: auth.userId,
-        debt_id: debt.id,
-        trace_id,
-      });
+    if (!idempotent) {
+      try {
+        await refreshDebtLifecycle(serviceClient, auth.userId, {
+          traceId: trace_id,
+        });
+      } catch (error) {
+        logger.error("debts.create_lifecycle_refresh_deferred", {
+          error,
+          user_id: auth.userId,
+          debt_id: debt.id,
+          trace_id,
+        });
+      }
+
+      try {
+        await recordInitialOnboardingValue(serviceClient, {
+          userId: auth.userId,
+          trigger: "debt_created",
+          source: "dashboard_debts",
+          traceId: trace_id,
+        });
+      } catch (error) {
+        logger.error("debts.create_onboarding_refresh_deferred", {
+          error,
+          user_id: auth.userId,
+          debt_id: debt.id,
+          trace_id,
+        });
+      }
     }
 
-    try {
-      await recordInitialOnboardingValue(serviceClient, {
-        userId: auth.userId,
-        trigger: "debt_created",
-        source: "dashboard_debts",
-        traceId: trace_id,
-      });
-    } catch (error) {
-      logger.error("debts.create_onboarding_refresh_deferred", {
-        error,
-        user_id: auth.userId,
-        debt_id: debt.id,
-        trace_id,
-      });
-    }
-
-    return okJson({ debt }, meta, { status: 201 });
+    return okJson(
+      { debt },
+      { ...meta, idempotent_replay: idempotent || undefined },
+      { status: idempotent ? 200 : 201 }
+    );
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
 

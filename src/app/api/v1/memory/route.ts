@@ -20,6 +20,7 @@ import {
   setLearningPreferences,
 } from "@/data/repositories/financial-memory.repository";
 import { createServiceClient } from "@/data/supabase/server";
+import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
 import { ManageLearningSchema, LearningPreferencesSchema } from "./schemas";
 
 export const dynamic = "force-dynamic";
@@ -65,6 +66,16 @@ export async function PATCH(request: Request) {
     if (!auth) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "Falta Idempotency-Key para actualizar la memoria.",
+        meta,
+        400,
+      );
+    }
+
     const parsed = ManageLearningSchema.parse(await readJsonBody(request));
     assertSystemActionAllowed({
       actionKind: "preference_change",
@@ -81,8 +92,7 @@ export async function PATCH(request: Request) {
         action: parsed.action,
         summary: parsed.summary,
         reason: parsed.reason ?? `dashboard_${parsed.action}`,
-        idempotencyKey:
-          `dashboard:${meta.trace_id}:memory:${parsed.target_id}:${parsed.action}`,
+        idempotencyKey: `${idempotencyKey}:memory:${parsed.target_id}:${parsed.action}`,
       });
       return okJson({ result }, meta);
     }
@@ -94,8 +104,7 @@ export async function PATCH(request: Request) {
       status,
       reason: parsed.reason ?? `dashboard_${parsed.action}`,
       actorType: "user",
-      idempotencyKey:
-        `dashboard:${meta.trace_id}:candidate:${parsed.target_id}:${status}`,
+      idempotencyKey: `${idempotencyKey}:candidate:${parsed.target_id}:${status}`,
     });
     if (!candidate) {
       return errorJson(
@@ -111,8 +120,7 @@ export async function PATCH(request: Request) {
             userId: auth.userId,
             candidateId: parsed.target_id,
             actorType: "user",
-            idempotencyKey:
-              `dashboard:${meta.trace_id}:promote:${parsed.target_id}`,
+            idempotencyKey: `${idempotencyKey}:promote:${parsed.target_id}`,
           })
         : null;
     if (parsed.action === "confirm" && !memory) {
@@ -132,6 +140,16 @@ export async function PUT(request: Request) {
     if (!auth) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "Falta Idempotency-Key para guardar las preferencias.",
+        meta,
+        400,
+      );
+    }
+
     const parsed = LearningPreferencesSchema.parse(await readJsonBody(request));
     assertSystemActionAllowed({
       actionKind: "preference_change",
@@ -144,7 +162,7 @@ export async function PUT(request: Request) {
       enabled: parsed.enabled,
       allowNarrativeMemory: parsed.allow_narrative_memory,
       allowSensitiveMemory: parsed.allow_sensitive_memory,
-      idempotencyKey: `dashboard:${meta.trace_id}:learning-preferences`,
+      idempotencyKey: `${idempotencyKey}:learning-preferences`,
     });
     return okJson({ preferences }, meta);
   } catch (error) {

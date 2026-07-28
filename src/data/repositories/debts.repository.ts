@@ -95,9 +95,14 @@ type DebtInstallmentDraft = {
 export async function listDebts(
   client: Client,
   userId: string,
-  statuses: DebtStatus[] = ["active", "due_soon", "overdue"]
+  statuses: DebtStatus[] = ["active", "due_soon", "overdue"],
+  options: { limit?: number; cursorFilter?: string } = {}
 ): Promise<DebtWithPerson[]> {
-  const { data, error } = await client
+  // Clave de paginacion: `created_at desc, id desc` (no `next_payment_date`,
+  // que admite null y no puede compararse de forma estable con un cursor,
+  // `14` §5: "orden estable obligatorio"). El orden de negocio (vencimiento
+  // mas proximo primero) se reaplica abajo sobre la pagina ya traida.
+  let builder = client
     .from("debts")
     .select(
       `
@@ -108,14 +113,26 @@ export async function listDebts(
     .eq("user_id", userId)
     .is("deleted_at", null)
     .in("status", statuses)
-    .order("next_payment_date", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
+
+  if (options.cursorFilter) builder = builder.or(options.cursorFilter);
+  if (options.limit !== undefined) builder = builder.limit(options.limit);
+
+  const { data, error } = await builder;
 
   if (error) {
     logger.error("debts.list_failed", { error, user_id: userId });
     throw error;
   }
 
+  // Se devuelve en orden `created_at desc, id desc` (el de paginacion), sin
+  // ordenar aqui por `next_payment_date`: quien pagina (`route.ts`) debe
+  // aplicar `sortDebtsByNextPaymentDate` DESPUES de recortar la pagina con
+  // `paginate()`, no antes — si se ordenara aqui, la ultima fila de la
+  // pagina ya no seria la ultima del fetch real, y el cursor codificaria la
+  // fila equivocada. Los demas llamadores (`tool-gateway`, `email-ingestion`,
+  // `insights.repository`) no dependen del orden: solo filtran/agrupan.
   return (data ?? []).map((row) => {
     const debt = row as Debt & { related_persons?: RelatedPerson | null };
     const { related_persons: relatedPerson, ...plainDebt } = debt;
@@ -126,6 +143,17 @@ export async function listDebts(
     };
   });
 }
+
+export function sortDebtsByNextPaymentDate(debts: DebtWithPerson[]): DebtWithPerson[] {
+  return [...debts].sort((left, right) => {
+    if (!left.next_payment_date && !right.next_payment_date) return 0;
+    if (!left.next_payment_date) return 1;
+    if (!right.next_payment_date) return -1;
+    return left.next_payment_date.localeCompare(right.next_payment_date);
+  });
+}
+
+export type CreateDebtResult = { debt: DebtWithPerson; idempotent: boolean };
 
 export async function createDebt(
   client: Client,
@@ -145,8 +173,21 @@ export async function createDebt(
     interestNotes?: string | null;
     source?: string;
     metadata?: Json;
+    /** `AC-API-05`: si ya existe una deuda de este usuario con esta clave
+     * (columna e indice unico de la migracion `043`), se devuelve esa en
+     * vez de crear una duplicada. */
+    idempotencyKey?: string | null;
   }
-): Promise<DebtWithPerson> {
+): Promise<CreateDebtResult> {
+  if (params.idempotencyKey) {
+    const existing = await findDebtByIdempotencyKey(
+      client,
+      params.userId,
+      params.idempotencyKey
+    );
+    if (existing) return { debt: existing, idempotent: true };
+  }
+
   const relatedPerson = params.relatedPersonName
     ? await getOrCreateRelatedPerson(client, params.userId, params.relatedPersonName)
     : null;
@@ -172,11 +213,23 @@ export async function createDebt(
       source: params.source ?? "dashboard_manual",
       confidence: 1,
       metadata: params.metadata ?? {},
+      idempotency_key: params.idempotencyKey ?? null,
     })
     .select()
     .single();
 
   if (error) {
+    // 23505 = unique_violation: dos peticiones concurrentes con la misma
+    // clave se cruzaron; la que pierde la carrera devuelve la que gano,
+    // no un error, para cumplir `AC-API-05` bajo concurrencia real.
+    if (isUniqueViolation(error) && params.idempotencyKey) {
+      const existing = await findDebtByIdempotencyKey(
+        client,
+        params.userId,
+        params.idempotencyKey
+      );
+      if (existing) return { debt: existing, idempotent: true };
+    }
     logger.error("debts.create_failed", { error, user_id: params.userId });
     throw error;
   }
@@ -185,9 +238,38 @@ export async function createDebt(
   await createInstallmentsForDebt(client, debt, params);
 
   return {
-    ...debt,
-    related_person: relatedPerson,
+    debt: { ...debt, related_person: relatedPerson },
+    idempotent: false,
   };
+}
+
+async function findDebtByIdempotencyKey(
+  client: Client,
+  userId: string,
+  idempotencyKey: string
+): Promise<DebtWithPerson | null> {
+  const { data, error } = await client
+    .from("debts")
+    .select("*, related_persons (*)")
+    .eq("user_id", userId)
+    .eq("idempotency_key", idempotencyKey)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const debt = data as Debt & { related_persons?: RelatedPerson | null };
+  const { related_persons: relatedPerson, ...plainDebt } = debt;
+  return { ...(plainDebt as Debt), related_person: relatedPerson ?? null };
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "23505"
+  );
 }
 
 export async function getDebtById(

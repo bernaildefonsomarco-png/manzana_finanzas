@@ -47,14 +47,17 @@ describe("debt create route", () => {
     mocks.getApiAuth.mockResolvedValue({ client: {}, userId });
     mocks.createServiceClient.mockReturnValue(serviceClient);
     mocks.createDebt.mockResolvedValue({
-      id: "22222222-2222-4222-8222-222222222222",
-      name: "Laptop",
+      debt: { id: "22222222-2222-4222-8222-222222222222", name: "Laptop" },
+      idempotent: false,
     });
 
     const response = await POST(
       new Request("http://localhost/api/v1/debts", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "test-debt-create-key-1",
+        },
         body: JSON.stringify({
           direction: "i_owe",
           kind: "installment_purchase",
@@ -92,10 +95,36 @@ describe("debt create route", () => {
     });
     mocks.createServiceClient.mockReturnValue({});
     mocks.createDebt.mockResolvedValue({
-      id: "22222222-2222-4222-8222-222222222222",
-      name: "Laptop",
+      debt: { id: "22222222-2222-4222-8222-222222222222", name: "Laptop" },
+      idempotent: false,
     });
     mocks.refreshDebtLifecycle.mockRejectedValue(new Error("temporary"));
+
+    const response = await POST(
+      new Request("http://localhost/api/v1/debts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "test-debt-create-key-2",
+        },
+        body: JSON.stringify({
+          direction: "i_owe",
+          kind: "personal",
+          name: "Laptop",
+          principal_amount: 900,
+          currency: "PEN",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(201);
+  });
+
+  it("AC-API-05: exige Idempotency-Key para crear una deuda", async () => {
+    mocks.getApiAuth.mockResolvedValue({
+      client: {},
+      userId: "11111111-1111-4111-8111-111111111111",
+    });
 
     const response = await POST(
       new Request("http://localhost/api/v1/debts", {
@@ -111,6 +140,44 @@ describe("debt create route", () => {
       })
     );
 
-    expect(response.status).toBe(201);
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe("VALIDATION_ERROR");
+    expect(mocks.createDebt).not.toHaveBeenCalled();
+  });
+
+  it("AC-API-05: repetir la misma Idempotency-Key devuelve 200 con la deuda original, sin refrescar el ciclo de vida otra vez", async () => {
+    mocks.getApiAuth.mockResolvedValue({
+      client: {},
+      userId: "11111111-1111-4111-8111-111111111111",
+    });
+    mocks.createServiceClient.mockReturnValue({});
+    mocks.createDebt.mockResolvedValue({
+      debt: { id: "22222222-2222-4222-8222-222222222222", name: "Laptop" },
+      idempotent: true,
+    });
+
+    const response = await POST(
+      new Request("http://localhost/api/v1/debts", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "repetida-123",
+        },
+        body: JSON.stringify({
+          direction: "i_owe",
+          kind: "personal",
+          name: "Laptop",
+          principal_amount: 900,
+          currency: "PEN",
+        }),
+      })
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.meta.idempotent_replay).toBe(true);
+    expect(mocks.refreshDebtLifecycle).not.toHaveBeenCalled();
+    expect(mocks.recordInitialOnboardingValue).not.toHaveBeenCalled();
   });
 });

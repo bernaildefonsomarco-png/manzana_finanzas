@@ -64,7 +64,10 @@ describe("memory governance route", () => {
     const response = await PATCH(
       new Request("http://localhost/api/v1/memory", {
         method: "PATCH",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "memory-candidate-key-1",
+        },
         body: JSON.stringify({
           target: "candidate",
           target_id: candidateId,
@@ -92,7 +95,10 @@ describe("memory governance route", () => {
     const response = await PATCH(
       new Request("http://localhost/api/v1/memory", {
         method: "PATCH",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "memory-correct-key-1",
+        },
         body: JSON.stringify({
           target: "memory",
           target_id: memoryId,
@@ -122,7 +128,10 @@ describe("memory governance route", () => {
     const response = await PUT(
       new Request("http://localhost/api/v1/memory", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "memory-learning-prefs-key-1",
+        },
         body: JSON.stringify({
           enabled: false,
           allow_narrative_memory: false,
@@ -135,6 +144,36 @@ describe("memory governance route", () => {
       { service: true },
       expect.objectContaining({ enabled: false, allowSensitiveMemory: false }),
     );
+  });
+
+  it("AC-API-05: PATCH y PUT exigen Idempotency-Key real", async () => {
+    const patchResponse = await PATCH(
+      new Request("http://localhost/api/v1/memory", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          target: "candidate",
+          target_id: candidateId,
+          action: "confirm",
+        }),
+      }),
+    );
+    expect(patchResponse.status).toBe(400);
+    expect(mocks.updateLearningCandidateDecision).not.toHaveBeenCalled();
+
+    const putResponse = await PUT(
+      new Request("http://localhost/api/v1/memory", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          enabled: false,
+          allow_narrative_memory: false,
+          allow_sensitive_memory: false,
+        }),
+      }),
+    );
+    expect(putResponse.status).toBe(400);
+    expect(mocks.setLearningPreferences).not.toHaveBeenCalled();
   });
 
   it("rechaza lectura sin sesion", async () => {

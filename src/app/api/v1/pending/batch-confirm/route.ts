@@ -19,6 +19,7 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
+import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
 
 export const dynamic = "force-dynamic";
 
@@ -43,6 +44,16 @@ export async function POST(request: Request) {
     if (!auth) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "Falta Idempotency-Key para confirmar el lote de pendientes.",
+        meta,
+        400
+      );
+    }
+
     const body = BodySchema.parse(await readJsonBody(request));
     assertSystemActionAllowed({
       actionKind: "pending_resolution",

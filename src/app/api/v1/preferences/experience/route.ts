@@ -14,6 +14,7 @@ import {
   setExperiencePreferences,
 } from "@/data/repositories/experience-preferences.repository";
 import { createServiceClient } from "@/data/supabase/server";
+import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +51,16 @@ export async function PUT(request: Request) {
     if (!auth) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "Falta Idempotency-Key para guardar las preferencias.",
+        meta,
+        400
+      );
+    }
+
     const preferences = PreferencesSchema.parse(await readJsonBody(request));
     assertSystemActionAllowed({
       actionKind: "preference_change",
@@ -60,7 +71,7 @@ export async function PUT(request: Request) {
     const saved = await setExperiencePreferences(createServiceClient(), {
       userId: auth.userId,
       preferences,
-      idempotencyKey: `dashboard:${meta.trace_id}:experience-preferences`,
+      idempotencyKey,
     });
     return okJson({ preferences: saved }, meta);
   } catch (error) {

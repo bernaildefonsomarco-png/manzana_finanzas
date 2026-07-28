@@ -23,21 +23,25 @@ const OptionalDateSchema = z
   .nullable()
   .optional();
 
-export const ListDebtsQuerySchema = z.object({
-  status: z
-    .string()
-    .trim()
-    .optional()
-    .transform((value) =>
-      value
-        ? value
-            .split(",")
-            .map((item) => item.trim())
-            .filter(Boolean)
-        : ["active", "due_soon", "overdue"]
-    )
-    .pipe(z.array(DebtStatusSchema).min(1)),
-});
+export const ListDebtsQuerySchema = z
+  .object({
+    status: z
+      .string()
+      .trim()
+      .optional()
+      .transform((value) =>
+        value
+          ? value
+              .split(",")
+              .map((item) => item.trim())
+              .filter(Boolean)
+          : ["active", "due_soon", "overdue"]
+      )
+      .pipe(z.array(DebtStatusSchema).min(1)),
+    limit: z.coerce.number().int().positive().optional(),
+    cursor: z.string().optional(),
+  })
+  .strict();
 
 export const CreateDebtRequestSchema = z
   .object({

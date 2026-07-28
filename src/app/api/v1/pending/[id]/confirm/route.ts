@@ -20,6 +20,7 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
+import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,16 @@ export async function POST(request: Request, context: RouteContext) {
     const auth = await getApiAuth(request);
     if (!auth) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
+    }
+
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "Falta Idempotency-Key para confirmar el pendiente.",
+        meta,
+        400
+      );
     }
 
     const params = ParamsSchema.parse(await context.params);
@@ -74,7 +85,7 @@ export async function POST(request: Request, context: RouteContext) {
         idempotent: result.idempotent,
         auto_resolved_duplicate: result.autoResolvedDuplicate,
       },
-      meta,
+      { ...meta, idempotent_replay: result.idempotent || undefined },
       { status: result.idempotent ? 200 : 201 }
     );
   } catch (error) {

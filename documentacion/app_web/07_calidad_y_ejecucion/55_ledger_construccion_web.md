@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-04` cerraron `G1` y `G2`. Ninguno
+**La construcción avanza.** `W-01` a `W-05` cerraron `G1` y `G2`. Ninguno
 tiene criterios de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 4 de 20 |
-| Criterios `verificado` | 30 de 708 |
+| Cortes cerrados | 5 de 20 |
+| Criterios `verificado` | 39 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -598,6 +598,124 @@ conversacional para que no dependa del canal.
   desactualizada desde antes de `W-04`, corregida de paso).
 - `53` §3: `D-12` (nueva) — memoria conversacional particionada por canal.
 - `03_decisiones_producto_web.md`: `WEB-D170` a `WEB-D174` (nuevas).
+
+---
+
+## W-05 — Contratos de API
+
+**Cerrado:** 2026-07-28
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-28, con `npm run matriz:generar`.
+
+### Qué se entregó
+
+Infraestructura compartida nueva en `src/app/api/_lib/`: `pagination.ts`
+(cursor opaco de una columna, compuesto de varias, y en memoria para
+catálogos pequeños — `encodeCursor`/`decodeCursor`, `buildCursorOrFilter`,
+`paginate`/`paginateComposite`/`paginateInMemory`), `idempotency.ts`
+(`readIdempotencyKey`, que reemplaza cuatro validaciones duplicadas de
+8-180 caracteres), `csrf.ts` (`verifyOrigin`, falla cerrado si no puede
+determinar el origen propio) y `rate-limit.ts` (clasificador de familia por
+ruta+método y llamada al RPC nuevo). Migración `047_api_rate_limits.sql`:
+tabla `api_rate_limit_counters` y RPC `check_and_increment_rate_limit`, un
+contador de ventana deslizante aproximada sobre Postgres (`WEB-D179`, sin
+Redis/Upstash en el stack). `src/proxy.ts` gana verificación de CSRF,
+límite de peticiones y las tres cabeceras de seguridad de `14` §9
+(incluida la CSP que el propio `14` decía tener `54` y no tenía,
+`WEB-D178`) para toda petición a `/api/v1/*` — un único punto, correcto
+por construcción para familias que todavía no existen (`WEB-D180`).
+
+Paginación por cursor y filtros server-side aplicados a los nueve
+listados que existen hoy: `movements` (cursor compuesto
+`created_at, occurred_at` + `id`, ya que `occurred_at` solo no era
+estable), `pending`, `debts` (cursor por `created_at`/`id`, no por
+`next_payment_date` porque admite null; el orden de negocio se reaplica
+sobre la página ya recortada, `sortDebtsByNextPaymentDate`), `recurring`
+(mismo patrón, `sortRecurringRulesByNextExpectedDate`, y se corrigió
+`dashboard/upcoming` para no perder ese orden), `insights` (cursor
+compuesto `rank_score, created_at`), y los catálogos pequeños `accounts`,
+`boxes`, `categories`, `subcategories`, `tags` (paginación en memoria,
+`paginateInMemory`). Las nueve rutas ganaron `.strict()` en su esquema de
+query (`AC-API-04`); `insights` tenía además un defecto real —solo leía
+`limit`/`status`/`type` explícitos de la URL, así que cualquier filtro
+desconocido ya se ignoraba en silencio antes de esto, sin necesitar
+`.strict()` para probarlo—.
+
+`Idempotency-Key` real extendido a: creación de deudas (`createDebt`
+ahora comprueba `(user_id, idempotency_key)` antes de insertar y atrapa la
+violación de índice único de una carrera concurrente, migración `043`),
+`pending/[id]/confirm` y `pending/batch-confirm` (cabecera exigida; el
+mecanismo de fondo ya era idempotente por `pending_item_id`), y
+`preferences/experience`/`memory` (las cuatro claves sintéticas
+`dashboard:${trace_id}:...` —que cambiaban en cada reintento real, dejando
+inalcanzable el índice único de la migración `045`— pasan a usar la
+cabecera real del cliente). `http.ts` gana `RATE_LIMITED`/
+`PAYLOAD_TOO_LARGE` en `ApiErrorCode` y `page`/`idempotent_replay` en
+`ApiMeta`. `npm run typecheck`, `npm run lint`, `npm run build` (con los
+cinco gates de `prebuild` en verde, Proxy sigue en runtime Node.js), `npm
+test` y `npm run test:rls` terminan sin errores.
+
+### Qué sorprendió
+
+Cuatro cosas, cada una llevó a una decisión (`WEB-D175` a `WEB-D182`).
+
+La primera: nueve de las dieciocho familias que `14` §10 mapea
+(`budgets`, `projections`, `simulate`, `reports`, `exports`, `imports`,
+`assistant`, `notifications`, `summary`) no tienen ni una ruta escrita
+todavía. `AC-API-01`/`02`/`03`/`04`/`10` pasan a agregados sobre las nueve
+que sí existen (`WEB-D175`), heredando el mecanismo compartido cuando se
+construyan.
+
+La segunda, la más cara de las cuatro: el plan era reconectar
+`POST /api/v1/debts` al comando de Core `debt-creation-command.ts` (que ya
+tenía idempotencia completa vía la migración `043`) en vez de construir
+algo nuevo. Al implementarlo, `CreateDebtCommandSchema` exige
+`related_person_name` no vacío, mientras que el producto permite crear una
+deuda sin persona relacionada (un servicio o factura) — `debts.repository.ts`
+ya lo soporta. Forzar el comando de Core habría roto ese caso sin ningún
+test que lo cubriera. Se optó por hacer idempotente la propia función
+`createDebt` en vez de rehusar el comando de Core (`WEB-D176`), verificado
+con una prueba de concurrencia real contra Postgres (dos llamadas
+simultáneas con la misma clave, una gana la carrera del índice único, la
+otra recibe la fila ganadora).
+
+La tercera: `14` §8 y `43` `RUL-AUTH-06` dan números distintos para el
+mismo límite de autenticación ("10 por 15 minutos" contra "5 en 15
+minutos"), y además las peticiones de autenticación/recuperación de
+contraseña/registro nunca pasan por nuestro servidor — van del navegador
+directo a la API de Supabase Auth. `14` §8 se corrigió a favor de `43`
+(más detallado, dueño de `AC-SEG-05`/`W-18`), y esas tres familias de
+`AC-API-06` no cierran en `W-05` (`WEB-D181`).
+
+La cuarta: `14` §9 decía que la Content Security Policy estaba "definida
+en `54`", y `54` no la definía en ningún sitio — se corrigió `14` §9 para
+definirla directamente (`WEB-D178`), el mismo patrón de referencia rota
+que otros `WEB-D` ya corrigieron en otros documentos.
+
+### Qué quedó abierto
+
+`AC-API-01`/`02`/`03`/`04`/`10` siguen abiertos para las nueve familias
+que no existen; cierran cuando cada una nazca, reutilizando
+`pagination.ts`. `AC-API-05` queda abierto para `imports`/`assistant` (sus
+familias tampoco existen). `AC-API-06` queda abierto para
+autenticación/recuperación de contraseña/registro — es trabajo de `W-18`,
+que puede reutilizar el RPC `check_and_increment_rate_limit`. `AC-API-09`
+no cierra: la familia `assistant` no existe.
+
+### Documentos corregidos
+
+- `14` §8: tabla de límites corregida (solo las familias que pasan por
+  `/api/v1/*`; autenticación/recuperación/registro remiten a `43`
+  `RUL-AUTH-06`, `WEB-D181`).
+- `14` §9: Content Security Policy definida directamente, ya no remite a
+  una definición de `54` que no existía (`WEB-D178`).
+- `14` §15: `Clase:` añadida a `AC-API-01, 02, 03, 04, 05, 06, 07, 08, 10`;
+  `AC-API-09` marcado sin cerrar (`WEB-D177`).
+- `50` §3.1: censo de clases actualizado (105 con clase, no 96; `unidad`
+  14, no 7; `integracion` 5, no 3).
+- `03_decisiones_producto_web.md`: `WEB-D175` a `WEB-D182` (nuevas);
+  `WEB-D170` corregida (el tipo `Canal` real es `"whatsapp" | "dashboard"`,
+  no `"web" | "whatsapp"` como decía por error desde `W-04`).
 
 ---
 

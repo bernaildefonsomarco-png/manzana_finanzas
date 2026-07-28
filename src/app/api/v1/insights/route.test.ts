@@ -39,9 +39,27 @@ describe("insights list route", () => {
     expect(response.status).toBe(200);
     expect(payload.data.insights).toHaveLength(1);
     expect(mocks.listInsights).toHaveBeenCalledWith(client, "user-1", {
-      limit: 5,
+      limit: 6,
       type: "projection",
       status: "narrated",
+      cursorFilter: undefined,
     });
+  });
+
+  it("AC-API-04: un filtro desconocido devuelve VALIDATION_ERROR", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "user-1" });
+    const response = await GET(
+      new Request("http://localhost/api/v1/insights?filtro_inventado=x"),
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.listInsights).not.toHaveBeenCalled();
+  });
+
+  it("un cursor corrupto devuelve VALIDATION_ERROR", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "user-1" });
+    const response = await GET(
+      new Request("http://localhost/api/v1/insights?cursor=no-valido-@@@"),
+    );
+    expect(response.status).toBe(400);
   });
 });

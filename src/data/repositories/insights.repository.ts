@@ -328,6 +328,9 @@ export type InsightListOptions = {
   status?: InsightStatus;
   type?: InsightCandidate["type"];
   now?: Date;
+  /** Filtro `.or(...)` de cursor ya construido (`pagination.ts`,
+   * `buildCompositeCursorOrFilter(["rank_score","created_at"], cursor, "desc")`). */
+  cursorFilter?: string;
 };
 
 export type InsightDetail = {
@@ -359,10 +362,12 @@ export async function listInsights(
       `expires_at.is.null,expires_at.gt.${(options.now ?? new Date()).toISOString()}`,
     );
   }
+  if (options.cursorFilter) query = query.or(options.cursorFilter);
 
   const { data, error } = await query
     .order("rank_score", { ascending: false })
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(Math.min(Math.max(options.limit ?? 20, 1), 100));
   if (error) throw error;
   return (data ?? []) as unknown as InsightCandidate[];

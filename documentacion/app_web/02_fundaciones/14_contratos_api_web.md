@@ -179,7 +179,9 @@ del asistente y cambios de preferencias (la migración `045` ya lo contempla).
 ## 8. Límite de peticiones
 
 No existe hoy. Se define por familia de operación, con ventana deslizante
-por usuario:
+por usuario, para las familias que pasan por `/api/v1/*` (aplicado en
+`src/proxy.ts`, `WEB-D180`, único punto por el que pasa toda petición no
+pública):
 
 | Familia | Límite |
 |---|---|
@@ -188,12 +190,20 @@ por usuario:
 | Asistente (turnos de conversación) | 20 por minuto |
 | Importación de archivos | 5 por hora |
 | Exportación completa de datos | 3 por hora |
-| Autenticación (intentos de acceso) | 10 por 15 minutos, por correo y por IP |
-| Recuperación de contraseña | 5 por hora, por correo |
 
 Respuesta al superarlo: `429` con `RATE_LIMITED`, cabecera `Retry-After`, y
-mensaje en español que dice cuándo reintentar. Los límites de autenticación
-no revelan si el correo existe.
+mensaje en español que dice cuándo reintentar.
+
+**Autenticación, recuperación de contraseña, reenvío de verificación y
+registro NO se limitan aquí** (`WEB-D181`): esas llamadas van del navegador
+directo a la API de Supabase Auth (`supabase.auth.signInWithPassword` /
+`resetPasswordForEmail` / `signUp`), sin pasar por `/api/v1/*` ni por
+`proxy.ts`. Sus límites reales — distintos de una versión anterior de esta
+tabla, que no coincidía con la fuente — están en
+`43_auth_y_cuenta.md` `RUL-AUTH-06`, y su implementación (por correo, no
+solo por IP) es de `W-18`, que puede reutilizar el RPC
+`check_and_increment_rate_limit` de este corte. Los límites de
+autenticación no revelan si el correo existe.
 
 ## 9. Protección CSRF y cabeceras
 
@@ -203,8 +213,29 @@ no revelan si el correo existe.
   porque no se envían automáticamente por el navegador.
 - Cookies de sesión: `HttpOnly`, `Secure`, `SameSite=Lax`.
 - Cabeceras de respuesta: `X-Content-Type-Options: nosniff`,
-  `Referrer-Policy: strict-origin-when-cross-origin`, y Content Security
-  Policy definida en `54_plan_de_implementacion_web.md`.
+  `Referrer-Policy: strict-origin-when-cross-origin`, y esta Content
+  Security Policy (`WEB-D178`: `54` no la definía, pese a que este
+  documento decía lo contrario):
+
+  ```text
+  default-src 'self';
+  script-src 'self' 'unsafe-inline';
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: https:;
+  font-src 'self' data:;
+  connect-src 'self' https://*.supabase.co wss://*.supabase.co
+    https://app.posthog.com https://*.sentry.io;
+  frame-ancestors 'none';
+  base-uri 'self';
+  form-action 'self';
+  ```
+
+  `script-src`/`style-src` llevan `'unsafe-inline'` porque Next.js inyecta
+  estilos y el arranque de hidratación inline; se endurece cuando el
+  sistema de diseño (`W-06`) elimine los estilos inline que hoy dependen de
+  ello. `connect-src` incluye Supabase (datos y realtime), PostHog y
+  Sentry porque son los únicos destinos de red externos que el resto del
+  corpus ya aprueba (`03` resumen, variables `.env.local.example`).
 - Ningún dato personal viaja en la query string de una URL que pueda quedar
   en registros o historiales compartidos.
 
@@ -291,22 +322,29 @@ cambiar el significado de un valor existente, cambiar el envelope.
 ## 15. Criterios de aceptación
 
 - `AC-API-01` — Todo listado devuelve `next_cursor` y `has_more`, y permite
-  recorrer el conjunto completo. Evidencia: `TEST`.
+  recorrer el conjunto completo. Evidencia: `TEST`. Clase: `unidad`
+  (agregado, `WEB-D175`).
 - `AC-API-02` — Ningún endpoint de listado devuelve más de 100 elementos.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad` (agregado, `WEB-D175`).
 - `AC-API-03` — Los filtros se aplican en el servidor; ningún cliente
-  descarga un conjunto para filtrarlo. Evidencia: `CODE` + `TEST`.
+  descarga un conjunto para filtrarlo. Evidencia: `CODE` + `TEST`. Clase:
+  `unidad` (agregado, `WEB-D175`; `WEB-D182` sobre el alcance en
+  `movements-screen.tsx`).
 - `AC-API-04` — Un filtro desconocido devuelve `VALIDATION_ERROR` en vez de
-  ignorarse. Evidencia: `TEST`.
+  ignorarse. Evidencia: `TEST`. Clase: `unidad` (agregado, `WEB-D175`).
 - `AC-API-05` — Repetir una escritura con la misma `Idempotency-Key` no crea
-  duplicados y devuelve el resultado original. Evidencia: `TEST`.
+  duplicados y devuelve el resultado original. Evidencia: `TEST`. Clase:
+  `integracion` (`WEB-D176`: la prueba central —concurrencia real sobre
+  creación de deudas— corre contra Postgres real).
 - `AC-API-06` — Superar el límite devuelve 429 con `Retry-After` y mensaje en
-  español. Evidencia: `TEST`.
+  español. Evidencia: `TEST`. Clase: `integracion` (el RPC de ventana
+  deslizante corre contra Postgres real, `WEB-D179`, `WEB-D180`).
 - `AC-API-07` — Una escritura por cookie desde otro origen es rechazada.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad` (`WEB-D180`).
 - `AC-API-08` — Ningún mensaje de error en producción expone detalles
-  internos, SQL ni mensajes de proveedor. Evidencia: `TEST`.
+  internos, SQL ni mensajes de proveedor. Evidencia: `TEST`. Clase: `unidad`.
 - `AC-API-09` — Las escrituras del asistente pasan por los mismos endpoints
-  y validaciones que los formularios. Evidencia: `TEST`.
+  y validaciones que los formularios. Evidencia: `TEST`. No cierra en `W-05`
+  (`WEB-D177`): la familia `assistant` no existe.
 - `AC-API-10` — Los endpoints de solo lectura no escriben bajo ninguna
-  entrada. Evidencia: `TEST`.
+  entrada. Evidencia: `TEST`. Clase: `unidad` (agregado, `WEB-D175`).

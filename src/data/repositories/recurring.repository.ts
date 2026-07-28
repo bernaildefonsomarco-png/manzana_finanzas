@@ -115,16 +115,27 @@ export type RecurringCandidateConfirmResult = {
 export async function listRecurringDashboard(
   client: Client,
   userId: string,
-  statuses: RecurringStatus[] = ["active", "suggested", "paused"]
+  statuses: RecurringStatus[] = ["active", "suggested", "paused"],
+  options: { limit?: number; cursorFilter?: string } = {}
 ): Promise<RecurringDashboardData> {
-  const { data: rulesData, error: rulesError } = await client
+  // Clave de paginacion: `created_at desc, id desc`, no `next_expected_date`
+  // (admite null, no compara de forma estable contra un cursor — mismo
+  // razonamiento que `debts.repository.ts::listDebts`). El orden de negocio
+  // (vencimiento mas proximo primero) se reaplica en el llamador
+  // (`route.ts`) sobre la pagina ya recortada.
+  let rulesBuilder = client
     .from("recurring_rules")
     .select("*")
     .eq("user_id", userId)
     .is("deleted_at", null)
     .in("status", statuses)
-    .order("next_expected_date", { ascending: true, nullsFirst: false })
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
+
+  if (options.cursorFilter) rulesBuilder = rulesBuilder.or(options.cursorFilter);
+  if (options.limit !== undefined) rulesBuilder = rulesBuilder.limit(options.limit);
+
+  const { data: rulesData, error: rulesError } = await rulesBuilder;
 
   if (rulesError) {
     logger.error("recurring.list_rules_failed", { error: rulesError, user_id: userId });
@@ -148,6 +159,20 @@ export async function listRecurringDashboard(
     })),
     candidates,
   };
+}
+
+/** Orden de negocio (vencimiento mas proximo primero) para mostrar; se
+ * aplica DESPUES de paginar (`route.ts`), nunca antes — ver el comentario en
+ * `listRecurringDashboard` sobre por que la clave de cursor es otra. */
+export function sortRecurringRulesByNextExpectedDate<
+  T extends { next_expected_date: string | null }
+>(rules: T[]): T[] {
+  return [...rules].sort((left, right) => {
+    if (!left.next_expected_date && !right.next_expected_date) return 0;
+    if (!left.next_expected_date) return 1;
+    if (!right.next_expected_date) return -1;
+    return left.next_expected_date.localeCompare(right.next_expected_date);
+  });
 }
 
 export async function createRecurringRule(

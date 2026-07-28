@@ -17,6 +17,7 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
+import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
 import type { Account, Box, Movement } from "@/shared/types/domain";
 import type { MovementInput } from "@/shared/schemas/money";
 import {
@@ -37,12 +38,8 @@ export async function POST(request: Request) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
 
-    const idempotencyKey = request.headers.get("idempotency-key")?.trim();
-    if (
-      !idempotencyKey ||
-      idempotencyKey.length < 8 ||
-      idempotencyKey.length > 180
-    ) {
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
       return errorJson(
         "VALIDATION_ERROR",
         "Idempotency-Key invalida para ejecutar la accion.",

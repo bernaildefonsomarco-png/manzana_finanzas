@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { CoreError } from "@/core/finance/errors";
+import type { PageMeta } from "./pagination";
 
 export type ApiErrorCode =
   | "VALIDATION_ERROR"
@@ -11,10 +12,17 @@ export type ApiErrorCode =
   | "NOT_CONFIGURED"
   | "CONFLICT"
   | "CORE_REJECTED"
+  | "RATE_LIMITED"
+  | "PAYLOAD_TOO_LARGE"
   | "INTERNAL_ERROR";
 
 export type ApiMeta = {
   trace_id: string;
+  // Solo en listados (`14` §3, `AC-API-01`).
+  page?: PageMeta;
+  // Solo en la respuesta a una escritura repetida con la misma
+  // `Idempotency-Key` (`14` §7, `AC-API-05`).
+  idempotent_replay?: boolean;
 };
 
 export function getTraceId(request: Request): string {

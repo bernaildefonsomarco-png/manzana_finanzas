@@ -25,6 +25,13 @@ export const CreateAccountRequestSchema = z
 
 export type CreateAccountRequest = z.infer<typeof CreateAccountRequestSchema>;
 
+export const ListAccountsQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().positive().optional(),
+    cursor: z.string().optional(),
+  })
+  .strict();
+
 export const UpdateAccountRequestSchema = z
   .object({
     name: z.string().trim().min(1).max(80).optional(),

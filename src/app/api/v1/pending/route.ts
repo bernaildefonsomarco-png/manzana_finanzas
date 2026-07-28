@@ -11,6 +11,12 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
+import {
+  buildCursorOrFilter,
+  clampLimit,
+  decodeCursor,
+  paginate,
+} from "@/app/api/_lib/pagination";
 import { ListPendingQuerySchema } from "./schemas";
 
 export const dynamic = "force-dynamic";
@@ -29,6 +35,13 @@ export async function GET(request: Request) {
     const query = ListPendingQuerySchema.parse(
       Object.fromEntries(url.searchParams.entries())
     );
+
+    const cursor = decodeCursor(query.cursor);
+    if (cursor === "invalid") {
+      return errorJson("VALIDATION_ERROR", "Cursor invalido.", meta, 400);
+    }
+    const limit = clampLimit(query.limit);
+
     const statuses = query.status
       ? [query.status]
       : query.include_resolved
@@ -39,10 +52,19 @@ export async function GET(request: Request) {
       statuses,
       source: query.source,
       type: query.type,
-      limit: query.limit,
+      limit: limit + 1,
+      cursorFilter: cursor
+        ? buildCursorOrFilter("created_at", cursor, "desc")
+        : undefined,
     });
 
-    return okJson({ pending_items: pendingItems }, meta);
+    const { data: pageRows, page } = paginate(
+      pendingItems,
+      limit,
+      (row) => row.created_at
+    );
+
+    return okJson({ pending_items: pageRows }, { ...meta, page });
   } catch (error) {
     return validationOrUnexpected(error, meta);
   }

@@ -19,6 +19,8 @@ const OptionalDateSchema = z
 export const ListBoxesQuerySchema = z
   .object({
     account_id: z.string().uuid().optional(),
+    limit: z.coerce.number().int().positive().optional(),
+    cursor: z.string().optional(),
   })
   .strict();
 

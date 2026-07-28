@@ -19,19 +19,23 @@ const IsoDateSchema = z
 
 const OptionalUuidSchema = z.string().uuid().nullable().optional();
 
-export const ListRecurringQuerySchema = z.object({
-  status: z
-    .string()
-    .optional()
-    .transform((value) => {
-      if (!value) return ["active", "suggested", "paused"] as const;
-      return value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean);
-    })
-    .pipe(z.array(z.enum(RECURRING_STATUSES)).min(1).max(5)),
-});
+export const ListRecurringQuerySchema = z
+  .object({
+    status: z
+      .string()
+      .optional()
+      .transform((value) => {
+        if (!value) return ["active", "suggested", "paused"] as const;
+        return value
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+      })
+      .pipe(z.array(z.enum(RECURRING_STATUSES)).min(1).max(5)),
+    limit: z.coerce.number().int().positive().optional(),
+    cursor: z.string().optional(),
+  })
+  .strict();
 
 export const CreateRecurringRuleRequestSchema = z
   .object({

@@ -129,6 +129,9 @@ export async function listPendingItems(
     source?: PendingSource;
     type?: PendingType;
     limit?: number;
+    /** Filtro `.or(...)` de cursor ya construido (`pagination.ts`,
+     * `buildCursorOrFilter("created_at", cursor, "desc")`). */
+    cursorFilter?: string;
   } = {}
 ): Promise<PendingItem[]> {
   const statuses = options.statuses ?? ACTIVE_PENDING_STATUSES;
@@ -140,10 +143,12 @@ export async function listPendingItems(
     .eq("user_id", userId)
     .in("status", statuses)
     .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
     .limit(limit);
 
   if (options.source) builder = builder.eq("source", options.source);
   if (options.type) builder = builder.eq("type", options.type);
+  if (options.cursorFilter) builder = builder.or(options.cursorFilter);
 
   const { data, error } = await builder;
 

@@ -7,16 +7,19 @@ import {
   PendingTypeSchema,
 } from "@/shared/schemas/money";
 
-export const ListPendingQuerySchema = z.object({
-  status: PendingStatusSchema.optional(),
-  source: PendingSourceSchema.optional(),
-  type: PendingTypeSchema.optional(),
-  include_resolved: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((value) => value === "true"),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+export const ListPendingQuerySchema = z
+  .object({
+    status: PendingStatusSchema.optional(),
+    source: PendingSourceSchema.optional(),
+    type: PendingTypeSchema.optional(),
+    include_resolved: z
+      .enum(["true", "false"])
+      .optional()
+      .transform((value) => value === "true"),
+    limit: z.coerce.number().int().positive().optional(),
+    cursor: z.string().optional(),
+  })
+  .strict();
 
 export const PendingSummaryPatchSchema = z
   .object({

@@ -191,7 +191,7 @@ async function createFixtures() {
         .update({ deleted_at: new Date().toISOString() })
         .in(
           "id",
-          created.map((debt) => debt.id),
+          created.map((result) => result.debt.id),
         );
     }
     throw error;

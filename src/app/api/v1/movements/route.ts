@@ -19,11 +19,20 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
+import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
+import {
+  buildCompositeCursorOrFilter,
+  clampLimit,
+  decodeCompositeCursor,
+  paginateComposite,
+} from "@/app/api/_lib/pagination";
 import {
   CreateMovementRequestSchema,
   ListMovementsQuerySchema,
   toMovementInput,
 } from "./schemas";
+
+const MOVEMENTS_ORDER_COLUMNS = ["created_at", "occurred_at"];
 
 export const dynamic = "force-dynamic";
 
@@ -42,13 +51,21 @@ export async function GET(request: Request) {
       Object.fromEntries(url.searchParams.entries())
     );
 
+    const cursor = decodeCompositeCursor(query.cursor);
+    if (cursor === "invalid") {
+      return errorJson("VALIDATION_ERROR", "Cursor invalido.", meta, 400);
+    }
+
+    const limit = clampLimit(query.limit);
+
     let builder = auth.client
       .from("movements")
       .select("*")
       .eq("user_id", auth.userId)
       .order("created_at", { ascending: false })
       .order("occurred_at", { ascending: false })
-      .limit(query.limit);
+      .order("id", { ascending: false })
+      .limit(limit + 1);
 
     if (!query.include_deleted) {
       builder = builder.is("deleted_at", null);
@@ -64,6 +81,11 @@ export async function GET(request: Request) {
         `account_origin_id.eq.${query.account_id},account_destination_id.eq.${query.account_id}`
       );
     }
+    if (cursor) {
+      builder = builder.or(
+        buildCompositeCursorOrFilter(MOVEMENTS_ORDER_COLUMNS, cursor, "desc")
+      );
+    }
 
     const { data, error } = await builder;
 
@@ -76,9 +98,15 @@ export async function GET(request: Request) {
       );
     }
 
+    const { data: pageRows, page } = paginateComposite(
+      (data ?? []) as Movement[],
+      limit,
+      (row) => [row.created_at, row.occurred_at]
+    );
+
     return okJson(
-      { movements: sortMovementsByRegistrationRecency((data ?? []) as Movement[]) },
-      meta
+      { movements: sortMovementsByRegistrationRecency(pageRows) },
+      { ...meta, page }
     );
   } catch (error) {
     if (error instanceof Response) return error;
@@ -96,8 +124,8 @@ export async function POST(request: Request) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
 
-    const idempotencyKey = request.headers.get("idempotency-key");
-    if (!idempotencyKey || idempotencyKey.trim().length < 8) {
+    const normalizedIdempotencyKey = readIdempotencyKey(request);
+    if (!normalizedIdempotencyKey) {
       return errorJson(
         "VALIDATION_ERROR",
         "Falta Idempotency-Key para guardar el movimiento.",
@@ -118,7 +146,6 @@ export async function POST(request: Request) {
     const repository = new SupabaseFinancialCoreRepository(serviceClient);
     const dispatcher = new CommandDispatcher(repository);
     let movementInput = toMovementInput(parsed);
-    const normalizedIdempotencyKey = idempotencyKey.trim();
     const existing = await repository.findMovementByIdempotencyKey(
       auth.userId,
       normalizedIdempotencyKey,

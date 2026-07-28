@@ -61,21 +61,26 @@ export const DeleteMovementRequestSchema = z
   })
   .strict();
 
-export const ListMovementsQuerySchema = z.object({
-  type: MovementTypeSchema.optional(),
-  status: z
-    .enum(["confirmed", "needs_review", "corrected", "deleted", "reversed"])
-    .optional(),
-  category_id: CategoryIdSchema.optional(),
-  account_id: z.string().uuid().optional(),
-  from: z.string().datetime({ offset: true }).optional(),
-  to: z.string().datetime({ offset: true }).optional(),
-  include_deleted: z
-    .enum(["true", "false"])
-    .optional()
-    .transform((value) => value === "true"),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+export const ListMovementsQuerySchema = z
+  .object({
+    type: MovementTypeSchema.optional(),
+    status: z
+      .enum(["confirmed", "needs_review", "corrected", "deleted", "reversed"])
+      .optional(),
+    category_id: CategoryIdSchema.optional(),
+    account_id: z.string().uuid().optional(),
+    from: z.string().datetime({ offset: true }).optional(),
+    to: z.string().datetime({ offset: true }).optional(),
+    include_deleted: z
+      .enum(["true", "false"])
+      .optional()
+      .transform((value) => value === "true"),
+    // `AC-API-02`: se recorta al maximo, no se rechaza (`clampLimit`).
+    limit: z.coerce.number().int().positive().optional(),
+    // `AC-API-01`: opaco, `pagination.ts` lo codifica/decodifica.
+    cursor: z.string().optional(),
+  })
+  .strict();
 
 export type CreateMovementRequest = z.infer<
   typeof CreateMovementRequestSchema

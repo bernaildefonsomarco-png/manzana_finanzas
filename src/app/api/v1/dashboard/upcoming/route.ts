@@ -6,7 +6,10 @@ import {
   unexpectedError,
 } from "@/app/api/_lib/http";
 import { listDebtInstallmentCommitments } from "@/data/repositories/debts.repository";
-import { listRecurringDashboard } from "@/data/repositories/recurring.repository";
+import {
+  listRecurringDashboard,
+  sortRecurringRulesByNextExpectedDate,
+} from "@/data/repositories/recurring.repository";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +31,7 @@ export async function GET(request: Request) {
     return okJson(
       {
         ...recurring,
+        rules: sortRecurringRulesByNextExpectedDate(recurring.rules),
         debt_installments,
       },
       meta

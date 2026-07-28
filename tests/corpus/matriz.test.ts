@@ -43,11 +43,13 @@ describe("generador de la matriz de trazabilidad", () => {
     expect(matriz.censo.criterios.porPorton).toEqual({ G1: 558, G2: 11, G3: 139 });
   });
 
-  it("50 §3.1: 96 criterios tienen clase asignada, con el reparto declarado", () => {
+  it("50 §3.1: 105 criterios tienen clase asignada, con el reparto declarado", () => {
     // W-02 añadió tres: AC-SEG-02 y AC-SEG-03 (integracion, 51 §8) y
     // AC-SEG-04 (lint, agregado sobre las 58 rutas de /api/v1). W-04 añadió
     // seis `unidad`: AC-CANAL-01 (agregado, WEB-D173), AC-CANAL-03, 04, 05,
-    // 07 y AC-INV-03.
+    // 07 y AC-INV-03. W-05 añadió nueve AC-API- (AC-API-09 queda sin clase,
+    // diferido por WEB-D177): siete `unidad` (01, 02, 03, 04, 07, 08, 10) y
+    // dos `integracion` (05, 06 — corren contra Postgres real).
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 15,
@@ -55,11 +57,11 @@ describe("generador de la matriz de trazabilidad", () => {
       e2e: 8,
       presupuesto: 2,
       contenido: 1,
-      integracion: 3,
-      unidad: 7,
+      integracion: 5,
+      unidad: 14,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(96);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(535);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(105);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(526);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {

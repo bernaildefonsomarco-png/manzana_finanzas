@@ -24,7 +24,7 @@ export function buildDashboardDeepLink(
   }
 }
 
-function getAppBaseUrl(): string | null {
+export function getAppBaseUrl(): string | null {
   const configured =
     process.env.MANZANA_APP_URL ?? process.env.NEXT_PUBLIC_MANZANA_APP_URL;
 

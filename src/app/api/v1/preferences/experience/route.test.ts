@@ -51,14 +51,33 @@ describe("experience preferences route", () => {
     const response = await PUT(
       new Request("http://localhost/api/v1/preferences/experience", {
         method: "PUT",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "experience-prefs-key-1",
+        },
         body: JSON.stringify(preferences),
       }),
     );
     expect(response.status).toBe(200);
     expect(mocks.setExperiencePreferences).toHaveBeenCalledWith(
       { service: true },
-      expect.objectContaining({ userId: "user-1", preferences }),
+      expect.objectContaining({
+        userId: "user-1",
+        preferences,
+        idempotencyKey: "experience-prefs-key-1",
+      }),
     );
+  });
+
+  it("AC-API-05: exige Idempotency-Key real, no una sintetica de trace_id", async () => {
+    const response = await PUT(
+      new Request("http://localhost/api/v1/preferences/experience", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(preferences),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(mocks.setExperiencePreferences).not.toHaveBeenCalled();
   });
 });

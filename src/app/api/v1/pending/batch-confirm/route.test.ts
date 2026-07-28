@@ -41,7 +41,10 @@ describe("pending batch confirm", () => {
     const response = await POST(
       new Request("http://localhost/api/v1/pending/batch-confirm", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "test-batch-confirm-key",
+        },
         body: JSON.stringify({ pending_item_ids: ids }),
       }),
     );
@@ -66,12 +69,32 @@ describe("pending batch confirm", () => {
     const response = await POST(
       new Request("http://localhost/api/v1/pending/batch-confirm", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "idempotency-key": "test-batch-confirm-key",
+        },
         body: JSON.stringify({ pending_item_ids: [id, id] }),
       }),
     );
 
     expect(response.status).toBe(400);
+    expect(mocks.confirmPendingItemWithCore).not.toHaveBeenCalled();
+  });
+
+  it("AC-API-05: exige Idempotency-Key", async () => {
+    const response = await POST(
+      new Request("http://localhost/api/v1/pending/batch-confirm", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          pending_item_ids: ["22222222-2222-4222-8222-222222222222"],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe("VALIDATION_ERROR");
     expect(mocks.confirmPendingItemWithCore).not.toHaveBeenCalled();
   });
 });
