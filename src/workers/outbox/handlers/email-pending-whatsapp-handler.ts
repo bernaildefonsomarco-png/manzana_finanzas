@@ -10,7 +10,7 @@ import {
   isQuietHoursActive,
   nextQuietHoursEnd,
 } from "@/core/nudges/nudge-policy";
-import { buildPendingItemWhatsAppCode } from "@/core/pending/whatsapp-pending-code";
+import { buildPendingItemReferenceCode } from "@/core/pending/reference-code";
 import {
   getWhatsAppWindowByUserAndPhone,
   recordWhatsAppPaidTemplateSent,
@@ -206,7 +206,7 @@ export async function deliverEmailPendingConfirmation(
   }
 
   const provider = getWhatsAppProviderFromEnv(env);
-  const pendingCode = buildPendingItemWhatsAppCode(pending);
+  const pendingCode = buildPendingItemReferenceCode(pending);
   const requiresReview =
     readString(pending.proposed_action.action) === "review_specialized";
   const idempotencyKey = `email-pending:${pending.id}:whatsapp:v2`;

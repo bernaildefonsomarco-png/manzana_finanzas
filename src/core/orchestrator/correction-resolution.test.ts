@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { parseCorrectionCommandText } from "./whatsapp-correction";
+import { parseCorrectionCommandText } from "./correction-resolution";
 
 const MOVEMENT_ID = "00000000-0000-4000-8000-000000000010";
 const ACCOUNT_ID = "00000000-0000-4000-8000-000000000021";
 
-describe("whatsapp-correction command parser", () => {
+describe("correction command parser", () => {
   it("parsea correccion de monto", () => {
     expect(parseCorrectionCommandText(`corr:amount:${MOVEMENT_ID}:25_50`)).toEqual({
       kind: "amount",

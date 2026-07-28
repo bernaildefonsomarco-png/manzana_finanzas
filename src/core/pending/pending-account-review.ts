@@ -181,8 +181,8 @@ export async function reviewOrUpdatePendingAccounts(params: {
       category_id: categoryId,
       subtitle:
         params.action === "assign_transfer"
-          ? "Cuentas revisadas por WhatsApp; falta confirmar"
-          : "Reclasificado por WhatsApp; falta confirmar",
+          ? "Cuentas revisadas; falta confirmar"
+          : "Reclasificado; falta confirmar",
     },
     params.traceId,
     proposedAction,

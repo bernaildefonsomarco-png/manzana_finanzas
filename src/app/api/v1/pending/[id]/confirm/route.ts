@@ -64,6 +64,7 @@ export async function POST(request: Request, context: RouteContext) {
       source: "api.v1.pending.confirm",
       traceId: trace_id,
       confirmDuplicate: body.confirm_duplicate === true,
+      channel: "dashboard",
     });
 
     return okJson(

@@ -1,5 +1,3 @@
-import type { WhatsAppProvider } from "@/adapters/whatsapp/types";
-import type { KapsoTemplateReadiness } from "@/adapters/whatsapp/kapso-template-readiness";
 import type { ProactiveNudgeActivationConfig } from "./proactive-activation";
 
 export type ProactiveGlobalReadiness = {
@@ -22,9 +20,12 @@ export type ProactiveGlobalReadiness = {
 
 export function buildProactiveGlobalReadiness(input: {
   config: ProactiveNudgeActivationConfig;
-  provider: WhatsAppProvider;
+  // Opaco a proposito: este fichero solo compara contra el nombre del
+  // proveedor esperado, no necesita saber el vocabulario completo de
+  // proveedores que vive en el adaptador de canal.
+  provider: string;
   providerReady: boolean;
-  template: KapsoTemplateReadiness;
+  template: { ready: boolean; [key: string]: unknown };
 }): ProactiveGlobalReadiness {
   const checks = {
     kapso_provider_selected: input.provider === "kapso",

@@ -217,20 +217,28 @@ nunca expone en un canal algo que el modo discreto oculta en el otro.
 ## 11. Criterios de aceptación
 
 - `AC-CANAL-01` — La prueba de agnosticismo de §8 pasa para los siete casos.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. **Agregado** (`WEB-D173`): su conjunto
+  son los siete casos de §8. Cierra 6 de 7 en `W-04`; el de "operación
+  masiva con previsualización" cierra cuando `26` construya la
+  recategorización en lote (`ACT-MOV-10`).
 - `AC-CANAL-02` — Ni el agente ni el verificador ni las consultas contienen
   referencias a un canal concreto. Evidencia: `TEST`. Clase: `lint`.
 - `AC-CANAL-03` — Un bloque `cifra` sin referencias no llega a ningún
-  presentador. Evidencia: `TEST`.
+  presentador. Evidencia: `TEST`. Clase: `unidad`.
 - `AC-CANAL-04` — Un bloque `propuesta` sin comando ejecutable no llega a
-  ningún presentador. Evidencia: `TEST`.
+  ningún presentador. Evidencia: `TEST`. Clase: `unidad`.
 - `AC-CANAL-05` — Ningún presentador puede omitir un bloque `limite`.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`.
 - `AC-CANAL-06` — Una `impresion` se distingue visualmente de una
-  `afirmacion`. Evidencia: `TEST` + `USER`.
+  `afirmacion`. Evidencia: `TEST` + `USER`. **No cierra en `W-04`**
+  (`WEB-D174`): ningún flujo real compone todavía un bloque `hallazgo`.
 - `AC-CANAL-07` — Pulsar una opción y escribir su texto producen la misma
-  entrada normalizada. Evidencia: `TEST`.
+  entrada normalizada. Evidencia: `TEST`. Clase: `unidad`.
 - `AC-CANAL-08` — `mostrar` no interrumpe un formulario abierto.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. **No cierra en `W-04`** (`WEB-D174`): no existe todavía
+  un comando de navegación que produzca un bloque `mostrar`.
 - `AC-CANAL-09` — Un foco abierto en un canal se puede retomar en el otro
-  dentro de su vigencia. Evidencia: `TEST`.
+  dentro de su vigencia. Evidencia: `TEST`. **No cierra en `W-04`**
+  (`WEB-D174`, `D-12`): la memoria conversacional está particionada por
+  canal en el esquema (`023_conversation_memory.sql`), lo contrario de lo
+  que exige `§10`.

@@ -6,7 +6,7 @@ import {
   type LearningCandidateProposal,
   type LearningSignalContextPack,
 } from "@/agents/learning-signal-agent";
-import type { ParsedCorrectionCommand } from "@/core/orchestrator/whatsapp-correction";
+import type { ParsedCorrectionCommand } from "@/core/orchestrator/correction-resolution";
 import type { Database } from "@/data/supabase/types";
 import {
   listLearningCandidates,

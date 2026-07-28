@@ -1,13 +1,44 @@
 import { describe, expect, it } from "vitest";
 import {
-  evaluateWhatsAppNudgePolicy,
+  evaluateNudgePolicy,
   resolveNudgeTypeOptIn,
+  type ChannelDeliveryCheck,
 } from "./nudge-policy";
+import { planWhatsAppDelivery } from "@/adapters/whatsapp/window-manager";
+import type { WhatsAppWindowState } from "@/data/repositories/whatsapp-window.repository";
 import type {
   NudgeCandidate,
   NudgeDelivery,
   UserPreferences,
 } from "@/shared/types/domain";
+
+// Reproduce, solo para las pruebas, lo que el worker real hace en
+// proactive-nudge-worker.ts: envolver planWhatsAppDelivery del adaptador de
+// canal en la forma que nudge-policy.ts espera (21 S6).
+function testChannelDelivery(
+  windowState: WhatsAppWindowState | null,
+  templateAvailable: boolean,
+): ChannelDeliveryCheck {
+  return (delivery) => {
+    const deliveryPlan = planWhatsAppDelivery({
+      state: windowState,
+      intent: delivery.intent,
+      hasActionableValue: delivery.hasActionableValue,
+      whatsappOptIn: true,
+      quietHoursActive: false,
+      isSensitive: delivery.isSensitive,
+      discreetCopyPrepared: delivery.discreetCopyPrepared,
+      now: delivery.now,
+    });
+    if (deliveryPlan.mode === "app_only" || deliveryPlan.mode === "blocked") {
+      return { eligible: false, reason: deliveryPlan.reason };
+    }
+    if (deliveryPlan.mode === "template" && !templateAvailable) {
+      return { eligible: false, reason: "utility_template_not_configured" };
+    }
+    return { eligible: true, mode: deliveryPlan.mode, reason: deliveryPlan.reason };
+  };
+}
 
 const now = new Date("2026-07-18T15:00:00.000Z");
 const candidate: NudgeCandidate = {
@@ -89,13 +120,13 @@ describe("NudgePolicyEngine", () => {
   });
 
   it("autoriza mensaje libre solo tras pasar todos los gates", () => {
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate,
       preferences,
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now,
     });
 
@@ -105,13 +136,13 @@ describe("NudgePolicyEngine", () => {
   });
 
   it("no convierte visibilidad dashboard en opt-in externo", () => {
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate,
       preferences: { ...preferences, whatsapp_opt_in: false },
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now,
     });
     expect(decision.decision).toBe("dashboard_only");
@@ -119,7 +150,7 @@ describe("NudgePolicyEngine", () => {
   });
 
   it("mantiene backfill en Dashboard aunque exista consentimiento", () => {
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate: {
         ...candidate,
         type: "pending_review",
@@ -134,9 +165,9 @@ describe("NudgePolicyEngine", () => {
         nudge_opt_in: { pending_review: true },
       },
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now,
     });
 
@@ -145,13 +176,13 @@ describe("NudgePolicyEngine", () => {
   });
 
   it("difiere durante horario silencioso", () => {
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate,
       preferences,
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now: new Date("2026-07-19T04:00:00.000Z"),
     });
     expect(decision.decision).toBe("defer");
@@ -159,7 +190,7 @@ describe("NudgePolicyEngine", () => {
   });
 
   it("acepta time de PostgreSQL y permite desactivar quiet hours con horas iguales", () => {
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate: { ...candidate, scheduled_for: null },
       preferences: {
         ...preferences,
@@ -167,9 +198,9 @@ describe("NudgePolicyEngine", () => {
         quiet_hours_end: "00:00:00",
       },
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now: new Date("2026-07-19T04:00:00.000Z"),
     });
 
@@ -178,13 +209,13 @@ describe("NudgePolicyEngine", () => {
   });
 
   it("no repite el mismo candidato", () => {
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate,
       preferences,
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [delivery({ nudge_candidate_id: candidate.id })],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now,
     });
     expect(decision.decision).toBe("reject");
@@ -192,13 +223,13 @@ describe("NudgePolicyEngine", () => {
   });
 
   it("respeta el maximo global de dos no solicitados por dia", () => {
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate,
       preferences,
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [delivery(), delivery()],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now,
     });
     expect(decision.decision).toBe("defer");
@@ -206,13 +237,13 @@ describe("NudgePolicyEngine", () => {
   });
 
   it("no abre una conversacion cerrada sin plantilla utility configurada", () => {
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate,
       preferences,
       explicitTypeOptIn: true,
-      windowState: null,
       recentDeliveries: [],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(null, false),
       now,
     });
     expect(decision.decision).toBe("dashboard_only");
@@ -220,13 +251,13 @@ describe("NudgePolicyEngine", () => {
   });
 
   it("permite plantilla utility en ventana cerrada con consentimiento", () => {
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate,
       preferences,
       explicitTypeOptIn: true,
-      windowState: null,
       recentDeliveries: [],
-      templateAvailable: true,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(null, true),
       now,
     });
     expect(decision.decision).toBe("send");
@@ -240,22 +271,22 @@ describe("NudgePolicyEngine", () => {
       risk_level: "sensitive" as const,
     };
 
-    const blocked = evaluateWhatsAppNudgePolicy({
+    const blocked = evaluateNudgePolicy({
       candidate: sensitive,
       preferences,
       explicitTypeOptIn: true,
-      windowState: null,
       recentDeliveries: [],
-      templateAvailable: true,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(null, true),
       now,
     });
-    const allowed = evaluateWhatsAppNudgePolicy({
+    const allowed = evaluateNudgePolicy({
       candidate: sensitive,
       preferences,
       explicitTypeOptIn: true,
-      windowState: null,
       recentDeliveries: [],
-      templateAvailable: true,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(null, true),
       sensitiveCopyPrepared: true,
       now,
     });
@@ -272,29 +303,29 @@ describe("NudgePolicyEngine", () => {
       type: "weekly_review" as const,
       source_entity_type: "lifecycle_weekly",
     };
-    const unrelated = evaluateWhatsAppNudgePolicy({
+    const unrelated = evaluateNudgePolicy({
       candidate: weekly,
       preferences,
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [
         delivery({ metadata: { nudge_type: "payment_due" } }),
       ],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now,
     });
-    const repeated = evaluateWhatsAppNudgePolicy({
+    const repeated = evaluateNudgePolicy({
       candidate: weekly,
       preferences,
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [
         delivery({
           sent_at: "2026-07-16T15:00:00.000Z",
           metadata: { nudge_type: "weekly_review" },
         }),
       ],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now,
     });
 
@@ -311,18 +342,18 @@ describe("NudgePolicyEngine", () => {
       type: "reengagement" as const,
       source_entity_type: "lifecycle_inactivity",
     };
-    const decision = evaluateWhatsAppNudgePolicy({
+    const decision = evaluateNudgePolicy({
       candidate: reengagement,
       preferences,
       explicitTypeOptIn: true,
-      windowState: openWindow,
       recentDeliveries: [
         delivery({
           sent_at: "2026-07-08T15:00:00.000Z",
           metadata: { nudge_type: "reengagement" },
         }),
       ],
-      templateAvailable: false,
+      channel: "whatsapp" as const,
+      checkChannelDelivery: testChannelDelivery(openWindow, false),
       now,
     });
 

@@ -13,7 +13,7 @@ import {
 } from "@/data/repositories/conversation-memory.repository";
 import type { Database } from "@/data/supabase/types";
 import type { DataActionPlan } from "./data-action-policy";
-import type { WhatsAppPendingResolutionResult } from "./whatsapp-pending-confirmation";
+import type { PendingResolutionResult } from "./pending-resolution-from-text";
 
 type Client = SupabaseClient<Database>;
 
@@ -186,7 +186,7 @@ export async function resolveCaptureDraftFromNoActivePending(input: {
   client: Client;
   userId: string;
   channel: ConversationMemoryChannel;
-  pendingResolution: WhatsAppPendingResolutionResult;
+  pendingResolution: PendingResolutionResult;
   now?: string;
 }): Promise<CaptureDraftResolutionResult> {
   if (

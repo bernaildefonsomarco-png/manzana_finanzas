@@ -5,7 +5,7 @@ import {
   shouldRouteZeroActionTurnToConversation,
 } from "./financial-orchestrator";
 import type { ConversationTurnState } from "@/agents/conversation-agent";
-import type { WhatsAppPendingResolutionResult } from "./whatsapp-pending-confirmation";
+import type { PendingResolutionResult } from "./pending-resolution-from-text";
 
 const noActivePendingDiscard = {
   kind: "needs_clarification",
@@ -16,7 +16,7 @@ const noActivePendingDiscard = {
   pending_item: null,
   movement: null,
   idempotent: false,
-} satisfies WhatsAppPendingResolutionResult;
+} satisfies PendingResolutionResult;
 
 const noActiveCaptureDraft = {
   kind: "needs_clarification",

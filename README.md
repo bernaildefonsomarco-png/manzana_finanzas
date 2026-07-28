@@ -37,6 +37,7 @@ src/
     contacto/, empresa/, privacidad/, terminos/, eliminar-datos/  # páginas legales, ya existen
     fonts/          # DM Sans e Inter, self-hosted
   core/
+    channel/        # Puerto de entrada/salida agnostico de canal (21): Canal, TurnInput, Block
     finance/        # CommandDispatcher, Balance Engine, validadores de dinero
     debts/          # Debt Engine: creación, pagos, cuotas
     recurring/       # Recurring Engine: detección y ocurrencias

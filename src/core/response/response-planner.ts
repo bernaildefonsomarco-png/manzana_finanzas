@@ -1,15 +1,7 @@
-import {
-  planWhatsAppDelivery,
-  type WhatsAppDeliveryPlan,
-} from "@/adapters/whatsapp/window-manager";
-import type { WhatsAppInteractivePayload } from "@/adapters/whatsapp/types";
-import type { WhatsAppWindowState } from "@/data/repositories/whatsapp-window.repository";
-import type { ExternalEventLog } from "@/core/events/domain-events";
+import type { Block, BlockOption, EvidenceReference, TurnInput } from "@/core/channel/types";
+import { verifyBlocks } from "@/core/channel/types";
 import type { DataAgentIntent } from "@/agents/data-agent";
-import {
-  buildPendingItemWhatsAppCode,
-  buildPendingWhatsAppCode,
-} from "@/core/pending/whatsapp-pending-code";
+import { buildPendingItemReferenceCode, buildPendingReferenceCode } from "@/core/pending/reference-code";
 import type { DataActionExecutionResult } from "@/core/orchestrator/data-action-executor";
 import type { DataActionPendingCreationResult } from "@/core/orchestrator/data-action-pending";
 import type { DataActionPlan } from "@/core/orchestrator/data-action-policy";
@@ -18,290 +10,213 @@ import type {
   ConversationalAnswer,
   ConversationTurnState,
 } from "@/agents/conversation-agent";
-import type { WhatsAppCorrectionResolutionResult } from "@/core/orchestrator/whatsapp-correction";
+import type { CorrectionResolutionResult } from "@/core/orchestrator/correction-resolution";
 import type { CaptureDraftResolutionResult } from "@/core/orchestrator/capture-draft-memory";
-import type { WhatsAppPendingResolutionResult } from "@/core/orchestrator/whatsapp-pending-confirmation";
+import type { PendingResolutionResult } from "@/core/orchestrator/pending-resolution-from-text";
 import { buildDashboardDeepLink } from "@/shared/app-links";
 import type { PendingItem } from "@/shared/types/domain";
 
-export type ResponsePlannerResult =
-  | {
-      kind: "no_response";
-      reason:
-        | "agent_runtime_required"
-        | "response_agent_required"
-        | "non_text_message"
-        | "missing_user"
-        | "auto_ack_disabled";
-      deliveryPlan: null;
-    }
-  | {
-      kind: "whatsapp_freeform";
-      reason:
-        | "movement_created"
-        | "movements_created"
-        | "mixed_actions_processed"
-        | "pending_created"
-        | "pending_confirmed"
-        | "pending_discarded"
-        | "pending_listed"
-        | "pending_reviewed"
-        | "pending_updated"
-        | "pending_resolution_needs_clarification"
-        | "capture_draft_discarded"
-        | "capture_draft_needs_clarification"
-        | "correction_applied"
-        | "correction_cancelled"
-        | "correction_needs_confirmation"
-        | "correction_needs_selection"
-        | "correction_needs_clarification"
-        | "blocked_financial_action"
-        | "capture_needs_clarification"
-        | "conversation_greeting"
-        | "conversation_help"
-        | "conversation_thanks"
-        | "conversation_answer"
-        | "local_auto_ack";
-      text: string;
-      deliveryPlan: WhatsAppDeliveryPlan;
-    }
-  | {
-      kind: "whatsapp_interactive";
-      reason:
-        | "movement_created"
-        | "movements_created"
-        | "mixed_actions_processed"
-        | "pending_created"
-        | "pending_confirmed"
-        | "pending_discarded"
-        | "pending_listed"
-        | "pending_reviewed"
-        | "pending_updated"
-        | "pending_resolution_needs_clarification"
-        | "capture_draft_discarded"
-        | "capture_draft_needs_clarification"
-        | "correction_applied"
-        | "correction_cancelled"
-        | "correction_needs_confirmation"
-        | "correction_needs_selection"
-        | "correction_needs_clarification"
-        | "blocked_financial_action"
-        | "capture_needs_clarification"
-        | "conversation_greeting"
-        | "conversation_help"
-        | "conversation_thanks"
-        | "conversation_answer"
-        | "local_auto_ack";
-      text: string;
-      interactive: WhatsAppInteractivePayload;
-      deliveryPlan: WhatsAppDeliveryPlan;
-    };
-
-export type WhatsAppInboundResponsePlannerInput = {
-  externalEvent: ExternalEventLog;
-  windowState: WhatsAppWindowState | null;
+export type TurnResponsePlannerInput = {
+  turnInput: TurnInput;
+  userId: string | null;
   dataAgentCompleted?: boolean;
   dataAgentIntent?: DataAgentIntent;
   financialActionPlan?: DataActionPlan;
   financialActionExecution?: DataActionExecutionResult;
   pendingCreation?: DataActionPendingCreationResult;
-  pendingResolution?: WhatsAppPendingResolutionResult;
+  pendingResolution?: PendingResolutionResult;
   captureDraftResolution?: CaptureDraftResolutionResult;
   correctionProposal?: CorrectionAgentOutput;
-  correctionResolution?: WhatsAppCorrectionResolutionResult;
+  correctionResolution?: CorrectionResolutionResult;
   conversationAnswer?: ConversationalAnswer;
   supplementalConversationAnswer?: ConversationalAnswer;
   conversationTurnState?: ConversationTurnState;
   autoAckEnabled?: boolean;
-  now?: Date;
 };
 
-export function planWhatsAppInboundResponse(
-  input: WhatsAppInboundResponsePlannerInput
-): ResponsePlannerResult {
-  const messageType = readString(input.externalEvent.metadata.message_type);
-  const text = readString(input.externalEvent.metadata.text);
+export type PlanTurnBlocksResult = {
+  blocks: Block[];
+  // pending_confirmation: este turno espera una respuesta corta del usuario
+  // sobre un pendiente concreto, y algunos canales dan a eso una ventana de
+  // entrega distinta a una respuesta informativa cualquiera. No es un campo
+  // de canal: es de qué habla el turno.
+  intent: "direct_response" | "pending_confirmation";
+  reason:
+    | "agent_runtime_required"
+    | "response_agent_required"
+    | "non_text_input"
+    | "missing_user"
+    | "auto_ack_disabled"
+    | ProductResponseReason
+    | "conversation_greeting"
+    | "conversation_help"
+    | "conversation_thanks"
+    | "conversation_answer"
+    | "local_auto_ack";
+};
 
-  if (!input.externalEvent.user_id) {
-    return {
-      kind: "no_response",
-      reason: "missing_user",
-      deliveryPlan: null,
-    };
+/**
+ * Puerto de salida (21 S5, S8): decide que comunicar este turno y lo
+ * devuelve como bloques, sin saber que canal los va a presentar. La forma
+ * de entrega (texto libre, botones interactivos, ventana de mensajeria) es
+ * responsabilidad de cada adaptador de canal, no de este planificador.
+ */
+export function planTurnBlocks(input: TurnResponsePlannerInput): PlanTurnBlocksResult {
+  if (!input.userId) {
+    return { blocks: [], intent: "direct_response", reason: "missing_user" };
   }
 
-  if (!isActionableWhatsAppMessageType(messageType) || !text) {
-    return {
-      kind: "no_response",
-      reason: "non_text_message",
-      deliveryPlan: null,
-    };
+  if (!input.turnInput.text) {
+    return { blocks: [], intent: "direct_response", reason: "non_text_input" };
   }
 
   const productResponse = buildProductResponse(input);
   if (productResponse) {
-    const deliveryPlan = planWhatsAppDelivery({
-      state: input.windowState,
-      intent: productResponse.intent,
-      hasActionableValue: true,
-      userInitiatedResponse: true,
-      preferInteractive: Boolean(productResponse.interactive),
-      now: input.now,
-    });
-
-    if (deliveryPlan.mode === "interactive" && productResponse.interactive) {
-      return {
-        kind: "whatsapp_interactive",
-        reason: productResponse.reason,
-        text: productResponse.text,
-        interactive: productResponse.interactive,
-        deliveryPlan,
-      };
-    }
-
-    if (deliveryPlan.mode !== "freeform") {
-      return {
-        kind: "no_response",
-        reason: "auto_ack_disabled",
-        deliveryPlan: null,
-      };
-    }
-
-    const text = composeProductResponseText(
-      productResponse.text,
-      productResponse.interactive,
+    const blocks = appendSupplementalAnswer(
+      toBlocks(productResponse),
       input.supplementalConversationAnswer
     );
-
     return {
-      kind: "whatsapp_freeform",
+      blocks: verifyBlocks(blocks),
+      intent: productResponse.intent,
       reason: productResponse.reason,
-      text,
-      deliveryPlan,
     };
   }
 
   const conversationAgentResponse = buildConversationAgentResponse(input);
   if (conversationAgentResponse) {
-    const deliveryPlan = planWhatsAppDelivery({
-      state: input.windowState,
-      intent: "direct_response",
-      hasActionableValue: true,
-      userInitiatedResponse: true,
-      now: input.now,
-    });
-
-    if (deliveryPlan.mode !== "freeform") {
-      return {
-        kind: "no_response",
-        reason: "auto_ack_disabled",
-        deliveryPlan: null,
-      };
-    }
-
     return {
-      kind: "whatsapp_freeform",
+      blocks: [{ kind: "texto", text: conversationAgentResponse.text }],
+      intent: "direct_response",
       reason: conversationAgentResponse.reason,
-      text: conversationAgentResponse.text,
-      deliveryPlan,
     };
   }
 
   const conversationResponse = buildConversationBasicResponse(input);
   if (conversationResponse) {
-    const deliveryPlan = planWhatsAppDelivery({
-      state: input.windowState,
-      intent: "direct_response",
-      hasActionableValue: true,
-      userInitiatedResponse: true,
-      now: input.now,
-    });
-
-    if (deliveryPlan.mode !== "freeform") {
-      return {
-        kind: "no_response",
-        reason: "auto_ack_disabled",
-        deliveryPlan: null,
-      };
-    }
-
     return {
-      kind: "whatsapp_freeform",
+      blocks: [{ kind: "texto", text: conversationResponse.text }],
+      intent: "direct_response",
       reason: conversationResponse.reason,
-      text: conversationResponse.text,
-      deliveryPlan,
     };
   }
 
   if (!input.autoAckEnabled) {
     return {
-      kind: "no_response",
+      blocks: [],
+      intent: "direct_response",
       reason: input.dataAgentCompleted
         ? "response_agent_required"
         : "agent_runtime_required",
-      deliveryPlan: null,
-    };
-  }
-
-  const deliveryPlan = planWhatsAppDelivery({
-    state: input.windowState,
-    intent: "direct_response",
-    hasActionableValue: true,
-    userInitiatedResponse: true,
-    now: input.now,
-  });
-
-  if (deliveryPlan.mode !== "freeform") {
-    return {
-      kind: "no_response",
-      reason: "auto_ack_disabled",
-      deliveryPlan: null,
     };
   }
 
   return {
-    kind: "whatsapp_freeform",
+    blocks: [{ kind: "texto", text: "Te leí. En breve lo reviso contigo." }],
+    intent: "direct_response",
     reason: "local_auto_ack",
-    text: "Te leí. En breve lo reviso contigo.",
-    deliveryPlan,
   };
 }
 
-function composeProductResponseText(
-  productText: string,
-  interactive: WhatsAppInteractivePayload | undefined,
-  supplementalConversationAnswer: ConversationalAnswer | undefined
-): string {
-  // Interactive prompts must stay focused on the pending action. A completed
-  // Core action can safely carry a separate read-only answer in the same turn.
-  if (interactive || !supplementalConversationAnswer) return productText;
+type ProductResponseReason =
+  | "movement_created"
+  | "movements_created"
+  | "mixed_actions_processed"
+  | "pending_created"
+  | "pending_confirmed"
+  | "pending_discarded"
+  | "pending_listed"
+  | "pending_reviewed"
+  | "pending_updated"
+  | "pending_resolution_needs_clarification"
+  | "capture_draft_discarded"
+  | "capture_draft_needs_clarification"
+  | "correction_applied"
+  | "correction_cancelled"
+  | "correction_needs_confirmation"
+  | "correction_needs_selection"
+  | "correction_needs_clarification"
+  | "blocked_financial_action"
+  | "capture_needs_clarification";
 
-  return `${productText}\n\n${supplementalConversationAnswer.response_text}`;
-}
-
-function readString(value: unknown): string | null {
-  return typeof value === "string" && value.trim() ? value : null;
-}
-
-function isActionableWhatsAppMessageType(messageType: string | null): boolean {
-  return (
-    messageType === "text" ||
-    messageType === "button" ||
-    messageType === "interactive"
-  );
-}
-
-function buildProductResponse(
-  input: WhatsAppInboundResponsePlannerInput
-): {
-  reason: Extract<
-    ResponsePlannerResult,
-    { kind: "whatsapp_freeform" }
-  >["reason"];
-  text: string;
+type ProductResponse = {
+  reason: ProductResponseReason;
   intent: "direct_response" | "pending_confirmation";
-  interactive?: WhatsAppInteractivePayload;
-} | null {
+  text: string;
+  shape: "texto" | "propuesta" | "pregunta" | "lista" | "limite";
+  options?: BlockOption[];
+  proposalCommandId?: string;
+  references?: EvidenceReference[];
+  amount?: { value: number; currency: "PEN" | "USD" };
+  listItems?: PendingItem[];
+  manualPath?: string | null;
+};
+
+function toBlocks(response: ProductResponse): Block[] {
+  if (response.shape === "propuesta") {
+    return [
+      {
+        kind: "propuesta",
+        text: response.text,
+        commandId: response.proposalCommandId ?? "",
+        options: response.options ?? [],
+      },
+    ];
+  }
+
+  if (response.shape === "pregunta") {
+    return [{ kind: "pregunta", text: response.text, options: response.options ?? [] }];
+  }
+
+  if (response.shape === "limite") {
+    return [{ kind: "limite", text: response.text, manualPath: response.manualPath ?? null }];
+  }
+
+  if (response.shape === "lista" && response.listItems) {
+    return [
+      {
+        kind: "lista",
+        text: response.text,
+        items: response.listItems.map((item) => ({
+          label: composePendingListRowLabel(item),
+          references: [{ kind: "pendiente", id: item.id }],
+        })),
+      },
+    ];
+  }
+
+  if (response.amount && response.references && response.references.length > 0) {
+    return [
+      {
+        kind: "cifra",
+        text: response.text,
+        amount: response.amount.value,
+        currency: response.amount.currency,
+        references: response.references,
+      },
+    ];
+  }
+
+  return [{ kind: "texto", text: response.text }];
+}
+
+// Una pregunta de solo-lectura hecha en el mismo turno que una accion
+// financiera se añade a la respuesta ya decidida (21 S7: mostrar no
+// interrumpe). No aplica a bloques con opciones: interrumpir una propuesta
+// con una respuesta aparte confundiria cual de las dos se esta confirmando.
+function appendSupplementalAnswer(
+  blocks: Block[],
+  supplemental: ConversationalAnswer | undefined
+): Block[] {
+  if (!supplemental || blocks.length === 0) return blocks;
+
+  const [first, ...rest] = blocks;
+  if (!("text" in first) || "options" in first) return blocks;
+
+  return [{ ...first, text: `${first.text}\n\n${supplemental.response_text}` }, ...rest];
+}
+
+function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse | null {
   const execution = input.financialActionExecution;
   const pendingResolution = input.pendingResolution;
   const captureDraftResolution = input.captureDraftResolution;
@@ -310,6 +225,8 @@ function buildProductResponse(
     const isDeleteCorrection = correctionResolution.command.kind === "delete";
     return {
       reason: "correction_applied",
+      intent: "direct_response",
+      shape: "texto",
       text:
         correctionResolution.reason === "already_applied"
           ? isDeleteCorrection
@@ -318,23 +235,24 @@ function buildProductResponse(
           : isDeleteCorrection
             ? `Listo. Eliminé ${correctionResolution.summary}. Tus saldos ya se recalcularon.`
             : `Listo. Cambié ${correctionResolution.summary}. Tus saldos ya se recalcularon.`,
-      intent: "direct_response",
     };
   }
 
   if (correctionResolution?.kind === "cancelled") {
     return {
       reason: "correction_cancelled",
-      text: "Listo, no cambié nada.",
       intent: "direct_response",
+      shape: "texto",
+      text: "Listo, no cambié nada.",
     };
   }
 
   if (correctionResolution?.kind === "failed") {
     return {
       reason: "correction_needs_clarification",
-      text: composeCorrectionFailedText(),
       intent: "direct_response",
+      shape: "texto",
+      text: composeCorrectionFailedText(),
     };
   }
 
@@ -346,22 +264,17 @@ function buildProductResponse(
       : `Creo que te refieres a ${correctionProposal.command.movement_label}. ¿Lo cambio a ${correctionProposal.command.target_label}?`;
     return {
       reason: "correction_needs_confirmation",
-      text,
       intent: "direct_response",
-      interactive: {
-        type: "button",
-        bodyText: text,
-        buttons: [
-          {
-            id: correctionProposal.command.command_id,
-            title: isDeleteCorrection ? "Sí, eliminar" : "Sí, cambiar",
-          },
-          {
-            id: "corr:cancel",
-            title: "No cambiar",
-          },
-        ],
-      },
+      shape: "propuesta",
+      text,
+      proposalCommandId: correctionProposal.command.command_id,
+      options: [
+        {
+          id: correctionProposal.command.command_id,
+          label: isDeleteCorrection ? "Sí, eliminar" : "Sí, cambiar",
+        },
+        { id: "corr:cancel", label: "No cambiar" },
+      ],
     };
   }
 
@@ -375,16 +288,13 @@ function buildProductResponse(
         }?`;
     return {
       reason: "correction_needs_selection",
-      text,
       intent: "direct_response",
-      interactive: {
-        type: "button",
-        bodyText: text,
-        buttons: correctionProposal.commands.map((command) => ({
-          id: command.command_id,
-          title: command.button_title,
-        })),
-      },
+      shape: "pregunta",
+      text,
+      options: correctionProposal.commands.map((command) => ({
+        id: command.command_id,
+        label: command.button_title,
+      })),
     };
   }
 
@@ -395,94 +305,107 @@ function buildProductResponse(
   ) {
     return {
       reason: "correction_needs_clarification",
-      text: composeCorrectionClarificationText(correctionProposal),
       intent: "direct_response",
+      shape: "texto",
+      text: composeCorrectionClarificationText(correctionProposal),
     };
   }
 
   if (pendingResolution?.kind === "confirmed") {
     const description =
-      humanizeDescription(pendingResolution.movement.description) ??
-      "movimiento";
+      humanizeDescription(pendingResolution.movement.description) ?? "movimiento";
     if (pendingResolution.reason === "pending_auto_resolved_duplicate") {
       return {
         reason: "pending_confirmed",
-        text: `Ese ${description} ya estaba registrado. Quité el pendiente duplicado sin volver a tocar tu saldo.`,
         intent: "direct_response",
+        shape: "texto",
+        text: `Ese ${description} ya estaba registrado. Quité el pendiente duplicado sin volver a tocar tu saldo.`,
       };
     }
     return {
       reason: "pending_confirmed",
+      intent: "direct_response",
+      shape: "texto",
       text: `Listo. ${description} por ${formatMoney(
         pendingResolution.movement.amount,
         pendingResolution.movement.currency
       )} confirmado.`,
-      intent: "direct_response",
+      amount: {
+        value: pendingResolution.movement.amount,
+        currency: pendingResolution.movement.currency,
+      },
+      references: [{ kind: "movimiento", id: pendingResolution.movement.id }],
     };
   }
 
   if (pendingResolution?.kind === "discarded") {
     return {
       reason: "pending_discarded",
-      text: "Listo. Ese pendiente quedó descartado. No tocaba tu saldo.",
       intent: "direct_response",
+      shape: "texto",
+      text: "Listo. Ese pendiente quedó descartado. No tocaba tu saldo.",
     };
   }
 
   if (pendingResolution?.kind === "reviewed") {
     return {
       reason: "pending_reviewed",
-      text: composePendingAccountReviewText(pendingResolution),
       intent: "direct_response",
+      shape: "texto",
+      text: composePendingAccountReviewText(pendingResolution),
     };
   }
 
   if (pendingResolution?.kind === "updated") {
     const text = composePendingUpdatedText(pendingResolution);
-    return {
-      reason: "pending_updated",
-      text,
-      intent: pendingResolution.ready_for_confirmation
-        ? "pending_confirmation"
-        : "direct_response",
-      interactive: pendingResolution.ready_for_confirmation
-        ? buildPendingResolutionInteractive(
-            pendingResolution.pending_item,
-            text,
-          )
-        : undefined,
-    };
+    if (pendingResolution.ready_for_confirmation) {
+      const code = buildPendingItemReferenceCode(pendingResolution.pending_item);
+      return {
+        reason: "pending_updated",
+        intent: "pending_confirmation",
+        shape: "propuesta",
+        text,
+        proposalCommandId: code,
+        options: buildPendingResolutionOptions(pendingResolution.pending_item),
+      };
+    }
+    return { reason: "pending_updated", intent: "direct_response", shape: "texto", text };
   }
 
   if (captureDraftResolution?.kind === "discarded") {
     return {
       reason: "capture_draft_discarded",
-      text: "Listo. No registre eso y no toque tu saldo.",
       intent: "direct_response",
+      shape: "texto",
+      text: "Listo. No registre eso y no toque tu saldo.",
     };
   }
 
   if (captureDraftResolution?.kind === "needs_clarification") {
     return {
       reason: "capture_draft_needs_clarification",
-      text: composeCaptureDraftClarificationText(captureDraftResolution),
       intent: "direct_response",
+      shape: "texto",
+      text: composeCaptureDraftClarificationText(captureDraftResolution),
     };
   }
 
   if (pendingResolution?.kind === "needs_clarification") {
     return {
       reason: "pending_resolution_needs_clarification",
-      text: composePendingResolutionClarificationText(pendingResolution),
       intent: "direct_response",
+      shape: "texto",
+      text: composePendingResolutionClarificationText(pendingResolution),
     };
   }
 
   if (pendingResolution?.kind === "listed") {
     return {
       reason: "pending_listed",
-      text: composePendingListText(pendingResolution),
       intent: "direct_response",
+      shape: "lista",
+      text: composePendingListText(pendingResolution),
+      listItems: pendingResolution.pending_items,
     };
   }
 
@@ -494,17 +417,21 @@ function buildProductResponse(
     pending.pending_items.length > 0
   ) {
     const text = `${composeMovementCreatedText(execution)}\n${composePendingCreatedText(pending)}`;
-    return {
-      reason: "mixed_actions_processed",
-      text,
-      intent: "pending_confirmation",
-      interactive:
-        buildPendingCreatedInteractive(
-          pending,
-          text,
-          input.externalEvent.user_id!
-        ) ?? undefined,
-    };
+    const options = buildPendingCreatedOptions(pending, input.userId!);
+    if (options) {
+      return {
+        reason: "mixed_actions_processed",
+        intent: "pending_confirmation",
+        shape: "propuesta",
+        text,
+        proposalCommandId: buildPendingReferenceCode({
+          userId: input.userId!,
+          pendingItemId: pending.pending_items[0]!.pending_item_id,
+        }),
+        options,
+      };
+    }
+    return { reason: "mixed_actions_processed", intent: "direct_response", shape: "texto", text };
   }
 
   if (
@@ -513,24 +440,38 @@ function buildProductResponse(
   ) {
     return {
       reason:
-        execution.created_count === 1
-          ? "movement_created"
-          : "movements_created",
-      text: composeMovementCreatedText(execution),
+        execution.created_count === 1 ? "movement_created" : "movements_created",
       intent: "direct_response",
+      shape: "texto",
+      text: composeMovementCreatedText(execution),
+      amount:
+        execution.movements.length === 1
+          ? { value: execution.movements[0].amount, currency: execution.movements[0].currency }
+          : undefined,
+      references:
+        execution.movements.length > 0
+          ? execution.movements.map((movement) => ({ kind: "movimiento", id: movement.movement_id }))
+          : undefined,
     };
   }
 
   if (pending?.kind === "created" && pending.pending_items.length > 0) {
     const text = composePendingCreatedText(pending);
-    return {
-      reason: "pending_created",
-      text,
-      intent: "pending_confirmation",
-      interactive:
-        buildPendingCreatedInteractive(pending, text, input.externalEvent.user_id!) ??
-        undefined,
-    };
+    const options = buildPendingCreatedOptions(pending, input.userId!);
+    if (options) {
+      return {
+        reason: "pending_created",
+        intent: "pending_confirmation",
+        shape: "propuesta",
+        text,
+        proposalCommandId: buildPendingReferenceCode({
+          userId: input.userId!,
+          pendingItemId: pending.pending_items[0]!.pending_item_id,
+        }),
+        options,
+      };
+    }
+    return { reason: "pending_created", intent: "direct_response", shape: "texto", text };
   }
 
   if (
@@ -540,8 +481,10 @@ function buildProductResponse(
   ) {
     return {
       reason: "blocked_financial_action",
-      text: composeBlockedFinancialActionText(input),
       intent: "direct_response",
+      shape: "limite",
+      text: composeBlockedFinancialActionText(input),
+      manualPath: isCorrectionLikeInput(input) ? buildDashboardDeepLink("movements") : null,
     };
   }
 
@@ -554,8 +497,10 @@ function buildProductResponse(
   ) {
     return {
       reason: "blocked_financial_action",
-      text: composeBlockedFinancialActionText(input),
       intent: "direct_response",
+      shape: "limite",
+      text: composeBlockedFinancialActionText(input),
+      manualPath: buildDashboardDeepLink("movements"),
     };
   }
 
@@ -568,9 +513,10 @@ function buildProductResponse(
   ) {
     return {
       reason: "capture_needs_clarification",
+      intent: "direct_response",
+      shape: "texto",
       text:
         "Entendí que quieres registrar un movimiento, pero me falta un dato para hacerlo con seguridad. Dime el monto y qué fue, por ejemplo: \"20 en desayuno\".",
-      intent: "direct_response",
     };
   }
 
@@ -578,14 +524,8 @@ function buildProductResponse(
 }
 
 function buildConversationAgentResponse(
-  input: WhatsAppInboundResponsePlannerInput
-): {
-  reason: Extract<
-    ResponsePlannerResult,
-    { kind: "whatsapp_freeform" }
-  >["reason"];
-  text: string;
-} | null {
+  input: TurnResponsePlannerInput
+): { reason: "conversation_answer"; text: string } | null {
   if (!input.dataAgentCompleted || !input.conversationAnswer) return null;
   const canUseConversationAnswer =
     !input.dataAgentIntent ||
@@ -597,21 +537,12 @@ function buildConversationAgentResponse(
     return null;
   }
 
-  return {
-    reason: "conversation_answer",
-    text: input.conversationAnswer.response_text,
-  };
+  return { reason: "conversation_answer", text: input.conversationAnswer.response_text };
 }
 
 function buildConversationBasicResponse(
-  input: WhatsAppInboundResponsePlannerInput
-): {
-  reason: Extract<
-    ResponsePlannerResult,
-    { kind: "whatsapp_freeform" }
-  >["reason"];
-  text: string;
-} | null {
+  input: TurnResponsePlannerInput
+): { reason: "conversation_greeting" | "conversation_help" | "conversation_thanks"; text: string } | null {
   if (!input.dataAgentCompleted) return null;
   if (
     input.dataAgentIntent &&
@@ -621,9 +552,7 @@ function buildConversationBasicResponse(
     return null;
   }
 
-  const text = normalizeForIntent(
-    readString(input.externalEvent.metadata.text) ?? ""
-  );
+  const text = normalizeForIntent(input.turnInput.text ?? "");
   if (!text) return null;
 
   if (isGreetingText(text)) {
@@ -633,11 +562,10 @@ function buildConversationBasicResponse(
       ) === true;
     return {
       reason: "conversation_greeting",
-      text:
-        hasActiveThread
-          ? "Hola. Sigo por aqui y tengo el hilo reciente a la mano. Puedes pedirme la hora, cuenta, origen o detalle de lo anterior, o cambiar de tema con un gasto o duda de dinero."
-          : "Hola. Estoy aqui para ayudarte a registrar gastos, revisar pendientes y entender tu dinero sin culpa.\n" +
-            'Puedes escribirme algo como: "gaste 8 en cafe" o "ver pendientes".',
+      text: hasActiveThread
+        ? "Hola. Sigo por aqui y tengo el hilo reciente a la mano. Puedes pedirme la hora, cuenta, origen o detalle de lo anterior, o cambiar de tema con un gasto o duda de dinero."
+        : "Hola. Estoy aqui para ayudarte a registrar gastos, revisar pendientes y entender tu dinero sin culpa.\n" +
+          'Puedes escribirme algo como: "gaste 8 en cafe" o "ver pendientes".',
     };
   }
 
@@ -657,8 +585,7 @@ function buildConversationBasicResponse(
   if (isThanksText(text)) {
     return {
       reason: "conversation_thanks",
-      text:
-        'De nada. Cuando quieras, me escribes un gasto, una correccion o "ver pendientes".',
+      text: 'De nada. Cuando quieras, me escribes un gasto, una correccion o "ver pendientes".',
     };
   }
 
@@ -683,25 +610,26 @@ function isThanksText(text: string): boolean {
   );
 }
 
+function composePendingListRowLabel(item: PendingItem): string {
+  const summary = item.normalized_summary;
+  const code = buildPendingItemReferenceCode(item);
+  const title = humanizeDescription(summary.title ?? null) ?? "Pendiente";
+  const amount =
+    typeof summary.amount === "number" && Number.isFinite(summary.amount)
+      ? ` - ${formatMoney(summary.amount, summary.currency ?? "PEN")}`
+      : "";
+  return `${code} - ${title}${amount}`;
+}
+
 function composePendingListText(
-  pendingResolution: Extract<WhatsAppPendingResolutionResult, { kind: "listed" }>
+  pendingResolution: Extract<PendingResolutionResult, { kind: "listed" }>
 ): string {
   if (pendingResolution.pending_items.length === 0) {
     return "No tienes pendientes por revisar. Nada pendiente esta tocando tu saldo.";
   }
 
   const rows = pendingResolution.pending_items
-    .map((item, index) => {
-      const summary = item.normalized_summary;
-      const code = buildPendingItemWhatsAppCode(item);
-      const title = humanizeDescription(summary.title ?? null) ?? "Pendiente";
-      const amount =
-        typeof summary.amount === "number" && Number.isFinite(summary.amount)
-          ? ` - ${formatMoney(summary.amount, summary.currency ?? "PEN")}`
-          : "";
-
-      return `${index + 1}. ${code} - ${title}${amount}`;
-    })
+    .map((item, index) => `${index + 1}. ${composePendingListRowLabel(item)}`)
     .join("\n");
 
   const suffix =
@@ -715,10 +643,7 @@ function composePendingListText(
 }
 
 function composePendingResolutionClarificationText(
-  pendingResolution: Extract<
-    WhatsAppPendingResolutionResult,
-    { kind: "needs_clarification" }
-  >
+  pendingResolution: Extract<PendingResolutionResult, { kind: "needs_clarification" }>
 ): string {
   const verb =
     pendingResolution.action === "discard" ? "descartar" : "confirmar";
@@ -727,7 +652,7 @@ function composePendingResolutionClarificationText(
     pendingResolution.reason === "possible_duplicate" &&
     pendingResolution.pending_item
   ) {
-    const code = buildPendingItemWhatsAppCode(pendingResolution.pending_item);
+    const code = buildPendingItemReferenceCode(pendingResolution.pending_item);
     return withPendingLink(
       `Encontré un movimiento muy parecido ya registrado. Si son dos operaciones distintas, confirma ${code} otra vez; si no, puedes descartarlo.`
     );
@@ -737,11 +662,8 @@ function composePendingResolutionClarificationText(
     pendingResolution.reason === "pending_requires_details" &&
     pendingResolution.pending_item
   ) {
-    const code = buildPendingItemWhatsAppCode(
-      pendingResolution.pending_item,
-    );
-    const movementType =
-      pendingResolution.pending_item.proposed_action.movement_type;
+    const code = buildPendingItemReferenceCode(pendingResolution.pending_item);
+    const movementType = pendingResolution.pending_item.proposed_action.movement_type;
     const required =
       movementType === "transferencia"
         ? "la cuenta de origen y la cuenta de destino"
@@ -765,15 +687,13 @@ function composePendingResolutionClarificationText(
           ? "La cuenta elegida no usa la misma moneda que el movimiento."
           : "La cuenta de origen y destino deben ser distintas.";
     return withPendingLink(
-      `${detail}\n${composeAccountOptions(
-        pendingResolution.account_options ?? [],
-      )}`,
+      `${detail}\n${composeAccountOptions(pendingResolution.account_options ?? [])}`
     );
   }
 
   if (pendingResolution.reason === "pending_account_action_not_supported") {
     return withPendingLink(
-      "Ese Pendiente necesita otro motor especializado. No cambié nada; revísalo en Pendientes para completar sus datos.",
+      "Ese Pendiente necesita otro motor especializado. No cambié nada; revísalo en Pendientes para completar sus datos."
     );
   }
 
@@ -797,17 +717,12 @@ function composePendingResolutionClarificationText(
 }
 
 function composePendingAccountReviewText(
-  pendingResolution: Extract<
-    WhatsAppPendingResolutionResult,
-    { kind: "reviewed" }
-  >,
+  pendingResolution: Extract<PendingResolutionResult, { kind: "reviewed" }>
 ): string {
   const pending = pendingResolution.pending_item;
-  const code = buildPendingItemWhatsAppCode(pending);
+  const code = buildPendingItemReferenceCode(pending);
   const originHint = readString(pending.metadata.account_origin_hint);
-  const destinationHint = readString(
-    pending.metadata.account_destination_hint,
-  );
+  const destinationHint = readString(pending.metadata.account_destination_hint);
   const hintText = [
     originHint ? `origen ${originHint}` : null,
     destinationHint ? `destino ${destinationHint}` : null,
@@ -830,33 +745,30 @@ function composePendingAccountReviewText(
       example,
       externalExample,
       `Si no quieres registrarlo, responde "descartar ${code}".`,
-    ].join("\n"),
+    ].join("\n")
   );
 }
 
 function composePendingUpdatedText(
-  pendingResolution: Extract<
-    WhatsAppPendingResolutionResult,
-    { kind: "updated" }
-  >,
+  pendingResolution: Extract<PendingResolutionResult, { kind: "updated" }>
 ): string {
   const pending = pendingResolution.pending_item;
-  const code = buildPendingItemWhatsAppCode(pending);
+  const code = buildPendingItemReferenceCode(pending);
   if (!pendingResolution.ready_for_confirmation) {
     return withPendingLink(
       [
         `Actualicé ${code}, pero aún falta otra cuenta para completar la transferencia.`,
         composeAccountOptions(pendingResolution.account_options),
         "No registré nada ni toqué tus saldos.",
-      ].join("\n"),
+      ].join("\n")
     );
   }
 
   const origin = pendingResolution.account_options.find(
-    (account) => account.id === pending.proposed_action.account_origin_id,
+    (account) => account.id === pending.proposed_action.account_origin_id
   );
   const destination = pendingResolution.account_options.find(
-    (account) => account.id === pending.proposed_action.account_destination_id,
+    (account) => account.id === pending.proposed_action.account_destination_id
   );
   const movementType = readString(pending.proposed_action.movement_type);
   const category = pending.normalized_summary.category_id;
@@ -866,12 +778,8 @@ function composePendingUpdatedText(
           destination?.name ?? "la cuenta elegida"
         }`
       : movementType === "ingreso"
-        ? `ingreso${
-            destination ? ` a ${destination.name}` : " sin cuenta asignada"
-          }${category ? ` en ${category}` : ""}`
-        : `gasto${
-            origin ? ` desde ${origin.name}` : " sin cuenta asignada"
-          }${category ? ` en ${category}` : ""}`;
+        ? `ingreso${destination ? ` a ${destination.name}` : " sin cuenta asignada"}${category ? ` en ${category}` : ""}`
+        : `gasto${origin ? ` desde ${origin.name}` : " sin cuenta asignada"}${category ? ` en ${category}` : ""}`;
   const learned =
     pendingResolution.learned_account_hints.length > 0
       ? " También recordé la asociación bancaria que pediste."
@@ -880,7 +788,7 @@ function composePendingUpdatedText(
 }
 
 function composeAccountOptions(
-  accounts: Array<{ name: string; institution: string | null }>,
+  accounts: Array<{ name: string; institution: string | null }>
 ): string {
   if (accounts.length === 0) {
     return "No tienes cuentas compatibles con esa moneda. No crearé ninguna automáticamente.";
@@ -889,18 +797,13 @@ function composeAccountOptions(
     "Tus cuentas compatibles:",
     ...accounts.map(
       (account, index) =>
-        `${index + 1}. ${account.name}${
-          account.institution ? ` (${account.institution})` : ""
-        }`,
+        `${index + 1}. ${account.name}${account.institution ? ` (${account.institution})` : ""}`
     ),
   ].join("\n");
 }
 
 function composeCaptureDraftClarificationText(
-  captureDraftResolution: Extract<
-    CaptureDraftResolutionResult,
-    { kind: "needs_clarification" }
-  >
+  captureDraftResolution: Extract<CaptureDraftResolutionResult, { kind: "needs_clarification" }>
 ): string {
   if (captureDraftResolution.action === "discard") {
     return "No encontre algo reciente para descartar. Nada se cambio.";
@@ -920,9 +823,7 @@ function composeMovementCreatedText(
     const schedule =
       debt.installment_count > 0
         ? ` Cree el calendario de ${debt.installment_count} cuotas${
-            debt.first_due_date
-              ? ` desde el ${formatDateOnly(debt.first_due_date)}`
-              : ""
+            debt.first_due_date ? ` desde el ${formatDateOnly(debt.first_due_date)}` : ""
           }.`
         : "";
     const balanceNote = debt.movement_id
@@ -930,7 +831,7 @@ function composeMovementCreatedText(
       : " La deuda no cambio el saldo de ninguna cuenta porque no indicaste una cuenta vinculada.";
     return `Listo. Cree ${debt.name} por ${formatMoney(
       debt.principal_amount,
-      debt.currency,
+      debt.currency
     )}.${schedule}${balanceNote}`;
   }
 
@@ -940,36 +841,24 @@ function composeMovementCreatedText(
       movement.movement_type === "pago_deuda" ||
       movement.movement_type === "devolucion_recibida"
     ) {
-      const actionLabel =
-        movement.movement_type === "pago_deuda" ? "pago" : "devolucion";
-      const debtLabel = movement.debt_name
-        ? ` de ${movement.debt_name}`
-        : " de la deuda";
+      const actionLabel = movement.movement_type === "pago_deuda" ? "pago" : "devolucion";
+      const debtLabel = movement.debt_name ? ` de ${movement.debt_name}` : " de la deuda";
       const remaining =
         movement.debt_remaining_balance === null ||
         movement.debt_remaining_balance === undefined
           ? ""
-          : ` Saldo pendiente: ${formatMoney(
-              movement.debt_remaining_balance,
-              movement.currency
-            )}.`;
+          : ` Saldo pendiente: ${formatMoney(movement.debt_remaining_balance, movement.currency)}.`;
       return `Listo. Registre el ${actionLabel}${debtLabel} por ${formatMoney(
         movement.amount,
         movement.currency
       )}.${remaining}${composeNoAccountSuffix([movement])}`;
     }
     const description = humanizeDescription(movement.description) ?? "Movimiento";
-    const base = `Listo. ${description} por ${formatMoney(
-      movement.amount,
-      movement.currency
-    )} registrado.`;
+    const base = `Listo. ${description} por ${formatMoney(movement.amount, movement.currency)} registrado.`;
     return `${base}${composeNoAccountSuffix([movement])}`;
   }
 
-  const total = execution.movements.reduce(
-    (sum, movement) => sum + movement.amount,
-    0
-  );
+  const total = execution.movements.reduce((sum, movement) => sum + movement.amount, 0);
   const currency = execution.movements[0]?.currency ?? "PEN";
   const base = `Listo. ${execution.movements.length} movimientos registrados por ${formatMoney(
     total,
@@ -987,19 +876,10 @@ function composeNoAccountSuffix(
   movements: Extract<DataActionExecutionResult, { kind: "executed" }>["movements"]
 ): string {
   const hasMovementWithoutAccount = movements.some((movement) => {
-    if (movement.movement_type === "gasto") {
-      return !movement.account_origin_id;
-    }
-    if (movement.movement_type === "ingreso") {
-      return !movement.account_destination_id;
-    }
-    if (movement.movement_type === "pago_deuda") {
-      return !movement.account_origin_id;
-    }
-    if (movement.movement_type === "devolucion_recibida") {
-      return !movement.account_destination_id;
-    }
-
+    if (movement.movement_type === "gasto") return !movement.account_origin_id;
+    if (movement.movement_type === "ingreso") return !movement.account_destination_id;
+    if (movement.movement_type === "pago_deuda") return !movement.account_origin_id;
+    if (movement.movement_type === "devolucion_recibida") return !movement.account_destination_id;
     return false;
   });
 
@@ -1019,9 +899,7 @@ function composePendingCreatedText(
       );
     }
 
-    return withPendingLink(
-      "Lo separé para revisar. Falta confirmar un dato y no toca tu saldo."
-    );
+    return withPendingLink("Lo separé para revisar. Falta confirmar un dato y no toca tu saldo.");
   }
 
   return withPendingLink(
@@ -1029,9 +907,7 @@ function composePendingCreatedText(
   );
 }
 
-function composeBlockedFinancialActionText(
-  input: WhatsAppInboundResponsePlannerInput
-): string {
+function composeBlockedFinancialActionText(input: TurnResponsePlannerInput): string {
   if (!isCorrectionLikeInput(input)) {
     return composeBlockedCaptureText(input.financialActionPlan);
   }
@@ -1045,36 +921,27 @@ function composeBlockedFinancialActionText(
   return `${text}\nPuedes editarla desde Movimientos: ${movementsUrl}`;
 }
 
-function composeBlockedCaptureText(
-  financialActionPlan: DataActionPlan | undefined
-): string {
-  const reasons =
-    financialActionPlan?.actions.flatMap((action) => action.reasons) ?? [];
+function composeBlockedCaptureText(financialActionPlan: DataActionPlan | undefined): string {
+  const reasons = financialActionPlan?.actions.flatMap((action) => action.reasons) ?? [];
   const debtCreation = financialActionPlan?.actions.find(
-    (action) => action.debt_creation_input,
+    (action) => action.debt_creation_input
   )?.debt_creation_input;
   if (reasons.includes("debt_creation_first_due_date_missing")) {
     return "Entendi la deuda y las cuotas. ¿Cuando vence la primera cuota?";
   }
-  if (
-    reasons.includes("debt_creation_confirmation_required") &&
-    debtCreation
-  ) {
+  if (reasons.includes("debt_creation_confirmation_required") && debtCreation) {
     const installmentText = debtCreation.installment_count
       ? ` en ${debtCreation.installment_count} cuotas`
       : "";
     return `Borrador: ${debtCreation.name}, ${formatMoney(
       debtCreation.principal_amount,
-      debtCreation.currency,
+      debtCreation.currency
     )}${installmentText}. Todavia no la cree ni cambie tu saldo. ¿La confirmas?`;
   }
   if (reasons.includes("debt_reference_ambiguous")) {
     return "Entendi el pago, pero hay mas de una deuda compatible. Dime el nombre de la deuda o la persona para elegirla sin asumir.";
   }
-  if (
-    reasons.includes("debt_reference_missing") ||
-    reasons.includes("debt_not_found")
-  ) {
+  if (reasons.includes("debt_reference_missing") || reasons.includes("debt_not_found")) {
     return "Entendi el pago, pero no pude identificar la deuda. Dime el nombre de la deuda o la persona a quien pagaste.";
   }
   if (reasons.includes("debt_payment_exceeds_balance")) {
@@ -1097,9 +964,7 @@ function composeBlockedCaptureText(
   if (reasons.includes("missing_description")) missing.push("que fue");
 
   const missingText =
-    missing.length > 0
-      ? `me falta ${formatSpanishList(missing)}`
-      : "me falta un dato";
+    missing.length > 0 ? `me falta ${formatSpanishList(missing)}` : "me falta un dato";
 
   return (
     `Te entendi, pero no lo registre todavia: ${missingText} para hacerlo sin asumir. ` +
@@ -1130,29 +995,20 @@ function composeCorrectionClarificationText(
 
 function composeCorrectionFailedText(): string {
   const movementsUrl = buildDashboardDeepLink("movements");
-  const base =
-    "No pude aplicar esa corrección de forma segura. No cambié ningún movimiento.";
+  const base = "No pude aplicar esa corrección de forma segura. No cambié ningún movimiento.";
 
   if (!movementsUrl) return base;
   return `${base}\nPuedes revisarlo desde Movimientos: ${movementsUrl}`;
 }
 
-function isCorrectionLikeInput(
-  input: WhatsAppInboundResponsePlannerInput
-): boolean {
+function isCorrectionLikeInput(input: TurnResponsePlannerInput): boolean {
   if (input.dataAgentIntent === "correction") return true;
 
-  const text = normalizeForIntent(
-    readString(input.externalEvent.metadata.text) ?? ""
-  );
+  const text = normalizeForIntent(input.turnInput.text ?? "");
   if (!text) return false;
 
-  const hasCorrectionVerb = /\b(no fue|corrige|corregir|correccion|cambia|cambiar|era)\b/.test(
-    text
-  );
-  const hasFinancialObject = /\b(gasto|ingreso|movimiento|prestamo|deuda|pago)\b/.test(
-    text
-  );
+  const hasCorrectionVerb = /\b(no fue|corrige|corregir|correccion|cambia|cambiar|era)\b/.test(text);
+  const hasFinancialObject = /\b(gasto|ingreso|movimiento|prestamo|deuda|pago)\b/.test(text);
 
   return hasCorrectionVerb && hasFinancialObject;
 }
@@ -1161,16 +1017,15 @@ function normalizeForIntent(value: string): string {
   return value
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function buildPendingCreatedInteractive(
+function buildPendingCreatedOptions(
   pending: Extract<DataActionPendingCreationResult, { kind: "created" }>,
-  text: string,
   userId: string
-): WhatsAppInteractivePayload | null {
+): BlockOption[] | null {
   if (pending.pending_items.length !== 1) return null;
 
   const item = pending.pending_items[0];
@@ -1178,34 +1033,23 @@ function buildPendingCreatedInteractive(
     return null;
   }
 
-  const pendingCode = buildPendingWhatsAppCode({
+  const pendingCode = buildPendingReferenceCode({
     userId,
     pendingItemId: item.pending_item_id,
   });
 
-  return {
-    type: "button",
-    bodyText: text,
-    buttons: [
-      { id: `confirmar ${pendingCode}`, title: "Confirmar" },
-      { id: `descartar ${pendingCode}`, title: "Descartar" },
-    ],
-  };
+  return [
+    { id: `confirmar ${pendingCode}`, label: "Confirmar" },
+    { id: `descartar ${pendingCode}`, label: "Descartar" },
+  ];
 }
 
-function buildPendingResolutionInteractive(
-  pendingItem: PendingItem,
-  text: string,
-): WhatsAppInteractivePayload {
-  const pendingCode = buildPendingItemWhatsAppCode(pendingItem);
-  return {
-    type: "button",
-    bodyText: text,
-    buttons: [
-      { id: `confirmar ${pendingCode}`, title: "Confirmar" },
-      { id: `descartar ${pendingCode}`, title: "Descartar" },
-    ],
-  };
+function buildPendingResolutionOptions(pendingItem: PendingItem): BlockOption[] {
+  const pendingCode = buildPendingItemReferenceCode(pendingItem);
+  return [
+    { id: `confirmar ${pendingCode}`, label: "Confirmar" },
+    { id: `descartar ${pendingCode}`, label: "Descartar" },
+  ];
 }
 
 function withPendingLink(text: string): string {
@@ -1229,4 +1073,8 @@ function humanizeDescription(value: string | null): string | null {
 function formatMoney(amount: number, currency: "PEN" | "USD"): string {
   const symbol = currency === "USD" ? "$" : "S/";
   return `${symbol}${amount.toFixed(2)}`;
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value : null;
 }

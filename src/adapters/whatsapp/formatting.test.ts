@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeWhatsAppFormatting } from "./whatsapp-formatting";
+import { normalizeWhatsAppFormatting } from "./formatting";
 
 describe("normalizeWhatsAppFormatting", () => {
   it("convierte negrita e italica Markdown al formato nativo de WhatsApp", () => {

@@ -1,8 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { OutboxEvent } from "@/core/events/domain-events";
 import { CommandDispatcher } from "@/core/finance";
 import { LearningEngine } from "@/core/learning";
-import { handleWhatsAppMemoryControl } from "@/core/learning/whatsapp-memory-control";
+import { handleMemoryControlFromText } from "@/core/learning/memory-control-from-text";
 import type { Database, Json } from "@/data/supabase/types";
 import {
   ConversationAgent,
@@ -19,7 +18,6 @@ import {
   isCorrectionLikeText,
   type CorrectionMovementCandidate,
 } from "@/agents/correction-agent";
-import { ResponseAgent } from "@/agents/response-agent";
 import {
   ConversationalExecutiveAgent,
   readConversationalExecutiveMode,
@@ -62,16 +60,11 @@ import {
   listRecentMovementsForPreflight,
   SupabaseFinancialCoreRepository,
 } from "@/data/repositories/movements.repository";
+import type { Channel, PresentedTurn, TurnInput } from "@/core/channel/types";
 import {
-  getWhatsAppWindowByUserAndPhone,
-  type WhatsAppWindowState,
-} from "@/data/repositories/whatsapp-window.repository";
-import {
-  maybeEnhanceWhatsAppResponseWithAgent,
-  type ResponseAgentEnhancementTrace,
-} from "@/core/response/response-agent-enhancer";
-import { planWhatsAppInboundResponse } from "@/core/response/response-planner";
-import { maybeSendWhatsAppResponse } from "@/core/response/whatsapp-response-sender";
+  planTurnBlocks,
+  type PlanTurnBlocksResult,
+} from "@/core/response/response-planner";
 import { analyzeConversationTurn } from "@/core/conversation/conversation-kernel";
 import {
   movementToConversationReference,
@@ -108,7 +101,7 @@ import {
   type CaptureDraftResolutionResult,
 } from "./capture-draft-memory";
 import { listPendingItems } from "@/data/repositories/pending.repository";
-import { buildPendingItemWhatsAppCode } from "@/core/pending/whatsapp-pending-code";
+import { buildPendingItemReferenceCode } from "@/core/pending/reference-code";
 import {
   executeReadyDataActionPlan,
   type DataActionExecutionResult,
@@ -126,15 +119,15 @@ import {
 } from "./financial-action-preflight";
 import {
   isCorrectionCommandText,
-  maybeResolveCorrectionFromWhatsApp,
-} from "./whatsapp-correction";
+  maybeResolveCorrection,
+} from "./correction-resolution";
 import {
   isStructuredPendingResolutionText,
-  maybeResolvePendingFromWhatsApp,
+  maybeResolvePendingFromText,
   notPendingResolution,
-  resolvePendingFromWhatsAppAction,
-  type WhatsAppPendingResolutionResult,
-} from "./whatsapp-pending-confirmation";
+  resolvePendingFromAction,
+  type PendingResolutionResult,
+} from "./pending-resolution-from-text";
 import { logger } from "@/shared/telemetry/logger";
 import {
   reconcileCompiledOrchestrationPlan,
@@ -152,7 +145,17 @@ type MixedConversationTrace = {
   result: Awaited<ReturnType<ConversationAgent["answer"]>>;
 };
 
-export type WhatsAppInboundOrchestrationResult = {
+// El adaptador de cada canal construye este contexto a partir de su evento
+// nativo (webhook, sesion web) y llama a handleTurn — el nucleo nunca ve el
+// evento original ni sabe de que canal vino, salvo el campo turnInput.canal,
+// que 21 S3 permite "solo para el registro" (WEB-D170).
+export type TurnHandlingInput = {
+  externalEventId: string;
+  turnInput: TurnInput;
+  traceId: string;
+};
+
+export type TurnOrchestrationResult = {
   externalEventId: string;
   status: "accepted" | "ignored";
   reason:
@@ -174,16 +177,34 @@ export type WhatsAppInboundOrchestrationResult = {
     | "accepted_with_correction_clarification"
     | "accepted_with_memory_control"
     | "missing_external_event"
-    | "wrong_event_type"
     | "missing_user"
     | "non_text_message";
 };
+
+export type PresentTurnContext = {
+  turnInput: TurnInput;
+  externalEventId: string;
+  traceId: string;
+  conversationTurnState: ConversationTurnState;
+  timezone?: string;
+  styleOverride?: ConversationStyleProfile | null;
+  // La confirmacion de control de memoria se presenta verbatim, y un turno
+  // resuelto por el modo ejecutivo unico ya paso por su propio pipeline de
+  // estilo: pedirle al agente de respuesta que lo reescriba de nuevo
+  // arriesgaria alterar contenido que ya se decidio fuera de su alcance.
+  skipEnhancement?: boolean;
+};
+
+export type PresentTurn = (
+  plan: PlanTurnBlocksResult,
+  context: PresentTurnContext
+) => Promise<PresentedTurn>;
 
 export class FinancialOrchestrator {
   constructor(
     private readonly client: Client,
     private readonly options: {
-      autoAckWhatsAppInbound?: boolean;
+      autoAckInbound?: boolean;
       correctionAgent?: CorrectionAgent;
       conversationalExecutiveAgent?: ConversationalExecutiveAgent;
       conversationalExecutiveMode?: ConversationalExecutiveMode;
@@ -193,10 +214,8 @@ export class FinancialOrchestrator {
       orchestrationPlanningAgent?: OrchestrationPlanningAgent;
       riskSignalAgent?: RiskSignalAgent;
       executeReadyDataActions?: boolean;
-      responseAgent?: ResponseAgent;
-      useResponseAgent?: boolean;
-      sendWhatsAppResponses?: boolean;
-    } = {},
+      presentTurn: PresentTurn;
+    },
   ) {
     this.dataAgent = options.dataAgent ?? new DataAgent();
     const conversationalExecutiveAgent =
@@ -213,7 +232,7 @@ export class FinancialOrchestrator {
     });
     this.riskSignalAgent = options.riskSignalAgent ?? new RiskSignalAgent();
     this.dedupSignalAgent = options.dedupSignalAgent ?? new DedupSignalAgent();
-    this.responseAgent = options.responseAgent ?? new ResponseAgent();
+    this.presentTurn = options.presentTurn;
   }
 
   private readonly dataAgent: DataAgent;
@@ -222,7 +241,7 @@ export class FinancialOrchestrator {
   private readonly turnCoordinator: TurnCoordinator;
   private readonly riskSignalAgent: RiskSignalAgent;
   private readonly dedupSignalAgent: DedupSignalAgent;
-  private readonly responseAgent: ResponseAgent;
+  private readonly presentTurn: PresentTurn;
 
   private getConversationalExecutiveMode(): ConversationalExecutiveMode {
     return (
@@ -231,32 +250,20 @@ export class FinancialOrchestrator {
     );
   }
 
-  async handleWhatsAppInboundEvent(
-    event: OutboxEvent,
-  ): Promise<WhatsAppInboundOrchestrationResult> {
-    if (
-      event.event_type !== "whatsapp.message_received" ||
-      event.aggregate_type !== "external_event"
-    ) {
-      return {
-        externalEventId: event.aggregate_id,
-        status: "ignored",
-        reason: "wrong_event_type",
-      };
-    }
-
+  async handleTurn(input: TurnHandlingInput): Promise<TurnOrchestrationResult> {
+    const { turnInput } = input;
+    const channel: Channel = turnInput.channel;
     const externalEvent = await getExternalEventById(
       this.client,
-      event.aggregate_id,
+      input.externalEventId,
     );
 
     if (!externalEvent) {
-      logger.warn("orchestrator.whatsapp_external_event_missing", {
-        outbox_id: event.id,
-        external_event_id: event.aggregate_id,
+      logger.warn("orchestrator.external_event_missing", {
+        external_event_id: input.externalEventId,
       });
       return {
-        externalEventId: event.aggregate_id,
+        externalEventId: input.externalEventId,
         status: "ignored",
         reason: "missing_external_event",
       };
@@ -278,10 +285,7 @@ export class FinancialOrchestrator {
       };
     }
 
-    const messageType = readString(externalEvent.metadata.message_type);
-    const text = readString(externalEvent.metadata.text);
-    const fromPhone = readString(externalEvent.metadata.from_phone);
-    if (!isActionableWhatsAppMessageType(messageType) || !text) {
+    if (!turnInput.text) {
       await updateExternalEventStatus(this.client, {
         external_event_id: externalEvent.id,
         status: "processed",
@@ -298,20 +302,14 @@ export class FinancialOrchestrator {
       };
     }
 
-    const windowState = fromPhone
-      ? await getWhatsAppWindowByUserAndPhone(
-          this.client,
-          externalEvent.user_id,
-          fromPhone,
-        )
-      : null;
+    const text = turnInput.text;
     const profile = await getProfile(this.client, externalEvent.user_id);
     const timezone = profile?.timezone ?? "America/Lima";
     let activeMemoryState = await getActiveConversationMemoryState(
       this.client,
       {
         userId: externalEvent.user_id,
-        channel: "whatsapp",
+        channel,
         now: externalEvent.received_at,
       },
     );
@@ -322,16 +320,16 @@ export class FinancialOrchestrator {
       activeState: activeMemoryState,
     });
 
-    const memoryControl = await handleWhatsAppMemoryControl({
+    const memoryControl = await handleMemoryControlFromText({
       client: this.client,
       userId: externalEvent.user_id,
       text,
-      traceId: event.trace_id,
+      traceId: input.traceId,
     });
     if (memoryControl.handled && memoryControl.response_text) {
-      const responsePlan = planWhatsAppInboundResponse({
-        externalEvent,
-        windowState,
+      const plan = planTurnBlocks({
+        turnInput,
+        userId: externalEvent.user_id,
         dataAgentCompleted: true,
         dataAgentIntent: "conversation",
         conversationTurnState: conversationTurn.turn_state,
@@ -351,16 +349,17 @@ export class FinancialOrchestrator {
           safety_flags: ["memory_is_context_not_authorization"],
         },
       });
-      const responseSend = await maybeSendWhatsAppResponse({
-        client: this.client,
-        externalEvent,
-        responsePlan,
-        sendEnabled: this.options.sendWhatsAppResponses === true,
+      const presented = await this.presentTurn(plan, {
+        turnInput,
+        externalEventId: externalEvent.id,
+        traceId: input.traceId,
+        conversationTurnState: conversationTurn.turn_state,
+        skipEnhancement: true,
       });
       await rememberConversationOutcome({
         client: this.client,
         userId: externalEvent.user_id,
-        channel: "whatsapp",
+        channel,
         intent: "memory_control",
         userMessage: text,
         resultSummary: memoryControl.response_text,
@@ -392,10 +391,7 @@ export class FinancialOrchestrator {
           memory_control_action: memoryControl.action,
           memory_control_affected_count:
             memoryControl.affected_memory_ids.length,
-          response_plan_kind: responsePlan.kind,
-          response_plan_reason: responsePlan.reason,
-          response_send_kind: responseSend.kind,
-          response_send_reason: responseSend.reason,
+          ...presentedTurnMetadata(plan, presented),
         },
       });
       return {
@@ -406,30 +402,24 @@ export class FinancialOrchestrator {
     }
 
     if (isCorrectionCommandText(text)) {
-      const correctionResolution = await maybeResolveCorrectionFromWhatsApp({
+      const correctionResolution = await maybeResolveCorrection({
         client: this.client,
         userId: externalEvent.user_id,
         text,
-        traceId: event.trace_id,
+        traceId: input.traceId,
       });
-      let responsePlan = planWhatsAppInboundResponse({
-        externalEvent,
-        windowState,
+      const plan = planTurnBlocks({
+        turnInput,
+        userId: externalEvent.user_id,
         conversationTurnState: conversationTurn.turn_state,
         correctionResolution,
       });
-      const responseEnhancement = await this.enhanceWhatsAppResponse({
-        externalEvent,
-        responsePlan,
-        traceId: event.trace_id,
+      const presented = await this.presentTurn(plan, {
+        turnInput,
+        externalEventId: externalEvent.id,
+        traceId: input.traceId,
         conversationTurnState: conversationTurn.turn_state,
-      });
-      responsePlan = responseEnhancement.responsePlan;
-      const responseSend = await maybeSendWhatsAppResponse({
-        client: this.client,
-        externalEvent,
-        responsePlan,
-        sendEnabled: this.options.sendWhatsAppResponses === true,
+        skipEnhancement: this.getConversationalExecutiveMode() === "active",
       });
       const orchestratorReason =
         correctionResolution.kind === "applied"
@@ -445,11 +435,11 @@ export class FinancialOrchestrator {
         await rememberConversationOutcome({
           client: this.client,
           userId: externalEvent.user_id,
-          channel: "whatsapp",
+          channel,
           intent: "correction",
           userMessage: text,
           resultSummary:
-            getResponsePlanText(responsePlan) ??
+            presented.text ??
             (correctionResolution.kind === "applied"
               ? correctionResolution.summary
               : "La correccion fue cancelada."),
@@ -504,20 +494,7 @@ export class FinancialOrchestrator {
             correctionResolution.kind === "failed"
               ? correctionResolution.error_code
               : null,
-          response_plan_kind: responsePlan.kind,
-          response_plan_reason: responsePlan.reason,
-          response_plan_text: getResponsePlanText(responsePlan),
-          ...getResponseAgentMetadata(responseEnhancement.trace),
-          response_interactive_button_count:
-            getResponsePlanInteractiveButtonCount(responsePlan),
-          response_delivery_plan_mode:
-            getResponsePlanDeliveryMode(responsePlan),
-          response_send_kind: responseSend.kind,
-          response_send_reason: responseSend.reason,
-          response_send_idempotent: responseSend.idempotent,
-          response_send_provider_message_id: responseSend.provider_message_id,
-          response_send_error_code:
-            responseSend.kind === "failed" ? responseSend.error_code : null,
+          ...presentedTurnMetadata(plan, presented),
         },
       });
 
@@ -531,15 +508,17 @@ export class FinancialOrchestrator {
     const initialDataContextPack = await this.buildDataContextPack(
       externalEvent,
       text,
+      channel,
       timezone,
     );
-    const initialOrchestrationPlanning = await this.planWhatsAppTurn({
+    const initialOrchestrationPlanning = await this.planTurn({
       externalEvent,
       text,
       timezone,
+      channel,
       conversationTurn,
       activeMemoryState,
-      traceId: event.trace_id,
+      traceId: input.traceId,
       dataContextPack: initialDataContextPack,
     });
     if (initialOrchestrationPlanning) {
@@ -547,7 +526,7 @@ export class FinancialOrchestrator {
         (await rememberConversationPlanningState({
           client: this.client,
           userId: externalEvent.user_id,
-          channel: "whatsapp",
+          channel,
           userMessage: text,
           sourceRef: externalEvent.id,
           compiled: initialOrchestrationPlanning.compiled,
@@ -561,7 +540,7 @@ export class FinancialOrchestrator {
         resetStyle: initialOrchestrationPlanning.compiled.resetStyle,
         evidenceRef: externalEvent.id,
         observedAt: externalEvent.received_at,
-        traceId: event.trace_id,
+        traceId: input.traceId,
       });
     }
     const effectiveConversationTurnState =
@@ -574,7 +553,7 @@ export class FinancialOrchestrator {
       plannedFinancialResolution.action !== "none"
         ? plannedFinancialResolution.target === "capture_draft"
           ? buildCaptureDraftResolutionBridge(plannedFinancialResolution.action)
-          : await resolvePendingFromWhatsAppAction({
+          : await resolvePendingFromAction({
               client: this.client,
               userId: externalEvent.user_id,
               action: plannedFinancialResolution.action,
@@ -587,15 +566,17 @@ export class FinancialOrchestrator {
               learnAccountAliases:
                 plannedFinancialResolution.learn_account_aliases,
               userText: text,
-              traceId: event.trace_id,
+              traceId: input.traceId,
+              channel,
             })
         : isStructuredPendingResolutionText(text) ||
             !initialOrchestrationPlanning
-          ? await maybeResolvePendingFromWhatsApp({
+          ? await maybeResolvePendingFromText({
               client: this.client,
               userId: externalEvent.user_id,
               text,
-              traceId: event.trace_id,
+              traceId: input.traceId,
+              channel,
             })
           : notPendingResolution();
 
@@ -604,7 +585,7 @@ export class FinancialOrchestrator {
         await resolveCaptureDraftFromNoActivePending({
           client: this.client,
           userId: externalEvent.user_id,
-          channel: "whatsapp",
+          channel,
           pendingResolution,
           now: externalEvent.received_at,
         });
@@ -613,6 +594,7 @@ export class FinancialOrchestrator {
         const draftDataContextPack = await this.buildDataContextPack(
           externalEvent,
           captureDraftResolution.draft.original_message,
+          channel,
           timezone,
         );
         const draftDataAgentResult = dataAgentResultFromCaptureDraft(
@@ -621,12 +603,12 @@ export class FinancialOrchestrator {
 
         return this.handleDataAgentFinancialActions({
           externalEvent,
-          windowState,
+          turnInput,
           conversationTurnState: effectiveConversationTurnState,
           dataContextPack: draftDataContextPack,
           dataAgentResult: draftDataAgentResult,
           originalMessage: captureDraftResolution.draft.original_message,
-          traceId: event.trace_id,
+          traceId: input.traceId,
           captureDraftReplay: {
             draftStateId: captureDraftResolution.draft.state_id,
             draftSourceRef: captureDraftResolution.draft.source_ref,
@@ -648,26 +630,19 @@ export class FinancialOrchestrator {
           captureDraftResolution.kind === "needs_clarification") &&
         !shouldTryCorrectionAfterPendingMiss
       ) {
-        let responsePlan = planWhatsAppInboundResponse({
-          externalEvent,
-          windowState,
+        const plan = planTurnBlocks({
+          turnInput,
+          userId: externalEvent.user_id,
           conversationTurnState: effectiveConversationTurnState,
           captureDraftResolution,
         });
-        const responseEnhancement = await this.enhanceWhatsAppResponse({
-          externalEvent,
-          responsePlan,
-          traceId: event.trace_id,
+        const presented = await this.presentTurn(plan, {
+          turnInput,
+          externalEventId: externalEvent.id,
+          traceId: input.traceId,
           conversationTurnState: effectiveConversationTurnState,
-          styleOverride:
-            initialOrchestrationPlanning?.compiled.styleUpdate ?? null,
-        });
-        responsePlan = responseEnhancement.responsePlan;
-        const responseSend = await maybeSendWhatsAppResponse({
-          client: this.client,
-          externalEvent,
-          responsePlan,
-          sendEnabled: this.options.sendWhatsAppResponses === true,
+          styleOverride: initialOrchestrationPlanning?.compiled.styleUpdate ?? null,
+          skipEnhancement: this.getConversationalExecutiveMode() === "active",
         });
         const orchestratorReason =
           captureDraftResolution.kind === "discarded"
@@ -688,20 +663,7 @@ export class FinancialOrchestrator {
             capture_draft_resolution_reason: captureDraftResolution.reason,
             capture_draft_state_id:
               captureDraftResolution.draft?.state_id ?? null,
-            response_plan_kind: responsePlan.kind,
-            response_plan_reason: responsePlan.reason,
-            response_plan_text: getResponsePlanText(responsePlan),
-            ...getResponseAgentMetadata(responseEnhancement.trace),
-            response_interactive_button_count:
-              getResponsePlanInteractiveButtonCount(responsePlan),
-            response_delivery_plan_mode:
-              getResponsePlanDeliveryMode(responsePlan),
-            response_send_kind: responseSend.kind,
-            response_send_reason: responseSend.reason,
-            response_send_idempotent: responseSend.idempotent,
-            response_send_provider_message_id: responseSend.provider_message_id,
-            response_send_error_code:
-              responseSend.kind === "failed" ? responseSend.error_code : null,
+            ...presentedTurnMetadata(plan, presented),
           },
         });
 
@@ -713,26 +675,19 @@ export class FinancialOrchestrator {
       }
 
       if (!shouldTryCorrectionAfterPendingMiss) {
-        let responsePlan = planWhatsAppInboundResponse({
-          externalEvent,
-          windowState,
+        const plan = planTurnBlocks({
+          turnInput,
+          userId: externalEvent.user_id,
           conversationTurnState: effectiveConversationTurnState,
           pendingResolution,
         });
-        const responseEnhancement = await this.enhanceWhatsAppResponse({
-          externalEvent,
-          responsePlan,
-          traceId: event.trace_id,
+        const presented = await this.presentTurn(plan, {
+          turnInput,
+          externalEventId: externalEvent.id,
+          traceId: input.traceId,
           conversationTurnState: effectiveConversationTurnState,
-          styleOverride:
-            initialOrchestrationPlanning?.compiled.styleUpdate ?? null,
-        });
-        responsePlan = responseEnhancement.responsePlan;
-        const responseSend = await maybeSendWhatsAppResponse({
-          client: this.client,
-          externalEvent,
-          responsePlan,
-          sendEnabled: this.options.sendWhatsAppResponses === true,
+          styleOverride: initialOrchestrationPlanning?.compiled.styleUpdate ?? null,
+          skipEnhancement: this.getConversationalExecutiveMode() === "active",
         });
         const orchestratorReason =
           pendingResolution.kind === "confirmed"
@@ -750,11 +705,11 @@ export class FinancialOrchestrator {
           await rememberConversationOutcome({
             client: this.client,
             userId: externalEvent.user_id!,
-            channel: "whatsapp",
+            channel,
             intent: "pending_resolution",
             userMessage: text,
             resultSummary:
-              getResponsePlanText(responsePlan) ??
+              presented.text ??
               (pendingResolution.kind === "confirmed"
                 ? "Pendiente confirmado."
                 : "Pendiente descartado."),
@@ -796,20 +751,7 @@ export class FinancialOrchestrator {
             pending_resolution_movement_id:
               pendingResolution.movement?.id ?? null,
             pending_resolution_idempotent: pendingResolution.idempotent,
-            response_plan_kind: responsePlan.kind,
-            response_plan_reason: responsePlan.reason,
-            response_plan_text: getResponsePlanText(responsePlan),
-            ...getResponseAgentMetadata(responseEnhancement.trace),
-            response_interactive_button_count:
-              getResponsePlanInteractiveButtonCount(responsePlan),
-            response_delivery_plan_mode:
-              getResponsePlanDeliveryMode(responsePlan),
-            response_send_kind: responseSend.kind,
-            response_send_reason: responseSend.reason,
-            response_send_idempotent: responseSend.idempotent,
-            response_send_provider_message_id: responseSend.provider_message_id,
-            response_send_error_code:
-              responseSend.kind === "failed" ? responseSend.error_code : null,
+            ...presentedTurnMetadata(plan, presented),
           },
         });
 
@@ -824,7 +766,7 @@ export class FinancialOrchestrator {
     const dataContextPack = initialDataContextPack;
     const dataAgentResult = this.getConversationalExecutiveMode() === "active"
       ? dataAgentResultFromExecutive(initialOrchestrationPlanning)
-      : await this.dataAgent.extract(dataContextPack, event.trace_id);
+      : await this.dataAgent.extract(dataContextPack, input.traceId);
     const orchestrationPlanning = initialOrchestrationPlanning
       ? {
           ...initialOrchestrationPlanning,
@@ -844,6 +786,7 @@ export class FinancialOrchestrator {
       const correctionContextPack = await this.buildCorrectionContextPack({
         externalEvent,
         text,
+        channel,
         timezone: dataContextPack.timezone,
       });
       const correctionAgentResult =
@@ -854,32 +797,26 @@ export class FinancialOrchestrator {
             )
           : await this.correctionAgent.propose(
               correctionContextPack,
-              event.trace_id,
+              input.traceId,
             );
 
       if (correctionAgentResult.output.kind !== "not_correction") {
-        let responsePlan = planWhatsAppInboundResponse({
-          externalEvent,
-          windowState,
+        const plan = planTurnBlocks({
+          turnInput,
+          userId: externalEvent.user_id,
           conversationTurnState: effectiveConversationTurnState,
           dataAgentCompleted: true,
           dataAgentIntent: dataAgentResult.output.intent,
           correctionProposal: correctionAgentResult.output,
         });
-        const responseEnhancement = await this.enhanceWhatsAppResponse({
-          externalEvent,
-          responsePlan,
-          traceId: event.trace_id,
-          timezone: dataContextPack.timezone,
+        const presented = await this.presentTurn(plan, {
+          turnInput,
+          externalEventId: externalEvent.id,
+          traceId: input.traceId,
           conversationTurnState: effectiveConversationTurnState,
+          timezone: dataContextPack.timezone,
           styleOverride: orchestrationPlanning?.compiled.styleUpdate ?? null,
-        });
-        responsePlan = responseEnhancement.responsePlan;
-        const responseSend = await maybeSendWhatsAppResponse({
-          client: this.client,
-          externalEvent,
-          responsePlan,
-          sendEnabled: this.options.sendWhatsAppResponses === true,
+          skipEnhancement: this.getConversationalExecutiveMode() === "active",
         });
         const orchestratorReason =
           correctionAgentResult.output.kind === "requires_confirmation"
@@ -900,11 +837,11 @@ export class FinancialOrchestrator {
           await rememberConversationOutcome({
             client: this.client,
             userId: externalEvent.user_id!,
-            channel: "whatsapp",
+            channel,
             intent: "correction",
             userMessage: text,
             resultSummary:
-              getResponsePlanText(responsePlan) ??
+              presented.text ??
               correctionAgentResult.output.safe_explanation,
             sourceRef: externalEvent.id,
             topic: "movement",
@@ -959,20 +896,7 @@ export class FinancialOrchestrator {
             correction_recent_candidate_count:
               correctionContextPack.recent_movements.length,
             ...getOrchestrationPlanningMetadata(orchestrationPlanning),
-            response_plan_kind: responsePlan.kind,
-            response_plan_reason: responsePlan.reason,
-            response_plan_text: getResponsePlanText(responsePlan),
-            ...getResponseAgentMetadata(responseEnhancement.trace),
-            response_interactive_button_count:
-              getResponsePlanInteractiveButtonCount(responsePlan),
-            response_delivery_plan_mode:
-              getResponsePlanDeliveryMode(responsePlan),
-            response_send_kind: responseSend.kind,
-            response_send_reason: responseSend.reason,
-            response_send_idempotent: responseSend.idempotent,
-            response_send_provider_message_id: responseSend.provider_message_id,
-            response_send_error_code:
-              responseSend.kind === "failed" ? responseSend.error_code : null,
+            ...presentedTurnMetadata(plan, presented),
           },
         });
 
@@ -991,7 +915,7 @@ export class FinancialOrchestrator {
       await rememberCaptureDraft({
         client: this.client,
         userId: externalEvent.user_id,
-        channel: "whatsapp",
+        channel,
         originalMessage: text,
         receivedAt: externalEvent.received_at,
         sourceRef: externalEvent.id,
@@ -1028,7 +952,7 @@ export class FinancialOrchestrator {
             userId: externalEvent.user_id!,
             locale: "es-PE",
             timezone: dataContextPack.timezone,
-            channel: "whatsapp",
+            channel,
             originalMessage: text,
             receivedAt: externalEvent.received_at,
             query: conversationQuery,
@@ -1043,37 +967,31 @@ export class FinancialOrchestrator {
         ? conversationResultFromExecutive(executiveTrace)
         : await this.conversationAgent.answer(
             conversationContextPack,
-            event.trace_id,
+            input.traceId,
           );
       await rememberConversationTurn({
         client: this.client,
         contextPack: conversationContextPack,
         answer: conversationAgentResult.output,
         sourceRef: externalEvent.id,
-        traceId: event.trace_id,
+        traceId: input.traceId,
       });
-      let responsePlan = planWhatsAppInboundResponse({
-        externalEvent,
-        windowState,
+      const plan = planTurnBlocks({
+        turnInput,
+        userId: externalEvent.user_id,
         conversationTurnState: effectiveConversationTurnState,
         dataAgentCompleted: true,
         dataAgentIntent: dataAgentResult.output.intent,
         conversationAnswer: conversationAgentResult.output,
       });
-      const responseEnhancement = await this.enhanceWhatsAppResponse({
-        externalEvent,
-        responsePlan,
-        traceId: event.trace_id,
-        timezone: dataContextPack.timezone,
+      const presented = await this.presentTurn(plan, {
+        turnInput,
+        externalEventId: externalEvent.id,
+        traceId: input.traceId,
         conversationTurnState: effectiveConversationTurnState,
+        timezone: dataContextPack.timezone,
         styleOverride: orchestrationPlanning?.compiled.styleUpdate ?? null,
-      });
-      responsePlan = responseEnhancement.responsePlan;
-      const responseSend = await maybeSendWhatsAppResponse({
-        client: this.client,
-        externalEvent,
-        responsePlan,
-        sendEnabled: this.options.sendWhatsAppResponses === true,
+        skipEnhancement: this.getConversationalExecutiveMode() === "active",
       });
 
       await updateExternalEventStatus(this.client, {
@@ -1135,20 +1053,7 @@ export class FinancialOrchestrator {
             }),
           ),
           ...getOrchestrationPlanningMetadata(orchestrationPlanning),
-          response_plan_kind: responsePlan.kind,
-          response_plan_reason: responsePlan.reason,
-          response_plan_text: getResponsePlanText(responsePlan),
-          ...getResponseAgentMetadata(responseEnhancement.trace),
-          response_interactive_button_count:
-            getResponsePlanInteractiveButtonCount(responsePlan),
-          response_delivery_plan_mode:
-            getResponsePlanDeliveryMode(responsePlan),
-          response_send_kind: responseSend.kind,
-          response_send_reason: responseSend.reason,
-          response_send_idempotent: responseSend.idempotent,
-          response_send_provider_message_id: responseSend.provider_message_id,
-          response_send_error_code:
-            responseSend.kind === "failed" ? responseSend.error_code : null,
+          ...presentedTurnMetadata(plan, presented),
         },
       });
 
@@ -1161,19 +1066,19 @@ export class FinancialOrchestrator {
 
     return this.handleDataAgentFinancialActions({
       externalEvent,
-      windowState,
+      turnInput,
       conversationTurnState: effectiveConversationTurnState,
       dataContextPack,
       dataAgentResult,
       originalMessage: text,
-      traceId: event.trace_id,
+      traceId: input.traceId,
       orchestrationPlanning,
     });
   }
 
   private async handleDataAgentFinancialActions(params: {
     externalEvent: ExternalEventLog;
-    windowState: WhatsAppWindowState | null;
+    turnInput: TurnInput;
     conversationTurnState: ConversationTurnState;
     dataContextPack: DataContextPack;
     dataAgentResult: DataAgentExtractResult;
@@ -1185,8 +1090,9 @@ export class FinancialOrchestrator {
       draftSourceRef: string | null;
       userText: string;
     };
-  }): Promise<WhatsAppInboundOrchestrationResult> {
-    const { externalEvent, dataAgentResult, dataContextPack } = params;
+  }): Promise<TurnOrchestrationResult> {
+    const { externalEvent, dataAgentResult, dataContextPack, turnInput } = params;
+    const channel = turnInput.channel;
     const userId = externalEvent.user_id!;
     const preflightHistory = await listRecentMovementsForPreflight(
       this.client,
@@ -1235,6 +1141,7 @@ export class FinancialOrchestrator {
       recentMedianAmount,
       recentMovementCount: recentMovements.length,
       traceId: params.traceId,
+      channel,
     });
     const riskAssessments: RiskSignalAssessment[] = [
       ...riskSignalResult.assessments,
@@ -1263,12 +1170,13 @@ export class FinancialOrchestrator {
         is_sensitive: category.is_sensitive,
       })),
       debts: dataContextPack.active_debts ?? [],
-      sourceRef: `whatsapp:${externalEvent.id}`,
+      sourceRef: `${channel}:${externalEvent.id}`,
       receivedAt: dataContextPack.received_at,
       sourceText: dataContextPack.original_message,
       riskAssessments,
       recentMedianAmount,
       confirmedByUser: Boolean(params.captureDraftReplay),
+      channel,
     });
     const dedupPreflight = await applyDedupPreflight({
       client: this.client,
@@ -1299,6 +1207,7 @@ export class FinancialOrchestrator {
             userId,
             traceId: params.traceId,
             externalEventId: externalEvent.id,
+            channel,
           })
         : ({
             kind: "not_executed",
@@ -1325,6 +1234,7 @@ export class FinancialOrchestrator {
             userId,
             movements: financialActionExecution.movements,
             traceId: params.traceId,
+            channel,
           });
         emailPendingReconciliationStatus = "completed";
       } catch (error) {
@@ -1344,10 +1254,12 @@ export class FinancialOrchestrator {
       traceId: params.traceId,
       externalEventId: externalEvent.id,
       originalMessage: params.originalMessage,
+      channel,
     });
 
     const captureDraftMemory = await this.syncCaptureDraftMemory({
       externalEvent,
+      channel,
       conversationTurnState: params.conversationTurnState,
       dataAgentResult,
       financialActionPlan,
@@ -1361,6 +1273,7 @@ export class FinancialOrchestrator {
 
     const mixedConversation = await this.answerMixedWorkflow({
       externalEvent,
+      channel,
       dataContextPack,
       conversationTurnState: params.conversationTurnState,
       financialActionExecution,
@@ -1368,9 +1281,9 @@ export class FinancialOrchestrator {
       traceId: params.traceId,
     });
 
-    let responsePlan = planWhatsAppInboundResponse({
-      externalEvent,
-      windowState: params.windowState,
+    const plan = planTurnBlocks({
+      turnInput,
+      userId: externalEvent.user_id,
       conversationTurnState: params.conversationTurnState,
       dataAgentCompleted: true,
       dataAgentIntent: dataAgentResult.output.intent,
@@ -1378,40 +1291,23 @@ export class FinancialOrchestrator {
       financialActionExecution,
       pendingCreation,
       supplementalConversationAnswer: mixedConversation?.result.output,
-      autoAckEnabled: this.options.autoAckWhatsAppInbound,
+      autoAckEnabled: this.options.autoAckInbound,
     });
-    const responseEnhancement = mixedConversation
-      ? {
-          responsePlan,
-          trace: {
-            status: "not_applicable" as const,
-            reason: "disabled" as const,
-            confidence: null,
-            provider: null,
-            model_name: null,
-            latency_ms: null,
-            safety_flags: ["mixed_answer_preserved_verbatim"],
-          } satisfies ResponseAgentEnhancementTrace,
-        }
-      : await this.enhanceWhatsAppResponse({
-          externalEvent,
-          responsePlan,
+    const presented = mixedConversation
+      ? presentedTurnForVerbatimAnswer(plan)
+      : await this.presentTurn(plan, {
+          turnInput,
+          externalEventId: externalEvent.id,
           traceId: params.traceId,
-          timezone: dataContextPack.timezone,
           conversationTurnState: params.conversationTurnState,
+          timezone: dataContextPack.timezone,
           styleOverride: params.orchestrationPlanning?.compiled.styleUpdate ?? null,
+          skipEnhancement: this.getConversationalExecutiveMode() === "active",
         });
-    responsePlan = responseEnhancement.responsePlan;
-    const responseSend = await maybeSendWhatsAppResponse({
-      client: this.client,
-      externalEvent,
-      responsePlan,
-      sendEnabled: this.options.sendWhatsAppResponses === true,
-    });
     const orchestratorReason = getDataAgentOrchestratorReason({
       financialActionExecution,
       pendingCreation,
-      responsePlan,
+      plan,
     });
 
     if (
@@ -1421,11 +1317,11 @@ export class FinancialOrchestrator {
       await rememberConversationOutcome({
         client: this.client,
         userId,
-        channel: "whatsapp",
+        channel,
         intent: dataAgentResult.output.intent,
         userMessage: params.originalMessage,
         resultSummary:
-          getResponsePlanText(responsePlan) ??
+          presented.text ??
           (financialActionExecution.kind === "executed"
             ? "Movimiento financiero registrado."
             : "Movimiento separado para revision."),
@@ -1584,19 +1480,7 @@ export class FinancialOrchestrator {
           emailPendingReconciliation.auto_resolved,
         email_pending_reconciliation_pending_ids:
           emailPendingReconciliation.pending_item_ids,
-        response_plan_kind: responsePlan.kind,
-        response_plan_reason: responsePlan.reason,
-        response_plan_text: getResponsePlanText(responsePlan),
-        ...getResponseAgentMetadata(responseEnhancement.trace),
-        response_interactive_button_count:
-          getResponsePlanInteractiveButtonCount(responsePlan),
-        response_delivery_plan_mode: getResponsePlanDeliveryMode(responsePlan),
-        response_send_kind: responseSend.kind,
-        response_send_reason: responseSend.reason,
-        response_send_idempotent: responseSend.idempotent,
-        response_send_provider_message_id: responseSend.provider_message_id,
-        response_send_error_code:
-          responseSend.kind === "failed" ? responseSend.error_code : null,
+        ...presentedTurnMetadata(plan, presented),
       },
     });
 
@@ -1609,6 +1493,7 @@ export class FinancialOrchestrator {
 
   private async syncCaptureDraftMemory(params: {
     externalEvent: ExternalEventLog;
+    channel: Channel;
     conversationTurnState: ConversationTurnState;
     dataAgentResult: DataAgentExtractResult;
     financialActionPlan: ReturnType<typeof planDataAgentFinancialActions>;
@@ -1622,7 +1507,7 @@ export class FinancialOrchestrator {
     action: "none" | "remembered" | "cleared";
     reason: string | null;
   }> {
-    const { externalEvent } = params;
+    const { externalEvent, channel } = params;
     const userId = externalEvent.user_id!;
     const now = new Date(externalEvent.received_at);
 
@@ -1633,7 +1518,7 @@ export class FinancialOrchestrator {
       await clearCaptureDraftMemory({
         client: this.client,
         userId,
-        channel: "whatsapp",
+        channel,
         reason: params.replayed ? "confirmed" : "superseded",
         now,
       });
@@ -1660,7 +1545,7 @@ export class FinancialOrchestrator {
     await rememberCaptureDraft({
       client: this.client,
       userId,
-      channel: "whatsapp",
+      channel,
       originalMessage: params.originalMessage,
       receivedAt: params.receivedAt,
       sourceRef: params.sourceRef,
@@ -1678,6 +1563,7 @@ export class FinancialOrchestrator {
 
   private async answerMixedWorkflow(params: {
     externalEvent: ExternalEventLog;
+    channel: Channel;
     dataContextPack: DataContextPack;
     conversationTurnState: ConversationTurnState;
     financialActionExecution: DataActionExecutionResult;
@@ -1714,7 +1600,7 @@ export class FinancialOrchestrator {
         userId: params.externalEvent.user_id!,
         locale: "es-PE",
         timezone: params.dataContextPack.timezone,
-        channel: "whatsapp",
+        channel: params.channel,
         originalMessage: params.dataContextPack.original_message,
         receivedAt: params.dataContextPack.received_at,
         query: planning.conversationQuery,
@@ -1751,10 +1637,11 @@ export class FinancialOrchestrator {
     }
   }
 
-  private async planWhatsAppTurn(params: {
+  private async planTurn(params: {
     externalEvent: ExternalEventLog;
     text: string;
     timezone: string;
+    channel: Channel;
     conversationTurn: ReturnType<typeof analyzeConversationTurn>;
     activeMemoryState: Awaited<
       ReturnType<typeof getActiveConversationMemoryState>
@@ -1769,7 +1656,7 @@ export class FinancialOrchestrator {
         getActiveCaptureDraftMemory({
           client: this.client,
           userId: params.externalEvent.user_id!,
-          channel: "whatsapp",
+          channel: params.channel,
           now: params.externalEvent.received_at,
         }),
         listPendingItems(this.client, params.externalEvent.user_id!, {
@@ -1781,7 +1668,7 @@ export class FinancialOrchestrator {
       const contextPack = buildSafePlanningContext({
         userId: params.externalEvent.user_id!,
         timezone: params.timezone,
-        channel: "whatsapp",
+        channel: params.channel,
         originalMessage: params.text,
         receivedAt: params.externalEvent.received_at,
         query: params.conversationTurn.query,
@@ -1815,7 +1702,7 @@ export class FinancialOrchestrator {
               }
             : null,
           pending_candidates: pendingCandidates.map((item) => ({
-            pending_code: buildPendingItemWhatsAppCode(item),
+            pending_code: buildPendingItemReferenceCode(item),
             title: item.normalized_summary.title ?? null,
             subtitle: item.normalized_summary.subtitle ?? null,
             amount: item.normalized_summary.amount ?? null,
@@ -1860,7 +1747,7 @@ export class FinancialOrchestrator {
         userId: params.externalEvent.user_id!,
         locale: "es-PE",
         timezone: params.timezone,
-        channel: "whatsapp",
+        channel: params.channel,
         originalMessage: params.text,
         receivedAt: params.externalEvent.received_at,
         query: params.conversationTurn.query,
@@ -1925,6 +1812,7 @@ export class FinancialOrchestrator {
       Awaited<ReturnType<typeof getExternalEventById>>
     >,
     text: string,
+    channel: Channel,
     knownTimezone?: string,
   ) {
     const [
@@ -1965,7 +1853,7 @@ export class FinancialOrchestrator {
       getActiveCaptureDraftMemory({
         client: this.client,
         userId: externalEvent.user_id!,
-        channel: "whatsapp",
+        channel,
         now: externalEvent.received_at,
       }),
     ]);
@@ -1994,7 +1882,7 @@ export class FinancialOrchestrator {
       user_id: externalEvent.user_id!,
       locale: "es-PE" as const,
       timezone: knownTimezone ?? profile?.timezone ?? "America/Lima",
-      channel: "whatsapp" as const,
+      channel,
       discreet_mode: preferenceRow?.discreet_mode_enabled ?? false,
       preferences_summary: {
         tone_style: preferenceRow?.tone_style ?? null,
@@ -2006,7 +1894,7 @@ export class FinancialOrchestrator {
         },
       },
       risk_context: {
-        source: "whatsapp",
+        source: channel,
         external_event_id: externalEvent.id,
       },
       original_message: text,
@@ -2068,80 +1956,6 @@ export class FinancialOrchestrator {
         .slice(0, 30),
       active_capture_draft: activeCaptureDraft,
     };
-  }
-
-  private async enhanceWhatsAppResponse(params: {
-    externalEvent: NonNullable<
-      Awaited<ReturnType<typeof getExternalEventById>>
-    >;
-    responsePlan: ReturnType<typeof planWhatsAppInboundResponse>;
-    traceId: string;
-    timezone?: string;
-    conversationTurnState: ConversationTurnState;
-    styleOverride?: ConversationStyleProfile | null;
-  }) {
-    if (
-      this.options.useResponseAgent === false ||
-      this.getConversationalExecutiveMode() === "active"
-    ) {
-      return {
-        responsePlan: params.responsePlan,
-        trace: {
-          status: "not_applicable",
-          reason: "disabled",
-          confidence: null,
-          provider: null,
-          model_name: null,
-          latency_ms: null,
-          safety_flags: [],
-        } satisfies ResponseAgentEnhancementTrace,
-      };
-    }
-
-    const [activeConversationState, preferencesResult] = await Promise.all([
-      getActiveConversationMemoryState(this.client, {
-        userId: params.externalEvent.user_id!,
-        channel: "whatsapp",
-        now: params.externalEvent.received_at,
-      }),
-      this.client
-        .from("user_preferences")
-        .select("tone_style,discreet_mode_enabled,metadata")
-        .eq("user_id", params.externalEvent.user_id!)
-        .maybeSingle(),
-    ]);
-
-    const persistentStyle =
-      preferencesResult.error === null
-        ? readPersistentConversationStyle({
-            metadata: preferencesResult.data?.metadata,
-            legacyToneStyle: preferencesResult.data?.tone_style,
-          })
-        : null;
-    const effectiveStyle =
-      params.styleOverride ??
-      activeConversationState?.working_set?.conversation_style ??
-      persistentStyle ??
-      null;
-
-    return maybeEnhanceWhatsAppResponseWithAgent({
-      responsePlan: params.responsePlan,
-      externalEvent: params.externalEvent,
-      responseAgent: this.responseAgent,
-      traceId: params.traceId,
-      timezone: params.timezone,
-      discreetMode:
-        preferencesResult.error === null &&
-        preferencesResult.data?.discreet_mode_enabled === true,
-      preferredTone:
-        formatConversationStyleInstruction(effectiveStyle) ??
-        (preferencesResult.error === null
-          ? (preferencesResult.data?.tone_style ?? null)
-          : null),
-      conversationStyle: effectiveStyle,
-      conversationTurnState: params.conversationTurnState,
-      activeConversationState,
-    });
   }
 
   private async persistExplicitConversationStyle(input: {
@@ -2262,6 +2076,7 @@ export class FinancialOrchestrator {
       Awaited<ReturnType<typeof getExternalEventById>>
     >;
     text: string;
+    channel: Channel;
     timezone: string;
   }) {
     const userId = params.externalEvent.user_id!;
@@ -2272,7 +2087,7 @@ export class FinancialOrchestrator {
         getAllCategories(this.client),
         getActiveConversationMemoryState(this.client, {
           userId,
-          channel: "whatsapp",
+          channel: params.channel,
           now: params.externalEvent.received_at,
         }),
         this.client
@@ -2289,7 +2104,7 @@ export class FinancialOrchestrator {
       user_id: userId,
       locale: "es-PE" as const,
       timezone: params.timezone,
-      channel: "whatsapp" as const,
+      channel: params.channel,
       original_message: params.text,
       received_at: params.externalEvent.received_at,
       recent_movements: recentMovements,
@@ -2386,54 +2201,61 @@ function readStringArray(metadata: unknown, keys: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
-function isActionableWhatsAppMessageType(messageType: string | null): boolean {
-  return (
-    messageType === "text" ||
-    messageType === "button" ||
-    messageType === "interactive"
-  );
-}
-
-function getResponsePlanText(
-  responsePlan: ReturnType<typeof planWhatsAppInboundResponse>,
-): string | null {
-  return responsePlan.kind === "whatsapp_freeform" ||
-    responsePlan.kind === "whatsapp_interactive"
-    ? responsePlan.text
-    : null;
-}
-
-function getResponsePlanDeliveryMode(
-  responsePlan: ReturnType<typeof planWhatsAppInboundResponse>,
-): string | null {
-  return responsePlan.kind === "whatsapp_freeform" ||
-    responsePlan.kind === "whatsapp_interactive"
-    ? responsePlan.deliveryPlan.mode
-    : null;
-}
-
-function getResponsePlanInteractiveButtonCount(
-  responsePlan: ReturnType<typeof planWhatsAppInboundResponse>,
-): number | null {
-  return responsePlan.kind === "whatsapp_interactive"
-    ? responsePlan.interactive.buttons.length
-    : null;
-}
-
-function getResponseAgentMetadata(trace: ResponseAgentEnhancementTrace) {
+function presentedTurnMetadata(plan: PlanTurnBlocksResult, presented: PresentedTurn) {
   return {
-    response_agent_status: trace.status,
-    response_agent_reason: trace.reason,
-    response_agent_confidence: trace.confidence,
-    response_agent_provider: trace.provider,
-    response_agent_model: trace.model_name,
-    response_agent_latency_ms: trace.latency_ms,
-    response_agent_safety_flags: trace.safety_flags,
-    response_style_active: trace.style_active ?? false,
-    response_style_scope: trace.style_scope ?? null,
-    response_style_adherence: trace.style_adherence ?? null,
-    response_style_blocked_reasons: trace.style_blocked_reasons ?? [],
-    response_agent_attempt_count: trace.attempt_count ?? 0,
+    response_plan_block_kinds: plan.blocks.map((block) => block.kind),
+    response_plan_intent: plan.intent,
+    response_plan_reason: plan.reason,
+    response_plan_text: presented.text,
+    response_agent_status: presented.enhancement.status,
+    response_agent_reason: presented.enhancement.reason,
+    response_agent_confidence: presented.enhancement.confidence,
+    response_agent_provider: presented.enhancement.provider,
+    response_agent_model: presented.enhancement.model,
+    response_agent_latency_ms: presented.enhancement.latencyMs,
+    response_agent_safety_flags: presented.enhancement.safetyFlags,
+    response_style_active: presented.enhancement.styleActive,
+    response_style_scope: presented.enhancement.styleScope,
+    response_style_adherence: presented.enhancement.styleAdherence,
+    response_style_blocked_reasons: presented.enhancement.styleBlockedReasons,
+    response_agent_attempt_count: presented.enhancement.attemptCount,
+    response_interactive_option_count: presented.interactiveOptionCount,
+    response_delivery_mode: presented.deliveryMode,
+    response_send_status: presented.sendStatus,
+    response_send_reason: presented.sendReason,
+    response_send_idempotent: presented.idempotent,
+    response_send_provider_message_id: presented.providerMessageId,
+    response_send_error_code: presented.errorCode,
+  };
+}
+
+// Cuando la respuesta a un flujo mixto ya se emitió tal cual (sin pasar por
+// el agente de estilo), no hay presentador que llamar: solo se registra que
+// se preservó verbatim.
+function presentedTurnForVerbatimAnswer(plan: PlanTurnBlocksResult): PresentedTurn {
+  return {
+    text: plan.blocks.map((block) => ("text" in block ? block.text : "")).join("\n\n") || null,
+    deliveryMode: null,
+    interactiveOptionCount: null,
+    sendStatus: "not_applicable",
+    sendReason: "mixed_answer_preserved_verbatim",
+    idempotent: false,
+    providerMessageId: null,
+    errorCode: null,
+    enhancement: {
+      status: "not_applicable",
+      reason: "disabled",
+      confidence: null,
+      provider: null,
+      model: null,
+      latencyMs: null,
+      safetyFlags: ["mixed_answer_preserved_verbatim"],
+      styleActive: false,
+      styleScope: null,
+      styleAdherence: null,
+      styleBlockedReasons: [],
+      attemptCount: 0,
+    },
   };
 }
 
@@ -2546,7 +2368,7 @@ function normalizeConversationText(text: string): string {
   return text
     .toLowerCase()
     .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[̀-ͯ]/g, "")
     .replace(/[^\w\s/.,?]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -2599,8 +2421,8 @@ export function shouldRouteZeroActionTurnToConversation(input: {
 function getDataAgentOrchestratorReason(params: {
   financialActionExecution: DataActionExecutionResult;
   pendingCreation: DataActionPendingCreationResult;
-  responsePlan: ReturnType<typeof planWhatsAppInboundResponse>;
-}): WhatsAppInboundOrchestrationResult["reason"] {
+  plan: PlanTurnBlocksResult;
+}): TurnOrchestrationResult["reason"] {
   if (params.financialActionExecution.kind === "executed") {
     return "accepted_with_core_execution";
   }
@@ -2609,29 +2431,25 @@ function getDataAgentOrchestratorReason(params: {
     return "accepted_with_pending_confirmation";
   }
 
-  if (isConversationResponsePlan(params.responsePlan)) {
+  if (isConversationResponsePlan(params.plan)) {
     return "accepted_with_conversation_response";
   }
 
   return "accepted_with_data_agent_proposal";
 }
 
-function isConversationResponsePlan(
-  responsePlan: ReturnType<typeof planWhatsAppInboundResponse>,
-): boolean {
+function isConversationResponsePlan(plan: PlanTurnBlocksResult): boolean {
   return (
-    (responsePlan.kind === "whatsapp_freeform" ||
-      responsePlan.kind === "whatsapp_interactive") &&
-    (responsePlan.reason === "conversation_greeting" ||
-      responsePlan.reason === "conversation_help" ||
-      responsePlan.reason === "conversation_thanks" ||
-      responsePlan.reason === "conversation_answer")
+    plan.reason === "conversation_greeting" ||
+    plan.reason === "conversation_help" ||
+    plan.reason === "conversation_thanks" ||
+    plan.reason === "conversation_answer"
   );
 }
 
 function buildCaptureDraftResolutionBridge(
   action: CompiledOrchestrationPlan["financialResolution"]["action"],
-): WhatsAppPendingResolutionResult {
+): PendingResolutionResult {
   if (action !== "confirm" && action !== "discard") {
     return notPendingResolution();
   }
@@ -2649,7 +2467,7 @@ function buildCaptureDraftResolutionBridge(
 }
 
 export function shouldRoutePendingMissToCorrection(params: {
-  pendingResolution: WhatsAppPendingResolutionResult;
+  pendingResolution: PendingResolutionResult;
   captureDraftResolution: CaptureDraftResolutionResult;
   text: string;
   allowDeterministicFallback: boolean;

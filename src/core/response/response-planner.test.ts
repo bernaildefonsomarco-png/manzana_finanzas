@@ -1,54 +1,43 @@
-﻿import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { ExternalEventLog } from "@/core/events/domain-events";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { TurnInput } from "@/core/channel/types";
 import {
-  buildPendingItemWhatsAppCode,
-  buildPendingWhatsAppCode,
-} from "@/core/pending/whatsapp-pending-code";
+  buildPendingItemReferenceCode,
+  buildPendingReferenceCode,
+} from "@/core/pending/reference-code";
 import type { DataActionExecutionResult } from "@/core/orchestrator/data-action-executor";
 import type { DataActionPendingCreationResult } from "@/core/orchestrator/data-action-pending";
 import type { DataActionPlan } from "@/core/orchestrator/data-action-policy";
 import type { CorrectionAgentOutput } from "@/agents/correction-agent";
-import type { WhatsAppCorrectionResolutionResult } from "@/core/orchestrator/whatsapp-correction";
+import type { CorrectionResolutionResult } from "@/core/orchestrator/correction-resolution";
 import type { CaptureDraftResolutionResult } from "@/core/orchestrator/capture-draft-memory";
-import type { WhatsAppPendingResolutionResult } from "@/core/orchestrator/whatsapp-pending-confirmation";
+import type { PendingResolutionResult } from "@/core/orchestrator/pending-resolution-from-text";
 import type { PendingItem } from "@/shared/types/domain";
-import { planWhatsAppInboundResponse } from "./response-planner";
+import { planTurnBlocks, type PlanTurnBlocksResult } from "./response-planner";
 
 const pendingDeepLink = "http://127.0.0.1:3100/?view=pending";
 const originalManzanaAppUrl = process.env.MANZANA_APP_URL;
-const pendingButtonCode = buildPendingWhatsAppCode({
-  userId: "00000000-0000-4000-8000-000000000002",
+const DEFAULT_USER_ID = "00000000-0000-4000-8000-000000000002";
+const pendingButtonCode = buildPendingReferenceCode({
+  userId: DEFAULT_USER_ID,
   pendingItemId: "00000000-0000-4000-8000-000000000020",
 });
 
-function externalEvent(
-  overrides: Partial<ExternalEventLog> = {}
-): ExternalEventLog {
+function turnInput(text: string | null = "gaste 8 cafe"): TurnInput {
   return {
-    id: "00000000-0000-4000-8000-000000000001",
-    source: "whatsapp",
-    event_type: "whatsapp.message_received",
-    idempotency_key: "meta_cloud:message:test",
-    user_id: "00000000-0000-4000-8000-000000000002",
-    received_at: "2026-06-08T12:00:00.000Z",
-    status: "received",
-    payload_hash: "hash",
-    payload_ref: null,
-    trace_id: "00000000-0000-4000-8000-000000000003",
-    metadata: {
-      message_type: "text",
-      text: "gaste 8 cafe",
-    },
-    created_at: "2026-06-08T12:00:00.000Z",
-    updated_at: "2026-06-08T12:00:00.000Z",
-    ...overrides,
+    actor: "user",
+    text,
+    choice: null,
+    confirmation: null,
+    attachments: [],
+    context: { where: null, filters: null, selected: null, visible: [] },
+    channel: "whatsapp",
   };
 }
 
 function pendingItem(overrides: Partial<PendingItem> = {}): PendingItem {
   return {
     id: "00000000-0000-4000-8000-000000000020",
-    user_id: "00000000-0000-4000-8000-000000000002",
+    user_id: DEFAULT_USER_ID,
     type: "ambiguous_movement",
     status: "pending",
     source: "ambiguous_movement",
@@ -74,7 +63,16 @@ function pendingItem(overrides: Partial<PendingItem> = {}): PendingItem {
   };
 }
 
-describe("ResponsePlanner", () => {
+// La mayoria de bloques (texto, cifra, lista, pregunta, propuesta, limite)
+// llevan `text`; esto evita repetir el switch en cada test.
+function blockText(result: PlanTurnBlocksResult, index = 0): string {
+  const block = result.blocks[index];
+  if (!block) return "";
+  if ("text" in block) return block.text;
+  return "";
+}
+
+describe("planTurnBlocks", () => {
   beforeEach(() => {
     process.env.MANZANA_APP_URL = "http://127.0.0.1:3100";
   });
@@ -89,105 +87,69 @@ describe("ResponsePlanner", () => {
 
   it("no responde por defecto si el registro natural requiere AgentRuntime", () => {
     expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent(),
-        windowState: null,
-      })
+      planTurnBlocks({ turnInput: turnInput(), userId: DEFAULT_USER_ID })
     ).toEqual({
-      kind: "no_response",
+      blocks: [],
+      intent: "direct_response",
       reason: "agent_runtime_required",
-      deliveryPlan: null,
     });
   });
 
   it("no responde por defecto si falta ResponseAgent aunque DataAgent ya corrio", () => {
     expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent(),
-        windowState: null,
+      planTurnBlocks({
+        turnInput: turnInput(),
+        userId: DEFAULT_USER_ID,
         dataAgentCompleted: true,
       })
     ).toEqual({
-      kind: "no_response",
+      blocks: [],
+      intent: "direct_response",
       reason: "response_agent_required",
-      deliveryPlan: null,
     });
   });
 
   it("responde un saludo simple sin tocar Core", () => {
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: {
-          message_type: "text",
-          text: "hola",
-        },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput("hola"),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       dataAgentIntent: "conversation",
     });
 
-    expect(result).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "conversation_greeting",
-      deliveryPlan: {
-        mode: "freeform",
-      },
-    });
-    expect(result.kind === "whatsapp_freeform" ? result.text : "").toContain(
-      "registrar gastos"
-    );
+    expect(result.reason).toBe("conversation_greeting");
+    expect(result.blocks).toMatchObject([{ kind: "texto" }]);
+    expect(blockText(result)).toContain("registrar gastos");
   });
 
   it("explica ayuda basica cuando el usuario pregunta que puede hacer", () => {
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: {
-          message_type: "text",
-          text: "que puedes hacer",
-        },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput("que puedes hacer"),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       dataAgentIntent: "conversation",
     });
 
-    expect(result.kind).toBe("whatsapp_freeform");
     expect(result.reason).toBe("conversation_help");
-    expect(result.kind === "whatsapp_freeform" ? result.text : "").toContain(
-      "Registrar gastos"
-    );
+    expect(blockText(result)).toContain("Registrar gastos");
   });
 
   it("responde agradecimientos sin crear accion financiera", () => {
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: {
-          message_type: "text",
-          text: "gracias",
-        },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput("gracias"),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       dataAgentIntent: "unknown",
     });
 
-    expect(result.kind).toBe("whatsapp_freeform");
     expect(result.reason).toBe("conversation_thanks");
-    expect(result.kind === "whatsapp_freeform" ? result.text : "").toContain(
-      "ver pendientes"
-    );
+    expect(blockText(result)).toContain("ver pendientes");
   });
 
   it("envia respuestas del ConversationAgent como conversation_answer", () => {
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: {
-          message_type: "text",
-          text: "puedo gastar 50 hoy?",
-        },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput("puedo gastar 50 hoy?"),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       dataAgentIntent: "conversation",
       conversationAnswer: {
@@ -202,11 +164,8 @@ describe("ResponsePlanner", () => {
       },
     });
 
-    expect(result.kind).toBe("whatsapp_freeform");
     expect(result.reason).toBe("conversation_answer");
-    expect(result.kind === "whatsapp_freeform" ? result.text : "").toContain(
-      "S/50.00"
-    );
+    expect(blockText(result)).toContain("S/50.00");
   });
 
   it("une una consulta mixta solo despues de un movimiento confirmado", () => {
@@ -233,14 +192,9 @@ describe("ResponsePlanner", () => {
       ],
     };
 
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: {
-          message_type: "text",
-          text: "registre 20 en desayuno, como voy esta semana?",
-        },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput("registre 20 en desayuno, como voy esta semana?"),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       financialActionExecution: execution,
       supplementalConversationAnswer: {
@@ -254,27 +208,17 @@ describe("ResponsePlanner", () => {
       },
     });
 
-    expect(result).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "movement_created",
-    });
-    expect(result.kind === "whatsapp_freeform" ? result.text : "").toContain(
-      "Desayuno por S/20.00 registrado."
-    );
-    expect(result.kind === "whatsapp_freeform" ? result.text : "").toContain(
+    expect(result.reason).toBe("movement_created");
+    expect(blockText(result)).toContain("Desayuno por S/20.00 registrado.");
+    expect(blockText(result)).toContain(
       "Esta semana llevas S/73.00 de gastos confirmados."
     );
   });
 
   it("permite respuesta conversacional cuando una captura incompleta no puede tocar Core", () => {
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: {
-          message_type: "text",
-          text: "creo que gaste en delivery, no me juzgues",
-        },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput("creo que gaste en delivery, no me juzgues"),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       dataAgentIntent: "record_movement",
       conversationTurnState: {
@@ -304,11 +248,8 @@ describe("ResponsePlanner", () => {
       },
     });
 
-    expect(result.kind).toBe("whatsapp_freeform");
     expect(result.reason).toBe("conversation_answer");
-    expect(result.kind === "whatsapp_freeform" ? result.text : "").toContain(
-      "sin culpa"
-    );
+    expect(blockText(result)).toContain("sin culpa");
   });
 
   it("responde con calma cuando una correccion queda bloqueada por politica", () => {
@@ -343,31 +284,21 @@ describe("ResponsePlanner", () => {
       pending_items: [],
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: {
-            message_type: "text",
-            text: "eso no fue gasto, fue prestamo a Luis",
-          },
-        }),
-        windowState: null,
-        dataAgentCompleted: true,
-        financialActionPlan,
-        financialActionExecution,
-        pendingCreation,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "blocked_financial_action",
-      text:
-        "Te entendí. No cambié nada todavía: esa corrección necesita revisión antes de tocar dinero.\n" +
-        "Puedes editarla desde Movimientos: http://127.0.0.1:3100/?view=movements",
-      deliveryPlan: {
-        mode: "freeform",
-        reason: "user_initiated_response",
-      },
+    const result = planTurnBlocks({
+      turnInput: turnInput("eso no fue gasto, fue prestamo a Luis"),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      financialActionPlan,
+      financialActionExecution,
+      pendingCreation,
     });
+
+    expect(result.reason).toBe("blocked_financial_action");
+    expect(result.blocks).toMatchObject([{ kind: "limite" }]);
+    expect(blockText(result)).toBe(
+      "Te entendí. No cambié nada todavía: esa corrección necesita revisión antes de tocar dinero.\n" +
+        "Puedes editarla desde Movimientos: http://127.0.0.1:3100/?view=movements"
+    );
   });
 
   it("responde a una correccion aunque el DataAgent caiga en no action", () => {
@@ -394,28 +325,21 @@ describe("ResponsePlanner", () => {
       pending_items: [],
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: {
-            message_type: "text",
-            text: "eso no fue gasto, fue prestamo a Luis",
-          },
-        }),
-        windowState: null,
-        dataAgentCompleted: true,
-        dataAgentIntent: "unknown",
-        financialActionPlan,
-        financialActionExecution,
-        pendingCreation,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "blocked_financial_action",
-      text:
-        "Te entendí. No cambié nada todavía: esa corrección necesita revisión antes de tocar dinero.\n" +
-        "Puedes editarla desde Movimientos: http://127.0.0.1:3100/?view=movements",
+    const result = planTurnBlocks({
+      turnInput: turnInput("eso no fue gasto, fue prestamo a Luis"),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      dataAgentIntent: "unknown",
+      financialActionPlan,
+      financialActionExecution,
+      pendingCreation,
     });
+
+    expect(result.reason).toBe("blocked_financial_action");
+    expect(blockText(result)).toBe(
+      "Te entendí. No cambié nada todavía: esa corrección necesita revisión antes de tocar dinero.\n" +
+        "Puedes editarla desde Movimientos: http://127.0.0.1:3100/?view=movements"
+    );
   });
 
   it("no trata una captura bloqueada como correccion", () => {
@@ -450,14 +374,9 @@ describe("ResponsePlanner", () => {
       pending_items: [],
     };
 
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: {
-          message_type: "text",
-          text: "hice un gasto comprando desayuno",
-        },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput("hice un gasto comprando desayuno"),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       dataAgentIntent: "record_movement",
       financialActionPlan,
@@ -465,13 +384,10 @@ describe("ResponsePlanner", () => {
       pendingCreation,
     });
 
-    expect(result).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "blocked_financial_action",
-    });
-    const responseText = result.kind === "whatsapp_freeform" ? result.text : "";
-    expect(responseText).toContain("no lo registre todavia");
-    expect(responseText).not.toContain("correccion");
+    expect(result.reason).toBe("blocked_financial_action");
+    const text = blockText(result);
+    expect(text).toContain("no lo registre todavia");
+    expect(text).not.toContain("correccion");
   });
 
   it("no inventa una cuenta cuando solo difiere la moneda de la deuda", () => {
@@ -492,14 +408,9 @@ describe("ResponsePlanner", () => {
       requires_confirmation_count: 0,
       blocked_count: 1,
     };
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: {
-          message_type: "text",
-          text: "pague 10 soles de una deuda en dolares",
-        },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput("pague 10 soles de una deuda en dolares"),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       dataAgentIntent: "record_movement",
       financialActionPlan,
@@ -519,11 +430,10 @@ describe("ResponsePlanner", () => {
       },
     });
 
-    expect(result).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "blocked_financial_action",
-      text: "No registre el pago porque la moneda no coincide con la deuda.",
-    });
+    expect(result.reason).toBe("blocked_financial_action");
+    expect(blockText(result)).toBe(
+      "No registre el pago porque la moneda no coincide con la deuda."
+    );
   });
 
   it("pide solo la primera fecha cuando el borrador de deuda en cuotas esta incompleto", () => {
@@ -545,14 +455,9 @@ describe("ResponsePlanner", () => {
       requires_confirmation_count: 0,
       blocked_count: 1,
     };
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: {
-          message_type: "text",
-          text: "Juan me presto 100 soles, le voy a pagar en 5 cuotas",
-        },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput("Juan me presto 100 soles, le voy a pagar en 5 cuotas"),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       dataAgentIntent: "record_movement",
       financialActionPlan,
@@ -565,11 +470,8 @@ describe("ResponsePlanner", () => {
       },
     });
 
-    expect(result).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "blocked_financial_action",
-    });
-    const text = result.kind === "whatsapp_freeform" ? result.text : "";
+    expect(result.reason).toBe("blocked_financial_action");
+    const text = blockText(result);
     expect(text).toContain("Cuando vence la primera cuota");
     expect(text).not.toContain("cuenta");
     expect(text).not.toContain("categoria");
@@ -608,9 +510,9 @@ describe("ResponsePlanner", () => {
       requires_confirmation_count: 0,
       blocked_count: 1,
     };
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent(),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput(),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       dataAgentIntent: "record_movement",
       financialActionPlan,
@@ -623,11 +525,8 @@ describe("ResponsePlanner", () => {
       },
     });
 
-    expect(result).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "blocked_financial_action",
-    });
-    const text = result.kind === "whatsapp_freeform" ? result.text : "";
+    expect(result.reason).toBe("blocked_financial_action");
+    const text = blockText(result);
     expect(text).toContain("Deuda con Juan");
     expect(text).toContain("Borrador:");
     expect(text).toContain("S/100.00");
@@ -659,18 +558,15 @@ describe("ResponsePlanner", () => {
         },
       ],
     };
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent(),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput(),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       financialActionExecution: execution,
     });
 
-    expect(result).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "movement_created",
-    });
-    const text = result.kind === "whatsapp_freeform" ? result.text : "";
+    expect(result.reason).toBe("movement_created");
+    const text = blockText(result);
     expect(text).toContain("Cree Deuda con Juan por S/100.00");
     expect(text).toContain("calendario de 5 cuotas");
     expect(text).toContain("30/07/2026");
@@ -685,8 +581,7 @@ describe("ResponsePlanner", () => {
       safe_explanation:
         "Encontre un movimiento reciente que coincide, pero necesito confirmacion.",
       command: {
-        command_id:
-          "corr:loan_to:00000000-0000-4000-8000-000000000010:luis",
+        command_id: "corr:loan_to:00000000-0000-4000-8000-000000000010:luis",
         movement_id: "00000000-0000-4000-8000-000000000010",
         operation: "patch",
         correction_type: "loan",
@@ -709,53 +604,47 @@ describe("ResponsePlanner", () => {
       },
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: {
-            message_type: "text",
-            text: "eso no fue gasto, fue prestamo a Luis",
-          },
-        }),
-        windowState: null,
-        dataAgentCompleted: true,
-        dataAgentIntent: "correction",
-        correctionProposal,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_interactive",
-      reason: "correction_needs_confirmation",
-      text: "Creo que te refieres a Almuerzo S/20. ¿Lo cambio a prestamo a Luis?",
-      interactive: {
-        type: "button",
-        buttons: [
+    const result = planTurnBlocks({
+      turnInput: turnInput("eso no fue gasto, fue prestamo a Luis"),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      dataAgentIntent: "correction",
+      correctionProposal,
+    });
+
+    expect(result.reason).toBe("correction_needs_confirmation");
+    expect(result.blocks).toMatchObject([
+      {
+        kind: "propuesta",
+        text: "Creo que te refieres a Almuerzo S/20. ¿Lo cambio a prestamo a Luis?",
+        commandId: "corr:loan_to:00000000-0000-4000-8000-000000000010:luis",
+        options: [
           {
             id: "corr:loan_to:00000000-0000-4000-8000-000000000010:luis",
-            title: "Sí, cambiar",
+            label: "Sí, cambiar",
           },
-          { id: "corr:cancel", title: "No cambiar" },
+          { id: "corr:cancel", label: "No cambiar" },
         ],
       },
-    });
+    ]);
   });
 
   it("confirma una correccion aplicada por el Core", () => {
-    const correctionResolution: WhatsAppCorrectionResolutionResult = {
+    const correctionResolution: CorrectionResolutionResult = {
       kind: "applied",
       reason: "correction_applied",
       idempotent: false,
       summary: "Almuerzo S/20.00 como prestamo a Luis",
       command: {
         kind: "loan_to",
-        command_id:
-          "corr:loan_to:00000000-0000-4000-8000-000000000010:luis",
+        command_id: "corr:loan_to:00000000-0000-4000-8000-000000000010:luis",
         movement_id: "00000000-0000-4000-8000-000000000010",
         target_type: "prestamo_dado",
         related_person_name: "Luis",
       },
       movement: {
         id: "00000000-0000-4000-8000-000000000010",
-        user_id: "00000000-0000-4000-8000-000000000002",
+        user_id: DEFAULT_USER_ID,
         type: "prestamo_dado",
         status: "corrected",
         amount: 20,
@@ -783,81 +672,57 @@ describe("ResponsePlanner", () => {
         created_at: "2026-06-08T12:00:00.000Z",
         updated_at: "2026-06-08T12:01:00.000Z",
         deleted_at: null,
-        metadata: {
-          related_person_name: "Luis",
-        },
+        metadata: { related_person_name: "Luis" },
       },
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: {
-            message_type: "button",
-            text: "corr:loan_to:00000000-0000-4000-8000-000000000010:luis",
-          },
-        }),
-        windowState: null,
-        correctionResolution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "correction_applied",
-      text:
-        "Listo. Cambié Almuerzo S/20.00 como prestamo a Luis. Tus saldos ya se recalcularon.",
+    const result = planTurnBlocks({
+      turnInput: turnInput("corr:loan_to:00000000-0000-4000-8000-000000000010:luis"),
+      userId: DEFAULT_USER_ID,
+      correctionResolution,
     });
+
+    expect(result.reason).toBe("correction_applied");
+    expect(result.blocks).toMatchObject([{ kind: "texto" }]);
+    expect(blockText(result)).toBe(
+      "Listo. Cambié Almuerzo S/20.00 como prestamo a Luis. Tus saldos ya se recalcularon."
+    );
   });
 
   it("no responde a eventos sin usuario conocido", () => {
     expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({ user_id: null }),
-        windowState: null,
+      planTurnBlocks({
+        turnInput: turnInput(),
+        userId: null,
         autoAckEnabled: true,
       })
-    ).toMatchObject({
-      kind: "no_response",
-      reason: "missing_user",
-    });
+    ).toEqual({ blocks: [], intent: "direct_response", reason: "missing_user" });
   });
 
-  it("no responde a mensajes no texto en V1 inicial", () => {
+  it("no responde a mensajes sin texto (no accionables) en V1 inicial", () => {
     expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: {
-            message_type: "image",
-            text: null,
-          },
-        }),
-        windowState: null,
+      planTurnBlocks({
+        turnInput: turnInput(null),
+        userId: DEFAULT_USER_ID,
         autoAckEnabled: true,
       })
-    ).toMatchObject({
-      kind: "no_response",
-      reason: "non_text_message",
-    });
+    ).toEqual({ blocks: [], intent: "direct_response", reason: "non_text_input" });
   });
 
   it("puede generar ack local solo si se habilita explicitamente", () => {
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent(),
-        windowState: null,
-        autoAckEnabled: true,
-        now: new Date("2026-06-08T12:00:00.000Z"),
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "local_auto_ack",
-      deliveryPlan: {
-        mode: "freeform",
-        reason: "user_initiated_response",
-      },
+    const result = planTurnBlocks({
+      turnInput: turnInput(),
+      userId: DEFAULT_USER_ID,
+      autoAckEnabled: true,
     });
+
+    expect(result.reason).toBe("local_auto_ack");
+    expect(result.blocks).toEqual([
+      { kind: "texto", text: "Te leí. En breve lo reviso contigo." },
+    ]);
   });
 
-  it("confirma un movimiento creado con una respuesta especifica", () => {
+  it("confirma un movimiento creado con una respuesta especifica, con evidencia del monto", () => {
     const execution: DataActionExecutionResult = {
       kind: "executed",
       reason: "all_ready_actions_executed",
@@ -881,18 +746,24 @@ describe("ResponsePlanner", () => {
       ],
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent(),
-        windowState: null,
-        dataAgentCompleted: true,
-        financialActionExecution: execution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "movement_created",
-      text: "Listo. Cafe por S/8.00 registrado.",
+    const result = planTurnBlocks({
+      turnInput: turnInput(),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      financialActionExecution: execution,
     });
+
+    expect(result.reason).toBe("movement_created");
+    // AC-CANAL-03: un monto se comunica como cifra, con su referencia.
+    expect(result.blocks).toMatchObject([
+      {
+        kind: "cifra",
+        text: "Listo. Cafe por S/8.00 registrado.",
+        amount: 8,
+        currency: "PEN",
+        references: [{ kind: "movimiento", id: "00000000-0000-4000-8000-000000000010" }],
+      },
+    ]);
   });
 
   it("confirma un pago de deuda con el saldo restante", () => {
@@ -923,20 +794,16 @@ describe("ResponsePlanner", () => {
       ],
     };
 
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent(),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput(),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       financialActionExecution: execution,
     });
 
-    expect(result.kind).toBe("whatsapp_freeform");
-    expect(result.kind === "whatsapp_freeform" ? result.text : "").toContain(
-      "Registre el pago de Prestamo Pedro por S/30.00",
-    );
-    expect(result.kind === "whatsapp_freeform" ? result.text : "").toContain(
-      "Saldo pendiente: S/70.00",
-    );
+    expect(result.blocks).toMatchObject([{ kind: "cifra" }]);
+    expect(blockText(result)).toContain("Registre el pago de Prestamo Pedro por S/30.00");
+    expect(blockText(result)).toContain("Saldo pendiente: S/70.00");
   });
 
   it("explica cuando registra un movimiento claro sin cuenta", () => {
@@ -963,23 +830,20 @@ describe("ResponsePlanner", () => {
       ],
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent(),
-        windowState: null,
-        dataAgentCompleted: true,
-        financialActionExecution: execution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "movement_created",
-      text:
-        "Listo. Desayuno por S/10.00 registrado. " +
-        "Quedó sin cuenta por ahora, así que no moví ningún saldo de cuenta.",
+    const result = planTurnBlocks({
+      turnInput: turnInput(),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      financialActionExecution: execution,
     });
+
+    expect(blockText(result)).toBe(
+      "Listo. Desayuno por S/10.00 registrado. " +
+        "Quedó sin cuenta por ahora, así que no moví ningún saldo de cuenta."
+    );
   });
 
-  it("explica cuando separa un pendiente sin tocar saldo", () => {
+  it("explica cuando separa un pendiente sin tocar saldo, como propuesta con opciones", () => {
     const pendingCreation: DataActionPendingCreationResult = {
       kind: "created",
       reason: "pending_items_created",
@@ -998,30 +862,27 @@ describe("ResponsePlanner", () => {
       ],
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent(),
-        windowState: null,
-        dataAgentCompleted: true,
-        pendingCreation,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_interactive",
-      reason: "pending_created",
-      text:
-        "Lo separé para revisar. Falta confirmar un dato y no toca tu saldo.\n" +
-        `También puedes abrir Pendientes: ${pendingDeepLink}`,
-      deliveryPlan: {
-        mode: "interactive",
-      },
-      interactive: {
-        type: "button",
-        buttons: [
-          { id: `confirmar ${pendingButtonCode}`, title: "Confirmar" },
-          { id: `descartar ${pendingButtonCode}`, title: "Descartar" },
+    const result = planTurnBlocks({
+      turnInput: turnInput(),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      pendingCreation,
+    });
+
+    expect(result.reason).toBe("pending_created");
+    expect(result.intent).toBe("pending_confirmation");
+    expect(result.blocks).toMatchObject([
+      {
+        kind: "propuesta",
+        text:
+          "Lo separé para revisar. Falta confirmar un dato y no toca tu saldo.\n" +
+          `También puedes abrir Pendientes: ${pendingDeepLink}`,
+        options: [
+          { id: `confirmar ${pendingButtonCode}`, label: "Confirmar" },
+          { id: `descartar ${pendingButtonCode}`, label: "Descartar" },
         ],
       },
-    });
+    ]);
   });
 
   it("resume un lote mixto sin ocultar ni lo ejecutado ni lo pendiente", () => {
@@ -1065,32 +926,31 @@ describe("ResponsePlanner", () => {
       ],
     };
 
-    const result = planWhatsAppInboundResponse({
-      externalEvent: externalEvent(),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput(),
+      userId: DEFAULT_USER_ID,
       dataAgentCompleted: true,
       financialActionExecution,
       pendingCreation,
     });
 
-    expect(result).toMatchObject({
-      kind: "whatsapp_interactive",
-      reason: "mixed_actions_processed",
-      interactive: {
-        buttons: [
-          { id: `confirmar ${pendingButtonCode}`, title: "Confirmar" },
-          { id: `descartar ${pendingButtonCode}`, title: "Descartar" },
+    expect(result.reason).toBe("mixed_actions_processed");
+    expect(result.blocks).toMatchObject([
+      {
+        kind: "propuesta",
+        options: [
+          { id: `confirmar ${pendingButtonCode}`, label: "Confirmar" },
+          { id: `descartar ${pendingButtonCode}`, label: "Descartar" },
         ],
       },
-    });
-    const text =
-      result.kind === "whatsapp_interactive" ? result.text : "";
+    ]);
+    const text = blockText(result);
     expect(text).toContain("Desayuno por S/20.00 registrado.");
     expect(text).toContain("Falta confirmar un dato");
     expect(text).toContain("no toca tu saldo");
   });
 
-  it("mantiene respuesta de texto para pendientes sensibles", () => {
+  it("mantiene bloque de texto (sin opciones) para pendientes sensibles", () => {
     const pendingCreation: DataActionPendingCreationResult = {
       kind: "created",
       reason: "pending_items_created",
@@ -1109,24 +969,23 @@ describe("ResponsePlanner", () => {
       ],
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent(),
-        windowState: null,
-        dataAgentCompleted: true,
-        pendingCreation,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "pending_created",
-      text:
-        "Lo separé para revisar con calma. No toca tu saldo hasta que confirmes.\n" +
-        `También puedes abrir Pendientes: ${pendingDeepLink}`,
+    const result = planTurnBlocks({
+      turnInput: turnInput(),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      pendingCreation,
     });
+
+    expect(result.reason).toBe("pending_created");
+    expect(result.blocks).toMatchObject([{ kind: "texto" }]);
+    expect(blockText(result)).toBe(
+      "Lo separé para revisar con calma. No toca tu saldo hasta que confirmes.\n" +
+        `También puedes abrir Pendientes: ${pendingDeepLink}`
+    );
   });
 
-  it("confirma un pendiente resuelto desde WhatsApp", () => {
-    const pendingResolution: WhatsAppPendingResolutionResult = {
+  it("confirma un pendiente resuelto, como cifra con evidencia del movimiento", () => {
+    const pendingResolution: PendingResolutionResult = {
       kind: "confirmed",
       reason: "single_pending_confirmed",
       action: "confirm",
@@ -1136,7 +995,7 @@ describe("ResponsePlanner", () => {
       pending_item: pendingItem(),
       movement: {
         id: "00000000-0000-4000-8000-000000000021",
-        user_id: "00000000-0000-4000-8000-000000000002",
+        user_id: DEFAULT_USER_ID,
         type: "gasto",
         status: "confirmed",
         amount: 8,
@@ -1168,21 +1027,24 @@ describe("ResponsePlanner", () => {
       },
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({ metadata: { message_type: "text", text: "confirmo" } }),
-        windowState: null,
-        pendingResolution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "pending_confirmed",
-      text: "Listo. Cafe por S/8.00 confirmado.",
+    const result = planTurnBlocks({
+      turnInput: turnInput("confirmo"),
+      userId: DEFAULT_USER_ID,
+      pendingResolution,
     });
+
+    expect(result.reason).toBe("pending_confirmed");
+    expect(result.blocks).toMatchObject([
+      {
+        kind: "cifra",
+        text: "Listo. Cafe por S/8.00 confirmado.",
+        references: [{ kind: "movimiento", id: "00000000-0000-4000-8000-000000000021" }],
+      },
+    ]);
   });
 
-  it("confirma un pendiente descartado desde WhatsApp", () => {
-    const pendingResolution: WhatsAppPendingResolutionResult = {
+  it("confirma un pendiente descartado", () => {
+    const pendingResolution: PendingResolutionResult = {
       kind: "discarded",
       reason: "single_pending_discarded",
       action: "discard",
@@ -1193,23 +1055,18 @@ describe("ResponsePlanner", () => {
       movement: null,
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: { message_type: "text", text: "descarta eso" },
-        }),
-        windowState: null,
-        pendingResolution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "pending_discarded",
-      text: "Listo. Ese pendiente quedó descartado. No tocaba tu saldo.",
+    const result = planTurnBlocks({
+      turnInput: turnInput("descarta eso"),
+      userId: DEFAULT_USER_ID,
+      pendingResolution,
     });
+
+    expect(result.reason).toBe("pending_discarded");
+    expect(blockText(result)).toBe("Listo. Ese pendiente quedó descartado. No tocaba tu saldo.");
   });
 
   it("pide elegir cuando hay varios pendientes para descartar", () => {
-    const pendingResolution: WhatsAppPendingResolutionResult = {
+    const pendingResolution: PendingResolutionResult = {
       kind: "needs_clarification",
       reason: "multiple_active_pending",
       action: "discard",
@@ -1220,24 +1077,20 @@ describe("ResponsePlanner", () => {
       idempotent: false,
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: { message_type: "text", text: "cancelar" },
-        }),
-        windowState: null,
-        pendingResolution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "pending_resolution_needs_clarification",
-      text:
-        'Tienes varios pendientes. Escribe "ver pendientes" para ver los códigos y elegir cuál descartar.\n' +
-        `También puedes abrir Pendientes: ${pendingDeepLink}`,
+    const result = planTurnBlocks({
+      turnInput: turnInput("cancelar"),
+      userId: DEFAULT_USER_ID,
+      pendingResolution,
     });
+
+    expect(result.reason).toBe("pending_resolution_needs_clarification");
+    expect(blockText(result)).toBe(
+      'Tienes varios pendientes. Escribe "ver pendientes" para ver los códigos y elegir cuál descartar.\n' +
+        `También puedes abrir Pendientes: ${pendingDeepLink}`
+    );
   });
 
-  it("lista pendientes activos sin resolverlos desde WhatsApp", () => {
+  it("lista pendientes activos como bloque lista, con referencia por elemento", () => {
     const taxiPending = pendingItem({
       id: "00000000-0000-4000-8000-000000000030",
       normalized_summary: {
@@ -1248,12 +1101,10 @@ describe("ResponsePlanner", () => {
         category_id: "transporte",
       },
     });
-    const cafePending = pendingItem({
-      id: "00000000-0000-4000-8000-000000000031",
-    });
-    const taxiCode = buildPendingItemWhatsAppCode(taxiPending);
-    const cafeCode = buildPendingItemWhatsAppCode(cafePending);
-    const pendingResolution: WhatsAppPendingResolutionResult = {
+    const cafePending = pendingItem({ id: "00000000-0000-4000-8000-000000000031" });
+    const taxiCode = buildPendingItemReferenceCode(taxiPending);
+    const cafeCode = buildPendingItemReferenceCode(cafePending);
+    const pendingResolution: PendingResolutionResult = {
       kind: "listed",
       reason: "active_pending_listed",
       action: "list",
@@ -1265,28 +1116,32 @@ describe("ResponsePlanner", () => {
       idempotent: false,
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: { message_type: "text", text: "ver pendientes" },
-        }),
-        windowState: null,
-        pendingResolution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "pending_listed",
-      text:
-        "Tienes 2 pendientes por revisar:\n" +
-        `1. ${taxiCode} - Taxi - S/15.00\n` +
-        `2. ${cafeCode} - Cafe - S/8.00\n` +
-        "Para resolver uno: confirma P-XXXX o cancela P-XXXX.\n" +
-        `También puedes abrir Pendientes: ${pendingDeepLink}`,
+    const result = planTurnBlocks({
+      turnInput: turnInput("ver pendientes"),
+      userId: DEFAULT_USER_ID,
+      pendingResolution,
     });
+
+    expect(result.reason).toBe("pending_listed");
+    expect(result.blocks).toMatchObject([
+      {
+        kind: "lista",
+        text:
+          "Tienes 2 pendientes por revisar:\n" +
+          `1. ${taxiCode} - Taxi - S/15.00\n` +
+          `2. ${cafeCode} - Cafe - S/8.00\n` +
+          "Para resolver uno: confirma P-XXXX o cancela P-XXXX.\n" +
+          `También puedes abrir Pendientes: ${pendingDeepLink}`,
+        items: [
+          { label: `${taxiCode} - Taxi - S/15.00`, references: [{ kind: "pendiente", id: taxiPending.id }] },
+          { label: `${cafeCode} - Cafe - S/8.00`, references: [{ kind: "pendiente", id: cafePending.id }] },
+        ],
+      },
+    ]);
   });
 
   it("responde con calma cuando no hay pendientes que listar", () => {
-    const pendingResolution: WhatsAppPendingResolutionResult = {
+    const pendingResolution: PendingResolutionResult = {
       kind: "listed",
       reason: "no_active_pending_to_list",
       action: "list",
@@ -1298,23 +1153,23 @@ describe("ResponsePlanner", () => {
       idempotent: false,
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: { message_type: "text", text: "ver pendientes" },
-        }),
-        windowState: null,
-        pendingResolution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "pending_listed",
-      text: "No tienes pendientes por revisar. Nada pendiente esta tocando tu saldo.",
+    const result = planTurnBlocks({
+      turnInput: turnInput("ver pendientes"),
+      userId: DEFAULT_USER_ID,
+      pendingResolution,
     });
+
+    expect(result.blocks).toEqual([
+      {
+        kind: "lista",
+        text: "No tienes pendientes por revisar. Nada pendiente esta tocando tu saldo.",
+        items: [],
+      },
+    ]);
   });
 
   it("explica cuando el codigo de pendiente no existe", () => {
-    const pendingResolution: WhatsAppPendingResolutionResult = {
+    const pendingResolution: PendingResolutionResult = {
       kind: "needs_clarification",
       reason: "pending_code_not_found",
       action: "confirm",
@@ -1325,31 +1180,25 @@ describe("ResponsePlanner", () => {
       idempotent: false,
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: { message_type: "text", text: "confirmar P-ABC12345" },
-        }),
-        windowState: null,
-        pendingResolution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "pending_resolution_needs_clarification",
-      text: 'No encontre P-ABC12345 entre tus pendientes activos. Escribe "ver pendientes" para ver la lista actual.',
+    const result = planTurnBlocks({
+      turnInput: turnInput("confirmar P-ABC12345"),
+      userId: DEFAULT_USER_ID,
+      pendingResolution,
     });
+
+    expect(result.reason).toBe("pending_resolution_needs_clarification");
+    expect(blockText(result)).toBe(
+      'No encontre P-ABC12345 entre tus pendientes activos. Escribe "ver pendientes" para ver la lista actual.'
+    );
   });
 
   it("pide completar cuentas antes de confirmar una transferencia ambigua", () => {
     const item = pendingItem({
       source: "email_pending",
-      proposed_action: {
-        action: "review_specialized",
-        movement_type: "transferencia",
-      },
+      proposed_action: { action: "review_specialized", movement_type: "transferencia" },
     });
-    const code = buildPendingItemWhatsAppCode(item);
-    const pendingResolution: WhatsAppPendingResolutionResult = {
+    const code = buildPendingItemReferenceCode(item);
+    const pendingResolution: PendingResolutionResult = {
       kind: "needs_clarification",
       reason: "pending_requires_details",
       action: "confirm",
@@ -1360,40 +1209,27 @@ describe("ResponsePlanner", () => {
       idempotent: false,
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: {
-            message_type: "text",
-            text: `confirmar ${code}`,
-          },
-        }),
-        windowState: null,
-        pendingResolution,
-      }),
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "pending_resolution_needs_clarification",
-      text: expect.stringContaining(
-        "la cuenta de origen y la cuenta de destino",
-      ),
+    const result = planTurnBlocks({
+      turnInput: turnInput(`confirmar ${code}`),
+      userId: DEFAULT_USER_ID,
+      pendingResolution,
     });
+
+    expect(result.reason).toBe("pending_resolution_needs_clarification");
+    expect(blockText(result)).toContain("la cuenta de origen y la cuenta de destino");
   });
 
   it("propone cuentas reales y permite gasto sin cuenta al revisar", () => {
     const item = pendingItem({
       source: "email_pending",
-      proposed_action: {
-        action: "review_specialized",
-        movement_type: "transferencia",
-      },
+      proposed_action: { action: "review_specialized", movement_type: "transferencia" },
       metadata: {
         account_origin_hint: "Clásica ****3087",
         account_destination_hint: "Clásica ****9039",
       },
     });
-    const code = buildPendingItemWhatsAppCode(item);
-    const pendingResolution: WhatsAppPendingResolutionResult = {
+    const code = buildPendingItemReferenceCode(item);
+    const pendingResolution: PendingResolutionResult = {
       kind: "reviewed",
       reason: "pending_account_options_proposed",
       action: "review",
@@ -1420,26 +1256,19 @@ describe("ResponsePlanner", () => {
       idempotent: false,
     };
 
-    const response = planWhatsAppInboundResponse({
-      externalEvent: externalEvent({
-        metadata: { message_type: "text", text: `revisar ${code}` },
-      }),
-      windowState: null,
+    const result = planTurnBlocks({
+      turnInput: turnInput(`revisar ${code}`),
+      userId: DEFAULT_USER_ID,
       pendingResolution,
     });
 
-    expect(response).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "pending_reviewed",
-    });
-    expect("text" in response ? response.text : "").toContain("Tarjeta BCP");
-    expect("text" in response ? response.text : "").toContain("Efectivo");
-    expect("text" in response ? response.text : "").toContain(
-      "gasto sin cuenta",
-    );
+    expect(result.reason).toBe("pending_reviewed");
+    expect(blockText(result)).toContain("Tarjeta BCP");
+    expect(blockText(result)).toContain("Efectivo");
+    expect(blockText(result)).toContain("gasto sin cuenta");
   });
 
-  it("vuelve a pedir confirmacion despues de completar la transferencia", () => {
+  it("vuelve a pedir confirmacion, como propuesta, despues de completar la transferencia", () => {
     const item = pendingItem({
       source: "email_pending",
       status: "user_edited",
@@ -1450,8 +1279,8 @@ describe("ResponsePlanner", () => {
         account_destination_id: "22222222-2222-4222-8222-222222222222",
       },
     });
-    const code = buildPendingItemWhatsAppCode(item);
-    const pendingResolution: WhatsAppPendingResolutionResult = {
+    const code = buildPendingItemReferenceCode(item);
+    const pendingResolution: PendingResolutionResult = {
       kind: "updated",
       reason: "pending_ready_for_confirmation",
       action: "assign_transfer",
@@ -1480,28 +1309,25 @@ describe("ResponsePlanner", () => {
       idempotent: false,
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: {
-            message_type: "text",
-            text: `${code} fue de Tarjeta BCP a Efectivo`,
-          },
-        }),
-        windowState: null,
-        pendingResolution,
-      }),
-    ).toMatchObject({
-      kind: "whatsapp_interactive",
-      reason: "pending_updated",
-      text: expect.stringContaining("Aún no registré nada"),
-      interactive: {
-        buttons: [
-          { id: `confirmar ${code}`, title: "Confirmar" },
-          { id: `descartar ${code}`, title: "Descartar" },
+    const result = planTurnBlocks({
+      turnInput: turnInput(`${code} fue de Tarjeta BCP a Efectivo`),
+      userId: DEFAULT_USER_ID,
+      pendingResolution,
+    });
+
+    expect(result.reason).toBe("pending_updated");
+    expect(result.intent).toBe("pending_confirmation");
+    expect(result.blocks).toMatchObject([
+      {
+        kind: "propuesta",
+        commandId: code,
+        options: [
+          { id: `confirmar ${code}`, label: "Confirmar" },
+          { id: `descartar ${code}`, label: "Descartar" },
         ],
       },
-    });
+    ]);
+    expect(blockText(result)).toContain("Aún no registré nada");
   });
 
   it("responde cuando el usuario confirma algo reciente pero no hay borrador activo", () => {
@@ -1512,20 +1338,16 @@ describe("ResponsePlanner", () => {
       draft: null,
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: { message_type: "text", text: "registralo" },
-        }),
-        windowState: null,
-        captureDraftResolution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "capture_draft_needs_clarification",
-      text:
-        'No encontre algo reciente para registrar con seguridad. Escribeme el movimiento completo, por ejemplo: "gaste 20 en desayuno".',
+    const result = planTurnBlocks({
+      turnInput: turnInput("registralo"),
+      userId: DEFAULT_USER_ID,
+      captureDraftResolution,
     });
+
+    expect(result.reason).toBe("capture_draft_needs_clarification");
+    expect(blockText(result)).toBe(
+      'No encontre algo reciente para registrar con seguridad. Escribeme el movimiento completo, por ejemplo: "gaste 20 en desayuno".'
+    );
   });
 
   it("responde cuando el usuario descarta un borrador conversacional", () => {
@@ -1545,68 +1367,59 @@ describe("ResponsePlanner", () => {
       },
     };
 
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: { message_type: "text", text: "descartalo" },
-        }),
-        windowState: null,
-        captureDraftResolution,
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "capture_draft_discarded",
-      text: "Listo. No registre eso y no toque tu saldo.",
+    const result = planTurnBlocks({
+      turnInput: turnInput("descartalo"),
+      userId: DEFAULT_USER_ID,
+      captureDraftResolution,
     });
+
+    expect(result.reason).toBe("capture_draft_discarded");
+    expect(blockText(result)).toBe("Listo. No registre eso y no toque tu saldo.");
   });
 
   it("no deja en silencio una captura que no pudo estructurarse", () => {
-    expect(
-      planWhatsAppInboundResponse({
-        externalEvent: externalEvent({
-          metadata: { message_type: "text", text: "anota lo del desayuno" },
-        }),
-        windowState: null,
-        dataAgentCompleted: true,
-        dataAgentIntent: "record_movement",
-        conversationTurnState: {
-          act: "financial_capture",
-          continuity: "new_topic",
-          emotional_state: "neutral",
-          experience_mode: "quick_capture",
-          should_use_active_memory: false,
-          should_route_to_conversation_agent: false,
-          should_ask_clarification_first: true,
-          personalization_cues: [],
-          response_guidance: [],
-          risk_notes: [],
-        },
-        financialActionPlan: {
-          kind: "no_action",
-          reason: "no_proposed_actions",
-          ready_count: 0,
-          requires_confirmation_count: 0,
-          blocked_count: 0,
-          actions: [],
-        },
-        financialActionExecution: {
-          kind: "not_executed",
-          reason: "no_ready_actions",
-          created_count: 0,
-          idempotent_count: 0,
-          movements: [],
-        },
-        pendingCreation: {
-          kind: "not_created",
-          reason: "no_confirmable_actions",
-          created_count: 0,
-          idempotent_count: 0,
-          pending_items: [],
-        },
-      })
-    ).toMatchObject({
-      kind: "whatsapp_freeform",
-      reason: "capture_needs_clarification",
+    const result = planTurnBlocks({
+      turnInput: turnInput("anota lo del desayuno"),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      dataAgentIntent: "record_movement",
+      conversationTurnState: {
+        act: "financial_capture",
+        continuity: "new_topic",
+        emotional_state: "neutral",
+        experience_mode: "quick_capture",
+        should_use_active_memory: false,
+        should_route_to_conversation_agent: false,
+        should_ask_clarification_first: true,
+        personalization_cues: [],
+        response_guidance: [],
+        risk_notes: [],
+      },
+      financialActionPlan: {
+        kind: "no_action",
+        reason: "no_proposed_actions",
+        ready_count: 0,
+        requires_confirmation_count: 0,
+        blocked_count: 0,
+        actions: [],
+      },
+      financialActionExecution: {
+        kind: "not_executed",
+        reason: "no_ready_actions",
+        created_count: 0,
+        idempotent_count: 0,
+        movements: [],
+      },
+      pendingCreation: {
+        kind: "not_created",
+        reason: "no_confirmable_actions",
+        created_count: 0,
+        idempotent_count: 0,
+        pending_items: [],
+      },
     });
+
+    expect(result.reason).toBe("capture_needs_clarification");
+    expect(result.blocks).toMatchObject([{ kind: "texto" }]);
   });
 });

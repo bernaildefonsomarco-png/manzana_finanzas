@@ -230,7 +230,7 @@ clase `corpus`.
 | **Implementa** | `21`. Cierra `AC-INV-03` y `AC-INV-04`, del `52`, que es de `W-01` (`RUL-PLAN-04`) |
 | **Precondición** | `W-03` (la prueba necesita dónde vivir) |
 | **Paga** | `D-01` |
-| **Cierra** | `AC-CANAL-01` a `AC-CANAL-09`, `AC-INV-03`, `AC-INV-04` |
+| **Cierra** | `AC-CANAL-02`, `AC-CANAL-03`, `AC-CANAL-04`, `AC-CANAL-05`, `AC-CANAL-07`, `AC-INV-03`, `AC-INV-04`. `AC-CANAL-01` cierra como agregado, 6 de 7 casos (`WEB-D173`) |
 
 28 ficheros de `src/core/` y 15.196 líneas a auditar. Los seis que llevan el
 canal en el nombre se mueven a un presentador o se generalizan.
@@ -239,6 +239,13 @@ canal en el nombre se mueven a un presentador o se generalizan.
 esas mismas partes de `core/` y hacerlo dos veces cuesta más que hacerlo bien
 una. Es el corte con más riesgo de desbordarse, y por eso su criterio de
 cierre es binario: un test que hoy no se puede escribir, después sí.
+
+`AC-CANAL-06`, `AC-CANAL-08` y `AC-CANAL-09` no cierran aquí: ningún flujo
+real produce todavía un bloque `hallazgo` o `mostrar`, y la memoria
+conversacional está particionada por canal en el esquema (`D-12`,
+`WEB-D174`). El séptimo caso de `AC-CANAL-01` —operación masiva con
+previsualización— tampoco: `26` aún no construye la recategorización en
+lote (`WEB-D173`).
 
 ### `W-05` — Contratos de API
 

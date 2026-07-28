@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Channel } from "@/core/channel/types";
 import {
   evaluateCrossChannelDedup,
   type DedupDecision,
@@ -53,6 +54,7 @@ export type ConfirmPendingInput = {
   actor: Actor;
   traceId: string;
   source: string;
+  channel: Channel;
   confirmDuplicate?: boolean;
 };
 
@@ -173,7 +175,7 @@ export async function confirmPendingItemWithCore(
     return confirmPendingTransfer(input, pendingItem);
   }
 
-  let movementInput = toMovementInputFromPending(pendingItem);
+  let movementInput = toMovementInputFromPending(pendingItem, input.channel);
   const coreRepository = new SupabaseFinancialCoreRepository(input.client);
   const dedup = await evaluateCrossChannelDedup({
     client: input.client,
@@ -296,7 +298,7 @@ async function resolveSpecializedPendingDedup(
     | "record_recurring_payment"
     | "record_transfer",
 ): Promise<ConfirmPendingResult | null> {
-  const movementInput = specializedDedupMovementInput(pendingItem);
+  const movementInput = specializedDedupMovementInput(pendingItem, input.channel);
   if (!movementInput) return null;
   const coreRepository = new SupabaseFinancialCoreRepository(input.client);
   const dedup = await evaluateCrossChannelDedup({
@@ -358,6 +360,7 @@ async function resolveSpecializedPendingDedup(
 
 function specializedDedupMovementInput(
   pendingItem: PendingItem,
+  channel: Channel,
 ): MovementInput | null {
   const proposed = readProposedMovementInput(pendingItem);
   const summary = pendingItem.normalized_summary;
@@ -374,7 +377,7 @@ function specializedDedupMovementInput(
     currency: summary.currency ?? proposed.currency,
     occurred_at: summary.occurred_at ?? proposed.occurred_at,
     description: summary.title?.trim() || proposed.description,
-    source: mapPendingSource(pendingItem.source),
+    source: mapPendingSource(pendingItem.source, channel),
     source_ref: `pending:${pendingItem.id}`,
     requires_review: false,
   };
@@ -490,7 +493,7 @@ async function confirmPendingTransfer(
         debt_id: null,
         recurring_rule_id: null,
         recurring_occurrence_id: null,
-        source: mapPendingSource(pendingItem.source),
+        source: mapPendingSource(pendingItem.source, input.channel),
         source_ref: `pending:${pendingItem.id}`,
         confidence: confidenceFromLabel(
           pendingItem.normalized_summary.confidence_label,
@@ -779,7 +782,8 @@ async function confirmPendingDebtPayment(
 }
 
 export function toMovementInputFromPending(
-  pendingItem: PendingItem
+  pendingItem: PendingItem,
+  channel: Channel,
 ): MovementInput {
   const summary = pendingItem.normalized_summary;
   const title = summary.title?.trim();
@@ -820,7 +824,7 @@ export function toMovementInputFromPending(
       pendingItem.proposed_action.account_id,
     );
   return {
-    ...(proposedMovement ?? emptyMovementInput(pendingItem)),
+    ...(proposedMovement ?? emptyMovementInput(pendingItem, channel)),
     type: movementType,
     amount: summary.amount,
     currency: summary.currency ?? "PEN",
@@ -839,7 +843,7 @@ export function toMovementInputFromPending(
     debt_id: null,
     recurring_rule_id: null,
     recurring_occurrence_id: null,
-    source: mapPendingSource(pendingItem.source),
+    source: mapPendingSource(pendingItem.source, channel),
     source_ref: `pending:${pendingItem.id}`,
     confidence: confidenceFromLabel(summary.confidence_label),
     requires_review: false,
@@ -864,7 +868,7 @@ function readProposedMovementInput(
   return parsed.success ? parsed.data : null;
 }
 
-function emptyMovementInput(pendingItem: PendingItem): MovementInput {
+function emptyMovementInput(pendingItem: PendingItem, channel: Channel): MovementInput {
   return {
     type: "gasto",
     amount: null,
@@ -882,7 +886,7 @@ function emptyMovementInput(pendingItem: PendingItem): MovementInput {
     debt_id: null,
     recurring_rule_id: null,
     recurring_occurrence_id: null,
-    source: mapPendingSource(pendingItem.source),
+    source: mapPendingSource(pendingItem.source, channel),
     source_ref: `pending:${pendingItem.id}`,
     confidence: null,
     requires_review: false,
@@ -933,16 +937,18 @@ function getMovementType(pendingItem: PendingItem): MovementType {
   return pendingItem.metadata.money_sign === "positive" ? "ingreso" : "gasto";
 }
 
-function mapPendingSource(source: PendingSource): MovementSource {
-  const map: Record<PendingSource, MovementSource> = {
-    email_pending: "email_confirmed",
-    backfill_pending: "backfill_confirmed",
-    recurring_candidate: "recurring_confirmed",
-    ambiguous_movement: "whatsapp",
-    risk_confirmation: "dashboard_manual",
-  };
-
-  return map[source];
+// ambiguous_movement no tiene un canal de captura propio (a diferencia de
+// email/backfill/recurring): su procedencia es "quien confirmo", no "quien
+// lo detecto" — por eso, y solo para este caso, viene del parametro
+// `channel` en vez de un literal fijo (WEB-D170). risk_confirmation se
+// queda en dashboard_manual siempre: ese es un veredicto de riesgo, no una
+// pregunta de canal.
+function mapPendingSource(source: PendingSource, channel: Channel): MovementSource {
+  if (source === "email_pending") return "email_confirmed";
+  if (source === "backfill_pending") return "backfill_confirmed";
+  if (source === "recurring_candidate") return "recurring_confirmed";
+  if (source === "risk_confirmation") return "dashboard_manual";
+  return channel === "whatsapp" ? "whatsapp" : "dashboard_manual";
 }
 
 function confidenceFromLabel(value: string | null | undefined): number | null {

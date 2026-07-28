@@ -1,7 +1,7 @@
 import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
-import { buildPendingItemWhatsAppCode } from "@/core/pending/whatsapp-pending-code";
-import { resolvePendingFromWhatsAppAction } from "@/core/orchestrator/whatsapp-pending-confirmation";
+import { buildPendingItemReferenceCode } from "@/core/pending/reference-code";
+import { resolvePendingFromAction } from "@/core/orchestrator/pending-resolution-from-text";
 import type { Database } from "@/data/supabase/types";
 import type { PendingItem } from "@/shared/types/domain";
 
@@ -29,14 +29,15 @@ async function main(): Promise<void> {
       countMovements(pendingBefore.user_id),
       readAccountBalances(pendingBefore.user_id),
     ]);
-    const pendingCode = buildPendingItemWhatsAppCode(pendingBefore);
-    const result = await resolvePendingFromWhatsAppAction({
+    const pendingCode = buildPendingItemReferenceCode(pendingBefore);
+    const result = await resolvePendingFromAction({
       client: admin,
       userId: pendingBefore.user_id,
       action: "review",
       pendingCode,
       userText: `revisar ${pendingCode}`,
       traceId: `smoke-review-${crypto.randomUUID()}`,
+      channel: "whatsapp" as const,
     });
     if (result.kind !== "reviewed") {
       throw new Error(

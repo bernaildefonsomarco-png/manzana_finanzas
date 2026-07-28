@@ -73,7 +73,8 @@ describe("buildPendingInputFromDataAction", () => {
       categories: [{ id: "alimentacion", is_sensitive: false }],
       sourceRef: `whatsapp:${externalEventId}`,
       receivedAt: "2026-06-08T10:00:00.000-05:00",
-    });
+    channel: "whatsapp" as const,
+  });
     const plannedAction = plan.actions[0];
 
     const pending = buildPendingInputFromDataAction({
@@ -81,6 +82,7 @@ describe("buildPendingInputFromDataAction", () => {
       userId,
       externalEventId,
       originalMessage: "gaste 8 cafe",
+    channel: "whatsapp" as const,
     });
 
     expect(pending.type).toBe("ambiguous_movement");
@@ -103,12 +105,14 @@ describe("buildPendingInputFromDataAction", () => {
       categories: [{ id: "salud", is_sensitive: true }],
       sourceRef: `whatsapp:${externalEventId}`,
       receivedAt: "2026-06-08T10:00:00.000-05:00",
-    });
+    channel: "whatsapp" as const,
+  });
     const pending = buildPendingInputFromDataAction({
       action: plan.actions[0],
       userId,
       externalEventId,
       originalMessage: "gaste 8 farmacia",
+    channel: "whatsapp" as const,
     });
 
     expect(pending.type).toBe("risk_confirmation");
@@ -122,6 +126,7 @@ describe("buildPendingInputFromDataAction", () => {
   it("usa source_ref estable por evento y accion", () => {
     expect(
       buildPendingSourceRef({
+        channel: "whatsapp",
         externalEventId,
         actionId: "action_1",
       })
@@ -161,7 +166,8 @@ describe("buildPendingInputFromDataAction", () => {
       categories: [{ id: "alimentacion", is_sensitive: false }],
       sourceRef: `whatsapp:${externalEventId}`,
       receivedAt: "2026-06-08T10:00:00.000-05:00",
-    });
+    channel: "whatsapp" as const,
+  });
     mockedCreatePendingItem.mockResolvedValue({
       idempotent: false,
       pendingItem: {
@@ -192,6 +198,7 @@ describe("buildPendingInputFromDataAction", () => {
       traceId: "trace-mixed",
       externalEventId,
       originalMessage: "20 desayuno y 15 otra compra",
+    channel: "whatsapp" as const,
     });
 
     expect(result).toMatchObject({
@@ -240,7 +247,8 @@ describe("buildPendingInputFromDataAction", () => {
       categories: [],
       sourceRef: `whatsapp:${externalEventId}`,
       receivedAt: "2026-07-24T12:00:00.000-05:00",
-    });
+    channel: "whatsapp" as const,
+  });
 
     const result = await createPendingItemsForDataActionPlan({
       client: {} as never,
@@ -250,6 +258,7 @@ describe("buildPendingInputFromDataAction", () => {
       externalEventId,
       originalMessage:
         "Juan me presto 100 soles, le voy a pagar en 5 cuotas",
+    channel: "whatsapp" as const,
     });
 
     expect(plan.actions[0]).toMatchObject({

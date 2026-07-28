@@ -76,7 +76,7 @@ type ExecutableCorrectionCommand = Exclude<
   { kind: "cancel" }
 >;
 
-export type WhatsAppCorrectionResolutionResult =
+export type CorrectionResolutionResult =
   | {
       kind: "not_correction_command";
       reason: "no_correction_command";
@@ -210,12 +210,12 @@ export function parseCorrectionCommandText(
   return null;
 }
 
-export async function maybeResolveCorrectionFromWhatsApp(params: {
+export async function maybeResolveCorrection(params: {
   client: Client;
   userId: string;
   text: string;
   traceId: string;
-}): Promise<WhatsAppCorrectionResolutionResult> {
+}): Promise<CorrectionResolutionResult> {
   if (!isCorrectionCommandText(params.text)) {
     return {
       kind: "not_correction_command",
@@ -318,7 +318,7 @@ export async function maybeResolveCorrectionFromWhatsApp(params: {
         command_id: randomUUID(),
         user_id: params.userId,
         actor: { type: "user", id: params.userId },
-        source: "orchestrator.whatsapp.correction_confirm",
+        source: "orchestrator.correction_confirm",
         trace_id: params.traceId,
         payload: {
           movement_id: command.movement_id,
@@ -343,7 +343,7 @@ export async function maybeResolveCorrectionFromWhatsApp(params: {
       command_id: randomUUID(),
       user_id: params.userId,
       actor: { type: "user", id: params.userId },
-      source: "orchestrator.whatsapp.correction_confirm",
+      source: "orchestrator.correction_confirm",
       trace_id: params.traceId,
       payload: {
         movement_id: command.movement_id,
@@ -351,7 +351,7 @@ export async function maybeResolveCorrectionFromWhatsApp(params: {
           ...patch,
           metadata: {
             ...(patch.metadata ?? {}),
-            correction_source: "whatsapp_interactive",
+            correction_source: "interactive_command",
             correction_command_id: command.command_id,
           },
         },

@@ -11,7 +11,7 @@ import { buildDashboardDeepLink } from "@/shared/app-links";
 
 type Client = SupabaseClient<Database>;
 
-export type WhatsAppMemoryControlResult = {
+export type MemoryControlResult = {
   handled: boolean;
   action:
     | "none"
@@ -33,7 +33,7 @@ type ParsedMemoryControl =
   | { action: "forget"; query: string }
   | { action: "correct"; query: string; summary: string };
 
-export function parseWhatsAppMemoryControl(
+export function parseMemoryControlFromText(
   text: string,
 ): ParsedMemoryControl | null {
   const normalized = normalize(text);
@@ -86,13 +86,13 @@ export function parseWhatsAppMemoryControl(
   return null;
 }
 
-export async function handleWhatsAppMemoryControl(input: {
+export async function handleMemoryControlFromText(input: {
   client: Client;
   userId: string;
   text: string;
   traceId: string;
-}): Promise<WhatsAppMemoryControlResult> {
-  const command = parseWhatsAppMemoryControl(input.text);
+}): Promise<MemoryControlResult> {
+  const command = parseMemoryControlFromText(input.text);
   if (!command) return notHandled();
   const settingsUrl = buildDashboardDeepLink("settings");
 
@@ -104,7 +104,7 @@ export async function handleWhatsAppMemoryControl(input: {
       enabled,
       allowNarrativeMemory: current.allow_narrative_memory,
       allowSensitiveMemory: current.allow_sensitive_memory,
-      idempotencyKey: `whatsapp:${input.traceId}:learning:${command.action}`,
+      idempotencyKey: `memory-control:${input.traceId}:learning:${command.action}`,
     });
     return {
       handled: true,
@@ -161,9 +161,9 @@ export async function handleWhatsAppMemoryControl(input: {
     memoryId: memory.id,
     action: command.action,
     summary: command.action === "correct" ? command.summary : undefined,
-    reason: `explicit_whatsapp_${command.action}`,
+    reason: `explicit_memory_control_${command.action}`,
     idempotencyKey:
-      `whatsapp:${input.traceId}:memory:${memory.id}:${command.action}`,
+      `memory-control:${input.traceId}:memory:${memory.id}:${command.action}`,
   });
   return {
     handled: true,
@@ -246,7 +246,7 @@ function normalize(value: string): string {
     .trim();
 }
 
-function notHandled(): WhatsAppMemoryControlResult {
+function notHandled(): MemoryControlResult {
   return {
     handled: false,
     action: "none",

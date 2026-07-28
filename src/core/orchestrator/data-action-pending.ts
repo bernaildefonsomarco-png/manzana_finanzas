@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Channel } from "@/core/channel/types";
 import {
   createPendingItem,
   type CreatePendingItemResult,
@@ -47,6 +48,7 @@ export async function createPendingItemsForDataActionPlan(params: {
   traceId: string;
   externalEventId: string;
   originalMessage: string;
+  channel: Channel;
 }): Promise<DataActionPendingCreationResult> {
   const confirmableActions = params.plan.actions.filter(
     (action) =>
@@ -74,6 +76,7 @@ export async function createPendingItemsForDataActionPlan(params: {
       userId: params.userId,
       externalEventId: params.externalEventId,
       originalMessage: params.originalMessage,
+      channel: params.channel,
     });
     const result = await createPendingItem(params.client, {
       ...input,
@@ -98,6 +101,7 @@ export function buildPendingInputFromDataAction(params: {
   userId: string;
   externalEventId: string;
   originalMessage: string;
+  channel: Channel;
 }): {
   userId: string;
   type: PendingType;
@@ -122,6 +126,7 @@ export function buildPendingInputFromDataAction(params: {
     type: pendingKind.type,
     source: pendingKind.source,
     sourceRef: buildPendingSourceRef({
+      channel: params.channel,
       externalEventId: params.externalEventId,
       actionId: action.action_id,
     }),
@@ -145,7 +150,7 @@ export function buildPendingInputFromDataAction(params: {
     riskLevel,
     metadata: {
       created_by: "financial_orchestrator",
-      source_channel: "whatsapp",
+      source_channel: params.channel,
       external_event_id: params.externalEventId,
       original_message: params.originalMessage,
       action_id: action.action_id,
@@ -157,10 +162,11 @@ export function buildPendingInputFromDataAction(params: {
 }
 
 export function buildPendingSourceRef(params: {
+  channel: Channel;
   externalEventId: string;
   actionId: string;
 }): string {
-  return `whatsapp:${params.externalEventId}:${params.actionId}`;
+  return `${params.channel}:${params.externalEventId}:${params.actionId}`;
 }
 
 function toCreatedPendingItem(

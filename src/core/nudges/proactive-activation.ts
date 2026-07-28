@@ -1,5 +1,3 @@
-import type { WhatsAppDeliveryMode } from "@/adapters/whatsapp/window-manager";
-
 export const PROACTIVE_NUDGE_ACTIVATION_MODES = [
   "off",
   "planned",
@@ -65,7 +63,9 @@ export function evaluateProactiveNudgeActivation(input: {
   phoneLinked: boolean;
   whatsappOptIn: boolean;
   explicitTypeOptIn: boolean;
-  deliveryMode: WhatsAppDeliveryMode | "dashboard";
+  // Modo de entrega, opaco para este fichero: solo compara si es "dashboard"
+  // (nada externo) o cualquier otro valor que el adaptador de canal entienda.
+  deliveryMode: string;
 }): ProactiveNudgeActivationDecision {
   const reasons: string[] = [];
   const pilotUser = input.config.pilotUserIds.has(input.userId.toLowerCase());

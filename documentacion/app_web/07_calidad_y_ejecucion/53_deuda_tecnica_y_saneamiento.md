@@ -173,6 +173,7 @@ verifica. Ninguna se queda sin dueño.
 | `D-09` | Sin límite de peticiones ni CSRF | Cero coincidencias en `src/` | Corte de contratos de API | `AC-API-06`, `AC-API-07`, `AC-SEG-08` |
 | `D-10` | El `README.md` describe un árbol que no existe | Ocho afirmaciones falsas (§4) | Saneamiento previo | `AC-INV-08` |
 | `D-11` | Diez carpetas con solo `.gitkeep` | Seis sin destino, cuatro que el diseño llenará | Saneamiento previo | `AC-INV-08` |
+| `D-12` | La memoria conversacional está particionada por canal | `conversation_memory_states` indexa por `(user_id, channel, scope)` (`023_conversation_memory.sql`); un foco abierto en WhatsApp no se puede retomar en la web | Corte que rediseñe la clave de memoria conversacional | `AC-CANAL-09` |
 
 ### 3.1 Por qué `D-08` no se paga en bloque
 

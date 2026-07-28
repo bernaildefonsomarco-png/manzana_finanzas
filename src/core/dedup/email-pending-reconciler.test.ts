@@ -38,6 +38,7 @@ describe("reconcileEmailPendingAfterMovements", () => {
       userId: "user-1",
       traceId: "trace-1",
       movements: [movement()],
+    channel: "whatsapp" as const,
     });
 
     expect(result).toEqual({
@@ -78,6 +79,7 @@ describe("reconcileEmailPendingAfterMovements", () => {
       userId: "user-1",
       traceId: "trace-1",
       movements: [movement()],
+    channel: "whatsapp" as const,
     });
 
     expect(result.auto_resolved).toBe(0);
@@ -94,6 +96,7 @@ describe("reconcileEmailPendingAfterMovements", () => {
       userId: "user-1",
       traceId: "trace-1",
       movements: [movement()],
+    channel: "whatsapp" as const,
     });
 
     expect(result.evaluated).toBe(0);

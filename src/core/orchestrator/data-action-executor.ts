@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Channel } from "@/core/channel/types";
 import type {
   CommandResult,
   CoreCommand,
@@ -67,6 +68,7 @@ export async function executeReadyDataActionPlan(params: {
   userId: string;
   traceId: string;
   externalEventId: string;
+  channel: Channel;
 }): Promise<DataActionExecutionResult> {
   const readyActions = params.plan.actions.filter(
     (action) =>
@@ -90,8 +92,11 @@ export async function executeReadyDataActionPlan(params: {
   const debts: ExecutedDataActionDebt[] = [];
   let idempotentCount = 0;
 
+  const paymentSource = toPaymentSource(params.channel);
+
   for (const action of readyActions) {
     const idempotencyKey = buildDataActionIdempotencyKey({
+      channel: params.channel,
       externalEventId: params.externalEventId,
       actionId: action.action_id,
     });
@@ -101,12 +106,12 @@ export async function executeReadyDataActionPlan(params: {
           command_id: randomUUID(),
           user_id: params.userId,
           actor: { type: "agent", id: null },
-          source: "orchestrator.whatsapp.data_agent.debt_creation",
+          source: `orchestrator.${params.channel}.data_agent.debt_creation`,
           trace_id: params.traceId,
           payload: {
             ...action.debt_creation_input,
             idempotency_key: idempotencyKey,
-            creation_source: "whatsapp",
+            creation_source: paymentSource,
           },
         })
       : action.debt_payment_input
@@ -115,7 +120,7 @@ export async function executeReadyDataActionPlan(params: {
           command_id: randomUUID(),
           user_id: params.userId,
           actor: { type: "agent", id: null },
-          source: "orchestrator.whatsapp.data_agent.debt_payment",
+          source: `orchestrator.${params.channel}.data_agent.debt_payment`,
           trace_id: params.traceId,
           payload: {
             debt_id: action.debt_payment_input.debt_id,
@@ -127,7 +132,7 @@ export async function executeReadyDataActionPlan(params: {
             paid_at: action.debt_payment_input.paid_at,
             note: action.debt_payment_input.note,
             idempotency_key: idempotencyKey,
-            payment_source: "whatsapp",
+            payment_source: paymentSource,
           },
           })
         : await params.dispatcher.dispatch({
@@ -135,7 +140,7 @@ export async function executeReadyDataActionPlan(params: {
           command_id: randomUUID(),
           user_id: params.userId,
           actor: { type: "agent", id: null },
-          source: "orchestrator.whatsapp.data_agent",
+          source: `orchestrator.${params.channel}.data_agent`,
           trace_id: params.traceId,
           payload: {
             movement: action.movement_input!,
@@ -208,11 +213,20 @@ export async function executeReadyDataActionPlan(params: {
   };
 }
 
+// finance/commands.ts nombra esta variante "dashboard_manual", no
+// "dashboard" como el resto del arbol: este es el unico punto donde los
+// dos vocabularios se traducen (no se unifican: eso es cambiar un schema
+// ya persistido, fuera del alcance de esta auditoria).
+function toPaymentSource(channel: Channel): "whatsapp" | "dashboard_manual" {
+  return channel === "whatsapp" ? "whatsapp" : "dashboard_manual";
+}
+
 export function buildDataActionIdempotencyKey(params: {
+  channel: Channel;
   externalEventId: string;
   actionId: string;
 }): string {
-  return `whatsapp:${params.externalEventId}:${params.actionId}`;
+  return `${params.channel}:${params.externalEventId}:${params.actionId}`;
 }
 
 function requireExecutedMovement(

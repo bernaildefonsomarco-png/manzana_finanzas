@@ -127,6 +127,7 @@ function readyPlan() {
     categories: [{ id: "alimentacion", is_sensitive: false }],
     sourceRef: "whatsapp:event-1",
     receivedAt: "2026-07-18T10:00:00-05:00",
+    channel: "whatsapp",
   });
 }
 

@@ -72,7 +72,7 @@ describe("pending confirmation dedup policy", () => {
         updated_at: "2026-07-22T12:00:00.000Z",
         resolved_at: null,
         expires_at: null,
-      } as unknown as PendingItem)
+      } as unknown as PendingItem, "whatsapp")
     ).toThrow(/motor financiero especializado/);
   });
 
@@ -125,7 +125,7 @@ describe("pending confirmation dedup policy", () => {
       updated_at: "2026-07-22T12:00:00.000Z",
       resolved_at: null,
       expires_at: null,
-    } as unknown as PendingItem);
+    } as unknown as PendingItem, "whatsapp");
 
     expect(movement).toMatchObject({
       type: "devolucion_recibida",

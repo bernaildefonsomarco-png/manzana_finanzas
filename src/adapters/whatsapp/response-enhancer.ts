@@ -15,8 +15,8 @@ import {
   buildResponseStyleContract,
   countAuthoredLines,
   countEmoji,
-} from "./conversation-style-policy";
-import type { ResponsePlannerResult } from "./response-planner";
+} from "@/core/response/conversation-style-policy";
+import type { WhatsAppShapedResponse } from "./response-shaper";
 
 type ResponseAgentEnhancementOutcome =
   | {
@@ -80,8 +80,9 @@ export type ResponseAgentEnhancementTrace = ResponseAgentEnhancementOutcome & {
   attempt_count?: number;
 };
 
-export async function maybeEnhanceWhatsAppResponseWithAgent(params: {
-  responsePlan: ResponsePlannerResult;
+export async function maybeEnhanceResponseWithAgent(params: {
+  shaped: WhatsAppShapedResponse;
+  reason: string;
   externalEvent: ExternalEventLog;
   responseAgent: ResponseAgent;
   traceId: string;
@@ -92,12 +93,12 @@ export async function maybeEnhanceWhatsAppResponseWithAgent(params: {
   preferredTone?: string | null;
   conversationStyle?: ConversationStyleProfile | null;
 }): Promise<{
-  responsePlan: ResponsePlannerResult;
+  shaped: WhatsAppShapedResponse;
   trace: ResponseAgentEnhancementTrace;
 }> {
-  if (!isSendablePlan(params.responsePlan)) {
+  if (!isSendableShape(params.shaped)) {
     return {
-      responsePlan: params.responsePlan,
+      shaped: params.shaped,
       trace: {
         status: "not_applicable",
         reason: "not_sendable",
@@ -110,12 +111,12 @@ export async function maybeEnhanceWhatsAppResponseWithAgent(params: {
     };
   }
 
-  const baseText = params.responsePlan.text;
+  const baseText = params.shaped.text;
   const riskLevel = inferRiskLevel(params.conversationTurnState.risk_notes) ?? "low";
   const styleContract = buildResponseStyleContract({
     style: params.conversationStyle ?? null,
     legacyInstruction: params.preferredTone,
-    scenario: params.responsePlan.reason as ResponseScenario,
+    scenario: params.reason as ResponseScenario,
     turnState: params.conversationTurnState,
     discreetMode: params.discreetMode === true,
     riskLevel,
@@ -142,7 +143,7 @@ export async function maybeEnhanceWhatsAppResponseWithAgent(params: {
     locale: "es-PE" as const,
     timezone: params.timezone ?? "America/Lima",
     channel: "whatsapp" as const,
-    scenario: params.responsePlan.reason as ResponseScenario,
+    scenario: params.reason as ResponseScenario,
     base_text: baseText,
     original_user_text: readString(params.externalEvent.metadata.text) ?? "",
     constraints: {
@@ -207,15 +208,15 @@ export async function maybeEnhanceWhatsAppResponseWithAgent(params: {
         baseText,
         output: result.output,
         styleContract,
-        scenario: params.responsePlan.reason as ResponseScenario,
+        scenario: params.reason as ResponseScenario,
       });
       lastResult = result;
       lastValidation = validation;
 
       if (!validation) {
         return {
-          responsePlan: replaceResponsePlanText(
-            params.responsePlan,
+          shaped: replaceShapedText(
+            params.shaped,
             result.output.response_text,
           ),
           trace: {
@@ -238,7 +239,7 @@ export async function maybeEnhanceWhatsAppResponseWithAgent(params: {
     }
 
     return {
-      responsePlan: params.responsePlan,
+      shaped: params.shaped,
       trace: {
         status: "rejected",
         reason: lastValidation ?? "empty_text",
@@ -255,7 +256,7 @@ export async function maybeEnhanceWhatsAppResponseWithAgent(params: {
     };
   } catch {
     return {
-      responsePlan: params.responsePlan,
+      shaped: params.shaped,
       trace: {
         status: "failed",
         reason: "agent_error",
@@ -270,38 +271,29 @@ export async function maybeEnhanceWhatsAppResponseWithAgent(params: {
   }
 }
 
-function isSendablePlan(
-  responsePlan: ResponsePlannerResult
-): responsePlan is Extract<
-  ResponsePlannerResult,
-  { kind: "whatsapp_freeform" | "whatsapp_interactive" }
-> {
-  return (
-    responsePlan.kind === "whatsapp_freeform" ||
-    responsePlan.kind === "whatsapp_interactive"
-  );
+function isSendableShape(
+  shaped: WhatsAppShapedResponse
+): shaped is Extract<WhatsAppShapedResponse, { kind: "freeform" | "interactive" }> {
+  return shaped.kind === "freeform" || shaped.kind === "interactive";
 }
 
-function replaceResponsePlanText(
-  responsePlan: Extract<
-    ResponsePlannerResult,
-    { kind: "whatsapp_freeform" | "whatsapp_interactive" }
-  >,
+function replaceShapedText(
+  shaped: Extract<WhatsAppShapedResponse, { kind: "freeform" | "interactive" }>,
   text: string
-): ResponsePlannerResult {
-  if (responsePlan.kind === "whatsapp_interactive") {
+): WhatsAppShapedResponse {
+  if (shaped.kind === "interactive") {
     return {
-      ...responsePlan,
+      ...shaped,
       text,
       interactive: {
-        ...responsePlan.interactive,
+        ...shaped.interactive,
         bodyText: text,
       },
     };
   }
 
   return {
-    ...responsePlan,
+    ...shaped,
     text,
   };
 }

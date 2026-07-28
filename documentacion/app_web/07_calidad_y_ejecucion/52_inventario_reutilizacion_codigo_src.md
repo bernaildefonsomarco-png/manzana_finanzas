@@ -393,7 +393,7 @@ tras medir el árbol entero, que no era obvio de antemano.
 - `AC-INV-02` — Ningún documento del corpus usa un vocabulario de veredictos
   distinto de los cuatro de §2. Evidencia: `TEST`. Clase: `corpus`.
 - `AC-INV-03` — La prueba de agnosticismo del `21` compila contra el árbol.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`.
 - `AC-INV-04` — Ningún fichero de `src/core/` menciona un canal concreto.
   Evidencia: `TEST`. Clase: `lint`.
 - `AC-INV-05` — Antes de reemplazar una pantalla, sus casos borde constan en

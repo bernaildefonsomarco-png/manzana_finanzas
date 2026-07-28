@@ -32,7 +32,7 @@ export type CorrectionContextPack = {
   user_id: string;
   locale: "es-PE";
   timezone: string;
-  channel: "whatsapp";
+  channel: "whatsapp" | "dashboard";
   original_message: string;
   received_at: string;
   recent_movements: CorrectionMovementCandidate[];

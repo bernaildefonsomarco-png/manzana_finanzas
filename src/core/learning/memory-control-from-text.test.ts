@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  handleWhatsAppMemoryControl,
-  parseWhatsAppMemoryControl,
-} from "./whatsapp-memory-control";
+  handleMemoryControlFromText,
+  parseMemoryControlFromText,
+} from "./memory-control-from-text";
 import {
   getLearningPreferences,
   listFinancialMemory,
@@ -22,10 +22,10 @@ const mockedManage = vi.mocked(manageFinancialMemory);
 const mockedPreferences = vi.mocked(getLearningPreferences);
 const mockedSetPreferences = vi.mocked(setLearningPreferences);
 
-describe("WhatsApp memory control", () => {
+describe("Memory control from text", () => {
   it("no confunde un olvida generico con una orden de memoria", () => {
-    expect(parseWhatsAppMemoryControl("Olvídalo, elimínalo")).toBeNull();
-    expect(parseWhatsAppMemoryControl("¿Qué recuerdas de mí?")).toEqual({
+    expect(parseMemoryControlFromText("Olvídalo, elimínalo")).toBeNull();
+    expect(parseMemoryControlFromText("¿Qué recuerdas de mí?")).toEqual({
       action: "list",
     });
   });
@@ -34,7 +34,7 @@ describe("WhatsApp memory control", () => {
     mockedList.mockResolvedValue([
       memory({ sensitivity: "sensitive", summary: "Deuda personal con Luis" }),
     ]);
-    const result = await handleWhatsAppMemoryControl({
+    const result = await handleMemoryControlFromText({
       client: {} as never,
       userId: "user-1",
       text: "Qué recuerdas de mí",
@@ -47,7 +47,7 @@ describe("WhatsApp memory control", () => {
   it("olvida por codigo mediante el servicio gobernado", async () => {
     mockedList.mockResolvedValue([memory()]);
     mockedManage.mockResolvedValue({} as never);
-    const result = await handleWhatsAppMemoryControl({
+    const result = await handleMemoryControlFromText({
       client: {} as never,
       userId: "user-1",
       text: "Olvida M-22222222",
@@ -70,7 +70,7 @@ describe("WhatsApp memory control", () => {
       allow_sensitive_memory: true,
     } as never);
     mockedSetPreferences.mockResolvedValue({} as never);
-    await handleWhatsAppMemoryControl({
+    await handleMemoryControlFromText({
       client: {} as never,
       userId: "user-1",
       text: "Deja de aprender de mí",

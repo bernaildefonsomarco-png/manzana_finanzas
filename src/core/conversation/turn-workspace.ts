@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import type { Channel } from "@/core/channel/types";
 import type { ConversationContextPack } from "@/agents/conversation-agent/types";
 import type { DataContextPack } from "@/agents/data-agent/types";
 import type { OrchestrationPlanningContextPack } from "@/agents/orchestration-planning-agent/types";
@@ -18,7 +19,7 @@ export type TurnWorkspace = {
   version: "v1";
   turn_id: string;
   user_id: string;
-  channel: "whatsapp" | "dashboard";
+  channel: Channel;
   user_message: string;
   received_at: string;
   timezone: string;

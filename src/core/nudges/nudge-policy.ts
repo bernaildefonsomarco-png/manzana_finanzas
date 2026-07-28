@@ -1,8 +1,4 @@
-import {
-  planWhatsAppDelivery,
-  type WhatsAppDeliveryMode,
-} from "@/adapters/whatsapp/window-manager";
-import type { WhatsAppWindowState } from "@/data/repositories/whatsapp-window.repository";
+import type { Channel } from "@/core/channel/types";
 import type {
   NudgeCandidate,
   NudgeDelivery,
@@ -30,24 +26,38 @@ const insightTypes = new Set<NudgeType>([
 
 export type NudgePolicyDecision = {
   decision: "send" | "defer" | "dashboard_only" | "reject";
-  channel: "whatsapp" | "dashboard";
-  delivery_mode: WhatsAppDeliveryMode | "dashboard";
+  channel: Channel;
+  delivery_mode: string;
   scheduled_for: string | null;
   reasons: string[];
   requires_disclosure: boolean;
 };
 
-export function evaluateWhatsAppNudgePolicy(input: {
+// El adaptador de canal decide como (y si) se puede entregar: el nucleo solo
+// declara que quiere mandar algo accionable, sensible o no, y deja que quien
+// conoce la ventana de mensajeria / plantillas responda. Esto reemplaza el
+// import directo del adaptador de canal (21 S6).
+export type ChannelDeliveryCheck = (input: {
+  intent: "insight" | "nudge";
+  hasActionableValue: boolean;
+  isSensitive: boolean;
+  discreetCopyPrepared: boolean;
+  now: Date;
+}) =>
+  | { eligible: true; mode: string; reason: string }
+  | { eligible: false; reason: string };
+
+export function evaluateNudgePolicy(input: {
   candidate: NudgeCandidate;
   preferences: UserPreferences | null;
   explicitTypeOptIn: boolean;
   pausedUntil?: string | null;
-  windowState: WhatsAppWindowState | null;
   recentDeliveries: NudgeDelivery[];
-  templateAvailable: boolean;
   sensitiveCopyPrepared?: boolean;
   now?: Date;
   timezone?: string;
+  channel: Channel;
+  checkChannelDelivery: ChannelDeliveryCheck;
 }): NudgePolicyDecision {
   const now = input.now ?? new Date();
   const timezone = input.timezone ?? "America/Lima";
@@ -170,12 +180,9 @@ export function evaluateWhatsAppNudgePolicy(input: {
     return reject("same_source_delivery_cap_reached");
   }
 
-  const deliveryPlan = planWhatsAppDelivery({
-    state: input.windowState,
+  const delivery = input.checkChannelDelivery({
     intent: insightTypes.has(candidate.type) ? "insight" : "nudge",
     hasActionableValue: candidate.priority >= 60,
-    whatsappOptIn: true,
-    quietHoursActive: false,
     isSensitive: candidate.risk_level === "sensitive",
     discreetCopyPrepared:
       candidate.risk_level !== "sensitive" ||
@@ -183,19 +190,16 @@ export function evaluateWhatsAppNudgePolicy(input: {
     now,
   });
 
-  if (deliveryPlan.mode === "app_only" || deliveryPlan.mode === "blocked") {
-    return dashboardOnly(deliveryPlan.reason);
-  }
-  if (deliveryPlan.mode === "template" && !input.templateAvailable) {
-    return dashboardOnly("utility_template_not_configured");
+  if (!delivery.eligible) {
+    return dashboardOnly(delivery.reason);
   }
 
   return {
     decision: "send",
-    channel: "whatsapp",
-    delivery_mode: deliveryPlan.mode,
+    channel: input.channel,
+    delivery_mode: delivery.mode,
     scheduled_for: now.toISOString(),
-    reasons: [deliveryPlan.reason, "all_policy_gates_passed"],
+    reasons: [delivery.reason, "all_policy_gates_passed"],
     requires_disclosure: true,
   };
 }

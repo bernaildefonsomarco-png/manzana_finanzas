@@ -3,7 +3,7 @@
 **Bloque:** 07 — Calidad y ejecución
 **Alcance:** V1
 **Estado:** vivo
-**Fecha de última actualización:** 27 de julio de 2026
+**Fecha de última actualización:** 28 de julio de 2026
 **Docs fuente:** `54` (los veinte cortes), `49` §8 y §9 (protocolos de `USER` y `METRIC`), `50` (matriz)
 **Documentos que dependen de este:** `56` (puente a WhatsApp)
 
@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01`, `W-02` y `W-03` cerraron `G1` y `G2`.
-Ninguno de los tres tiene criterios de `G3` propios.
+**La construcción avanza.** `W-01` a `W-04` cerraron `G1` y `G2`. Ninguno
+tiene criterios de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 3 de 20 |
-| Criterios `verificado` | 23 de 708 |
+| Cortes cerrados | 4 de 20 |
+| Criterios `verificado` | 30 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -479,6 +479,125 @@ ruta que recorre (`W-08` en adelante). Las tres reglas de lint diferidas por
 - `50` §5.2: actualizado, el hueco entre mapa y superficies que describía ya
   está cerrado.
 - `03_decisiones_producto_web.md`: `WEB-D169` (nueva).
+
+---
+
+## W-04 — El canal sale del núcleo
+
+**Cerrado:** 2026-07-28
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-28, con `npm run matriz:generar`, posterior al
+commit `[pendiente: se registra tras el commit de cierre]` (`AC-TRAZ-12`).
+
+### Qué se entregó
+
+El puerto de canal de `21` existe en código: `src/core/channel/types.ts`
+declara `Channel`, `TurnInput` (la *entrada* de `21` §3), `Block` (los diez
+bloques de `21` §5) y `verifyBlocks` (`AC-CANAL-03`, `AC-CANAL-04`).
+`response-planner.ts` se partió en dos: `planTurnBlocks` (núcleo,
+channel-agnóstico, produce bloques) y `src/adapters/whatsapp/response-shaper.ts`
+(adaptador, traduce bloques a texto libre o interactivo de WhatsApp, con la
+ventana de mensajería). `financial-orchestrator.ts` cambió su único método
+público de `handleWhatsAppInboundEvent(event: OutboxEvent)` a
+`handleTurn(input: TurnHandlingInput)`, y el envío de respuesta se delega a
+un `presentTurn` inyectado por el adaptador de canal —el núcleo ya no
+importa nada de `@/adapters/whatsapp/*`—; `src/adapters/whatsapp/present-turn.ts`
+implementa ese `presentTurn` para WhatsApp real. Los seis ficheros con el
+canal en el nombre se resolvieron cada uno según lo que de verdad hacían:
+`whatsapp-formatting.ts` y `whatsapp-response-sender.ts` (envío real) se
+movieron a `adapters/whatsapp/`; `whatsapp-pending-code.ts`,
+`whatsapp-correction.ts`, `whatsapp-pending-confirmation.ts` y
+`whatsapp-memory-control.ts` resultaron ser lógica de negocio o de
+interpretación de texto genuinamente channel-agnóstica —parsear "confirmo"
+o un código `corr:categoria:...` no depende de si llegó por WhatsApp o por
+un chat futuro en la web— y se quedaron en `core/`, solo renombradas.
+`response-agent-enhancer.ts` (el agente de estilo, con su límite de 900
+caracteres y su cuerpo de botón) resultó genuinamente específico de
+WhatsApp y se movió también. La regla de lint `sin-canal-en-el-nucleo`
+(`AC-INV-04`) verifica, sobre todo `src/core/`, que ningún fichero mencione
+"whatsapp" fuera de una lista de trece excepciones documentadas y exactas
+—el puerto mismo, la taxonomía de disclosure (`WEB-D171`) y las funciones
+que traducen entre el vocabulario del puerto y el de columnas/variables de
+entorno ya desplegadas (`WEB-D172`)—. La prueba de agnosticismo de `21` §8
+(`AC-CANAL-01`) existe y compila: para seis de los siete casos, el mismo
+caso ejecutado con `canal: "whatsapp"` y `canal: "dashboard"` produce
+bloques idénticos, y esos bloques, leídos por dos presentadores de prueba
+con formas de renderizado deliberadamente distintas, exponen los mismos
+comandos y referencias de evidencia (`AC-CANAL-02` a `AC-CANAL-05`,
+`AC-CANAL-07`). `npm run typecheck`, `npm run lint`, `npm run build` (con
+los cinco gates de `prebuild` en verde), `npm test` (176 ficheros, 1.015
+tests) y `npm run test:rls` (48 tests) terminan sin errores.
+
+### Qué sorprendió
+
+Cuatro cosas.
+
+La primera cambió la estimación de riesgo del corte por completo. La
+auditoría inicial (`52` §4.1) medía 28 ficheros y 15.196 líneas como si
+todos fueran acoplamiento profundo a WhatsApp. Al leer los seis ficheros
+con el canal en el nombre uno por uno, resultó que la mayoría —parseo de
+texto libre, resolución de comandos de corrección, control de memoria— es
+lógica de negocio genuinamente channel-agnóstica que solo llevaba un
+nombre equivocado; lo verdaderamente acoplado a WhatsApp (formateo de
+Markdown, ventana de mensajería, envío, el agente de estilo con su límite
+de caracteres) era una fracción mucho menor. El corte que el `54` marcó
+como "el de más riesgo de desbordarse" resultó ser, en su mayor parte, un
+renombrado mecánico verificado por los tests existentes — no una reescritura de
+lógica financiera. La construcción real sí fue grande (financial-orchestrator.ts,
+2.669 líneas, con siete puntos de envío de respuesta reescritos con el
+patrón de `presentTurn` inyectado) pero acotada.
+
+La segunda: al intentar borrar cada mención de "whatsapp" restante,
+apareció un vocabulario duplicado ya existente en el árbol —columnas y
+schemas usan `"dashboard_manual"`, el resto del código usa `"dashboard"`
+para el mismo concepto—. Unificarlos habría sido una migración de esquema
+disfrazada de limpieza de código, así que `WEB-D170` fija el puerto en el
+vocabulario que ya existe (`"whatsapp" | "dashboard"`) en vez de inventar
+uno nuevo, y las funciones que sí necesitan `"dashboard_manual"` (los
+comandos de `core/finance/commands.ts`) quedan como el único punto de
+traducción, documentado.
+
+La tercera: al construir la prueba de agnosticismo, `AC-CANAL-01` reveló
+que dos de sus siete casos y dos criterios más (`AC-CANAL-06`,
+`AC-CANAL-08`) no tienen ningún código real detrás todavía —ningún flujo
+compone un bloque `hallazgo` con nivel de certeza, ni existe un comando de
+navegación que produzca un bloque `mostrar`, ni existe recategorización en
+lote (`26` `ACT-MOV-10`)—. Escribir esas pruebas en verde habría exigido
+inventar comportamiento de producto (`RUL-HECHO-04` lo prohíbe), así que
+`AC-CANAL-01` pasa a agregado (`WEB-D173`, seis de siete casos) y
+`AC-CANAL-06`/`AC-CANAL-08` quedan declarados sin cerrar (`WEB-D174`).
+
+La cuarta, la más seria: verificar `AC-CANAL-09` ("un foco abierto en un
+canal se puede retomar en el otro") contra el esquema real encontró que
+`conversation_memory_states` tiene un índice único por
+`(user_id, channel, scope)` — la memoria conversacional está particionada
+por canal, exactamente lo contrario de lo que `21` §10 exige. Es un defecto
+real, no una brecha de prueba: hoy, una conversación empezada por WhatsApp
+no se puede continuar en la web aunque el usuario la abra dentro de su
+vigencia. Se registra como deuda nueva (`D-12`, `53` §3) con su propio
+corte futuro, y `AC-CANAL-09` no cierra en `W-04` (`WEB-D174`).
+
+### Qué quedó abierto
+
+Ningún criterio de `G3` propio. `AC-CANAL-01` sigue abierto para el caso de
+operación masiva (cierra con `26`). `AC-CANAL-06` y `AC-CANAL-08` cierran
+cuando exista un flujo real que produzca `hallazgo` o `mostrar`. `AC-CANAL-09`
+cierra cuando se pague `D-12` — un corte que rediseñe la clave de memoria
+conversacional para que no dependa del canal.
+
+### Documentos corregidos
+
+- `21` §11: `AC-CANAL-01` marcado agregado (`WEB-D173`); `AC-CANAL-06`,
+  `AC-CANAL-08`, `AC-CANAL-09` marcados sin cerrar (`WEB-D174`); `Clase:`
+  añadida a `AC-CANAL-01`, `03`, `04`, `05`, `07`.
+- `52` §15: `AC-INV-03` recibe `Clase: unidad`, que le faltaba.
+- `54` W-04: lista de "Cierra" corregida para reflejar el cierre agregado
+  y los tres criterios diferidos.
+- `50` §3.1: censo de clases actualizado (96 con clase, no 87; `unidad` 7,
+  no 1; `integracion` 3, no 1; `lint` 15, no 14 — esta última tabla llevaba
+  desactualizada desde antes de `W-04`, corregida de paso).
+- `53` §3: `D-12` (nueva) — memoria conversacional particionada por canal.
+- `03_decisiones_producto_web.md`: `WEB-D170` a `WEB-D174` (nuevas).
 
 ---
 

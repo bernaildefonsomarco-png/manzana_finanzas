@@ -13,6 +13,7 @@ import {
   type DedupDecision,
 } from "@/core/dedup";
 import type { Database } from "@/data/supabase/types";
+import type { Channel } from "@/core/channel/types";
 import type { RiskLevel } from "@/shared/types/domain";
 import { logger } from "@/shared/telemetry/logger";
 import {
@@ -51,6 +52,7 @@ export async function assessRiskSignals(params: {
   recentMedianAmount: number | null;
   recentMovementCount: number;
   traceId: string;
+  channel: Channel;
 }): Promise<RiskPreflightResult> {
   if (params.actions.length === 0) {
     return {
@@ -70,7 +72,7 @@ export async function assessRiskSignals(params: {
         user_id: params.userId,
         locale: params.locale,
         timezone: params.timezone,
-        channel: "whatsapp",
+        channel: params.channel,
         original_message: params.originalMessage,
         actions: params.actions,
         risk_context: {

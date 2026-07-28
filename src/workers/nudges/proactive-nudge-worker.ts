@@ -6,13 +6,15 @@ import {
   isWhatsAppSendConfigReady,
 } from "@/adapters/whatsapp/send-config";
 import { sendTrackedWhatsAppMessage } from "@/adapters/whatsapp/outbound-service";
+import { planWhatsAppDelivery } from "@/adapters/whatsapp/window-manager";
 import {
   evaluateOutputGuard,
   type OutputGuardDecision,
 } from "@/core/disclosure/output-guard";
 import {
-  evaluateWhatsAppNudgePolicy,
+  evaluateNudgePolicy,
   resolveNudgeTypeOptIn,
+  type ChannelDeliveryCheck,
   type NudgePolicyDecision,
 } from "@/core/nudges/nudge-policy";
 import {
@@ -144,22 +146,42 @@ export async function deliverProactiveNudgesForUser(
     });
     const disclosure = outputGuard.disclosure;
     const disclosureSafe = outputGuard.allowed;
-    const policy = evaluateWhatsAppNudgePolicy({
+    const templateAvailable = Boolean(
+      templateName &&
+      utilityTemplate &&
+      templateName === utilityTemplate.name &&
+      templateLanguage === utilityTemplate.language,
+    );
+    const checkChannelDelivery: ChannelDeliveryCheck = (delivery) => {
+      const deliveryPlan = planWhatsAppDelivery({
+        state: windowState,
+        intent: delivery.intent,
+        hasActionableValue: delivery.hasActionableValue,
+        whatsappOptIn: true,
+        quietHoursActive: false,
+        isSensitive: delivery.isSensitive,
+        discreetCopyPrepared: delivery.discreetCopyPrepared,
+        now,
+      });
+      if (deliveryPlan.mode === "app_only" || deliveryPlan.mode === "blocked") {
+        return { eligible: false, reason: deliveryPlan.reason };
+      }
+      if (deliveryPlan.mode === "template" && !templateAvailable) {
+        return { eligible: false, reason: "utility_template_not_configured" };
+      }
+      return { eligible: true, mode: deliveryPlan.mode, reason: deliveryPlan.reason };
+    };
+    const policy = evaluateNudgePolicy({
       candidate,
       preferences: context.preferences,
       explicitTypeOptIn,
       pausedUntil: typePreference?.paused_until ?? null,
-      windowState,
       recentDeliveries: context.recentDeliveries,
-      templateAvailable: Boolean(
-        templateName &&
-        utilityTemplate &&
-        templateName === utilityTemplate.name &&
-        templateLanguage === utilityTemplate.language,
-      ),
       sensitiveCopyPrepared: disclosureSafe,
       now,
       timezone: context.profile.timezone,
+      channel: "whatsapp",
+      checkChannelDelivery,
     });
     const risk = outputGuard.risk;
 
@@ -956,6 +978,9 @@ function resolveAppUrl(env: NodeJS.ProcessEnv): string {
 
 function buildDeepLink(appUrl: string, candidate: NudgeCandidate): string {
   const view = cleanString(asRecord(candidate.metadata).target_view) ?? "home";
+  // ?view= es el router manual de dashboard-app.tsx, que W-07 (54 §4) reemplaza
+  // por rutas reales. Cuando cierre W-07, mapear `view` a su ruta real segun
+  // 10_sitemap_rutas_y_navegacion.md §3.2 en vez de este query param.
   return `${appUrl}/?view=${encodeURIComponent(view)}`;
 }
 

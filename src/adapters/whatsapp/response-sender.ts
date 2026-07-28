@@ -8,8 +8,7 @@ import {
 } from "@/adapters/whatsapp/send-config";
 import type { Database } from "@/data/supabase/types";
 import type { ExternalEventLog } from "@/core/events/domain-events";
-import type { ResponsePlannerResult } from "./response-planner";
-import { normalizeWhatsAppFormatting } from "./whatsapp-formatting";
+import type { WhatsAppShapedResponse } from "./response-shaper";
 
 type Client = SupabaseClient<Database>;
 
@@ -20,7 +19,6 @@ export type WhatsAppResponseSendResult =
         | "response_not_sendable"
         | "send_disabled"
         | "missing_recipient"
-        | "delivery_mode_not_sendable"
         | "config_missing";
       idempotent: false;
       provider_message_id: null;
@@ -40,35 +38,19 @@ export type WhatsAppResponseSendResult =
       error_message: string;
     };
 
-export async function maybeSendWhatsAppResponse(params: {
+export async function sendShapedWhatsAppResponse(params: {
   client: Client;
   externalEvent: ExternalEventLog;
-  responsePlan: ResponsePlannerResult;
+  shaped: WhatsAppShapedResponse;
+  responseReason: string;
   sendEnabled: boolean;
 }): Promise<WhatsAppResponseSendResult> {
-  if (
-    params.responsePlan.kind !== "whatsapp_freeform" &&
-    params.responsePlan.kind !== "whatsapp_interactive"
-  ) {
+  if (params.shaped.kind !== "freeform" && params.shaped.kind !== "interactive") {
     return notSent("response_not_sendable");
   }
 
   if (!params.sendEnabled) {
     return notSent("send_disabled");
-  }
-
-  if (
-    params.responsePlan.kind === "whatsapp_freeform" &&
-    params.responsePlan.deliveryPlan.mode !== "freeform"
-  ) {
-    return notSent("delivery_mode_not_sendable");
-  }
-
-  if (
-    params.responsePlan.kind === "whatsapp_interactive" &&
-    params.responsePlan.deliveryPlan.mode !== "interactive"
-  ) {
-    return notSent("delivery_mode_not_sendable");
   }
 
   const toPhone = readString(params.externalEvent.metadata.from_phone);
@@ -81,41 +63,25 @@ export async function maybeSendWhatsAppResponse(params: {
   }
 
   try {
-    const outboundText =
-      params.responsePlan.kind === "whatsapp_freeform"
-        ? normalizeWhatsAppFormatting(params.responsePlan.text)
-        : undefined;
-    const outboundInteractive =
-      params.responsePlan.kind === "whatsapp_interactive"
-        ? {
-            ...params.responsePlan.interactive,
-            bodyText: normalizeWhatsAppFormatting(
-              params.responsePlan.interactive.bodyText,
-            ),
-          }
-        : undefined;
     const result = await sendTrackedWhatsAppMessage(
       params.client,
       {
         provider,
         userId: params.externalEvent.user_id!,
         toPhone,
-        messageKind:
-          params.responsePlan.kind === "whatsapp_interactive"
-            ? "interactive"
-            : "freeform",
-        text: outboundText,
-        interactive: outboundInteractive,
+        messageKind: params.shaped.kind === "interactive" ? "interactive" : "freeform",
+        text: params.shaped.kind === "freeform" ? params.shaped.text : undefined,
+        interactive: params.shaped.kind === "interactive" ? params.shaped.interactive : undefined,
         idempotencyKey: buildWhatsAppResponseIdempotencyKey({
           externalEventId: params.externalEvent.id,
-          responseReason: params.responsePlan.reason,
+          responseReason: params.responseReason,
         }),
         traceId: params.externalEvent.trace_id,
         metadata: {
           external_event_id: params.externalEvent.id,
-          response_reason: params.responsePlan.reason,
-          response_plan_kind: params.responsePlan.kind,
-          delivery_plan_reason: params.responsePlan.deliveryPlan.reason,
+          response_reason: params.responseReason,
+          response_plan_kind: params.shaped.kind,
+          delivery_plan_reason: params.shaped.deliveryPlan.reason,
         },
       },
       config
@@ -126,8 +92,7 @@ export async function maybeSendWhatsAppResponse(params: {
       reason: "sent_to_whatsapp_provider",
       idempotent: result.idempotent,
       provider_message_id:
-        result.providerResult?.providerMessageId ??
-        result.attempt.provider_message_id,
+        result.providerResult?.providerMessageId ?? result.attempt.provider_message_id,
     };
   } catch (error) {
     if (error instanceof WhatsAppSenderError) {

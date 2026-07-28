@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Channel } from "@/core/channel/types";
 import type {
   ConversationContextPack,
   ConversationMemoryCorrection,
@@ -147,7 +148,7 @@ export class ToolGateway {
     userId: string;
     locale: "es-PE";
     timezone: string;
-    channel: "whatsapp" | "dashboard";
+    channel: Channel;
     originalMessage: string;
     receivedAt: string;
     query: ConversationQuery;

@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { loadEnvConfig } from "@next/env";
 import { createClient } from "@supabase/supabase-js";
 import { confirmPendingItemWithCore } from "@/core/pending/confirm-pending";
-import { buildPendingItemWhatsAppCode } from "@/core/pending/whatsapp-pending-code";
-import { resolvePendingFromWhatsAppAction } from "@/core/orchestrator/whatsapp-pending-confirmation";
+import { buildPendingItemReferenceCode } from "@/core/pending/reference-code";
+import { resolvePendingFromAction } from "@/core/orchestrator/pending-resolution-from-text";
 import type { Database } from "@/data/supabase/types";
 import type { PendingItem } from "@/shared/types/domain";
 
@@ -94,8 +94,8 @@ async function main(): Promise<void> {
       originHint: "Clásica ****3087",
       destinationHint: "Clásica ****9039",
     });
-    const transferCode = buildPendingItemWhatsAppCode(transferPending);
-    const transferEdit = await resolvePendingFromWhatsAppAction({
+    const transferCode = buildPendingItemReferenceCode(transferPending);
+    const transferEdit = await resolvePendingFromAction({
       client: admin,
       userId,
       action: "assign_transfer",
@@ -106,19 +106,21 @@ async function main(): Promise<void> {
       userText:
         "Recuerda que la 3087 es Mi cuenta principal y la 9039 es Mi bolsillo diario",
       traceId: randomUUID(),
+    channel: "whatsapp" as const,
     });
     assert(
       transferEdit.kind === "updated" &&
         transferEdit.ready_for_confirmation,
       "la seleccion conversacional deja la transferencia lista",
     );
-    const transferConfirmation = await resolvePendingFromWhatsAppAction({
+    const transferConfirmation = await resolvePendingFromAction({
       client: admin,
       userId,
       action: "confirm",
       pendingCode: transferCode,
       userText: `confirmar ${transferCode}`,
       traceId: randomUUID(),
+    channel: "whatsapp" as const,
     });
     assert(
       transferConfirmation.kind === "confirmed" &&
@@ -132,6 +134,7 @@ async function main(): Promise<void> {
       actor: { type: "user", id: userId },
       source: "smoke.email.conversation.retry",
       traceId: randomUUID(),
+    channel: "whatsapp" as const,
     });
     assert(transferRetry.idempotent, "el retry de transferencia es idempotente");
     const balancesAfterTransfer = await readBalances(userId);
@@ -160,8 +163,8 @@ async function main(): Promise<void> {
       originHint: "Cuenta de ahorro ****5019",
       destinationHint: "Yape",
     });
-    const expenseCode = buildPendingItemWhatsAppCode(expensePending);
-    const expenseEdit = await resolvePendingFromWhatsAppAction({
+    const expenseCode = buildPendingItemReferenceCode(expensePending);
+    const expenseEdit = await resolvePendingFromAction({
       client: admin,
       userId,
       action: "classify_expense",
@@ -170,6 +173,7 @@ async function main(): Promise<void> {
       categoryId: "otros",
       userText: `${expenseCode} fue un gasto sin cuenta`,
       traceId: randomUUID(),
+    channel: "whatsapp" as const,
     });
     assert(
       expenseEdit.kind === "updated" &&
@@ -177,13 +181,14 @@ async function main(): Promise<void> {
         expenseEdit.pending_item.proposed_action.movement_type === "gasto",
       "Yape externo se reclasifica sin crear cuenta",
     );
-    const expenseConfirmation = await resolvePendingFromWhatsAppAction({
+    const expenseConfirmation = await resolvePendingFromAction({
       client: admin,
       userId,
       action: "confirm",
       pendingCode: expenseCode,
       userText: `confirmar ${expenseCode}`,
       traceId: randomUUID(),
+    channel: "whatsapp" as const,
     });
     assert(
       expenseConfirmation.kind === "confirmed" &&
@@ -205,14 +210,15 @@ async function main(): Promise<void> {
       originHint: "Clásica ****3087",
       destinationHint: "Tercero",
     });
-    const discardedCode = buildPendingItemWhatsAppCode(discardedPending);
-    const discarded = await resolvePendingFromWhatsAppAction({
+    const discardedCode = buildPendingItemReferenceCode(discardedPending);
+    const discarded = await resolvePendingFromAction({
       client: admin,
       userId,
       action: "discard",
       pendingCode: discardedCode,
       userText: `descartar ${discardedCode}`,
       traceId: randomUUID(),
+    channel: "whatsapp" as const,
     });
     assert(discarded.kind === "discarded", "el usuario puede descartar");
 

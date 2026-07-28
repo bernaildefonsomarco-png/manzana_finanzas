@@ -63,7 +63,8 @@ function readyPlan(dataAgentOutput: DataAgentOutput = output()) {
     categories: [{ id: "alimentacion", is_sensitive: false }],
     sourceRef: `whatsapp:${externalEventId}`,
     receivedAt: "2026-06-08T10:00:00.000-05:00",
-  });
+  channel: "whatsapp" as const,
+});
 }
 
 describe("executeReadyDataActionPlan", () => {
@@ -77,6 +78,7 @@ describe("executeReadyDataActionPlan", () => {
       userId,
       traceId,
       externalEventId,
+      channel: "whatsapp" as const,
     });
 
     expect(result.kind).toBe("executed");
@@ -103,11 +105,13 @@ describe("executeReadyDataActionPlan", () => {
         categories: [{ id: "alimentacion", is_sensitive: false }],
         sourceRef: `whatsapp:${externalEventId}`,
         receivedAt: "2026-06-08T10:00:00.000-05:00",
-      }),
+      channel: "whatsapp" as const,
+    }),
       dispatcher: new CommandDispatcher(repository),
       userId,
       traceId,
       externalEventId,
+      channel: "whatsapp" as const,
     });
 
     expect(result.kind).toBe("executed");
@@ -130,6 +134,7 @@ describe("executeReadyDataActionPlan", () => {
       userId,
       traceId,
       externalEventId,
+      channel: "whatsapp" as const,
     });
     const second = await executeReadyDataActionPlan({
       plan,
@@ -137,6 +142,7 @@ describe("executeReadyDataActionPlan", () => {
       userId,
       traceId,
       externalEventId,
+      channel: "whatsapp" as const,
     });
 
     expect(first.kind).toBe("executed");
@@ -169,6 +175,7 @@ describe("executeReadyDataActionPlan", () => {
       userId,
       traceId,
       externalEventId,
+      channel: "whatsapp" as const,
     });
 
     expect(result.kind).toBe("not_executed");
@@ -224,6 +231,7 @@ describe("executeReadyDataActionPlan", () => {
       userId,
       traceId,
       externalEventId,
+      channel: "whatsapp" as const,
     });
     const retry = await executeReadyDataActionPlan({
       plan,
@@ -231,6 +239,7 @@ describe("executeReadyDataActionPlan", () => {
       userId,
       traceId,
       externalEventId,
+      channel: "whatsapp" as const,
     });
 
     expect(first).toMatchObject({
@@ -326,7 +335,8 @@ describe("executeReadyDataActionPlan", () => {
       categories: [],
       sourceRef: `whatsapp:${externalEventId}`,
       receivedAt: "2026-07-24T12:00:00.000-05:00",
-    });
+    channel: "whatsapp" as const,
+  });
 
     const result = await executeReadyDataActionPlan({
       plan: debtPlan,
@@ -334,6 +344,7 @@ describe("executeReadyDataActionPlan", () => {
       userId,
       traceId,
       externalEventId,
+      channel: "whatsapp" as const,
     });
 
     expect(dispatch).toHaveBeenCalledTimes(1);
@@ -373,6 +384,7 @@ describe("executeReadyDataActionPlan", () => {
   it("construye una llave de idempotencia estable y trazable", () => {
     expect(
       buildDataActionIdempotencyKey({
+        channel: "whatsapp",
         externalEventId,
         actionId: "action_1",
       })
@@ -436,7 +448,8 @@ describe("executeReadyDataActionPlan", () => {
       ],
       sourceRef: `whatsapp:${externalEventId}`,
       receivedAt: "2026-07-22T10:00:00.000-05:00",
-    });
+    channel: "whatsapp" as const,
+  });
 
     const result = await executeReadyDataActionPlan({
       plan: debtPlan,
@@ -444,6 +457,7 @@ describe("executeReadyDataActionPlan", () => {
       userId,
       traceId,
       externalEventId,
+      channel: "whatsapp" as const,
     });
 
     expect(dispatch).toHaveBeenCalledWith(

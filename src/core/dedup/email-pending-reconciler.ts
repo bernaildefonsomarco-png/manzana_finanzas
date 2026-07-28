@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Channel } from "@/core/channel/types";
 import { evaluateCrossChannelDedup } from "./cross-channel-preflight";
 import {
   listPendingItems,
@@ -37,6 +38,7 @@ export async function reconcileEmailPendingAfterMovements(params: {
   userId: string;
   movements: ReconciledMovement[];
   traceId: string;
+  channel: Channel;
 }): Promise<EmailPendingReconciliationResult> {
   if (params.movements.length === 0) return emptyResult();
 
@@ -45,6 +47,8 @@ export async function reconcileEmailPendingAfterMovements(params: {
     limit: 100,
   });
   const result = emptyResult();
+  const movementSource: "whatsapp" | "dashboard_manual" =
+    params.channel === "whatsapp" ? "whatsapp" : "dashboard_manual";
   const recentMovements = params.movements.map((movement) => ({
     reference_id: movement.movement_id,
     movement_type: movement.movement_type,
@@ -53,7 +57,7 @@ export async function reconcileEmailPendingAfterMovements(params: {
     occurred_at: movement.occurred_at,
     description: movement.description,
     merchant: movement.description,
-    source: "whatsapp" as const,
+    source: movementSource,
     source_ref: null,
     account_origin_id: movement.account_origin_id,
     account_destination_id: movement.account_destination_id,
@@ -72,7 +76,7 @@ export async function reconcileEmailPendingAfterMovements(params: {
       movementInput,
       recentMovements,
       metadata: {
-        entry_surface: "post_whatsapp_email_reconciliation",
+        entry_surface: `post_${params.channel}_email_reconciliation`,
         pending_item_id: pendingItem.id,
       },
     });

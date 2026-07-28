@@ -5,9 +5,9 @@ import { ResponseAgent } from "@/agents/response-agent";
 import type { ConversationStyleProfile } from "@/agents/conversation-agent";
 import type { ExternalEventLog } from "@/core/events/domain-events";
 import { countEmoji } from "@/core/response/conversation-style-policy";
-import { maybeEnhanceWhatsAppResponseWithAgent } from "@/core/response/response-agent-enhancer";
-import type { ResponseAgentEnhancementTrace } from "@/core/response/response-agent-enhancer";
-import type { ResponsePlannerResult } from "@/core/response/response-planner";
+import { maybeEnhanceResponseWithAgent } from "@/adapters/whatsapp/response-enhancer";
+import type { ResponseAgentEnhancementTrace } from "@/adapters/whatsapp/response-enhancer";
+import type { WhatsAppShapedResponse } from "@/adapters/whatsapp/response-shaper";
 
 const shouldRunSmoke = process.env.RUN_OPENAI_AGENT_SMOKE === "true";
 const describeIf = shouldRunSmoke ? describe : describe.skip;
@@ -48,17 +48,15 @@ describeIf("ResponseAgent OpenAI API smoke", () => {
     "preserva hechos y montos de un registro confirmado",
     async () => {
       const result = await enhanceWithRealApi(
-        whatsappFreeformPlan({
-          reason: "movement_created",
-          text: "Listo. Desayuno por S/10.00 registrado.",
-        }),
+        whatsappFreeformShape("Listo. Desayuno por S/10.00 registrado."),
+        "movement_created",
         "gasté 10 en desayuno",
         "trace-response-agent-api-movement"
       );
 
       expectCompletedApiTrace(result.trace);
-      const text = expectSendableResponseText(result.responsePlan);
-      expect(result.responsePlan).toMatchObject({ kind: "whatsapp_freeform" });
+      const text = expectSendableResponseText(result.shaped);
+      expect(result.shaped).toMatchObject({ kind: "freeform" });
       expect(text).toContain("S/10.00");
       expect(text.toLowerCase()).toContain("registr");
     },
@@ -72,18 +70,16 @@ describeIf("ResponseAgent OpenAI API smoke", () => {
         "Lo separé para revisar. No toca tu saldo hasta que confirmes.\n" +
         "También puedes abrir Pendientes: https://manzana.website/?view=pending";
       const result = await enhanceWithRealApi(
-        whatsappInteractivePlan({
-          reason: "pending_created",
-          text: baseText,
-        }),
+        whatsappInteractiveShape(baseText),
+        "pending_created",
         "gasté 10 en desayuno",
         "trace-response-agent-api-pending"
       );
 
       expectCompletedApiTrace(result.trace);
-      const text = expectSendableResponseText(result.responsePlan);
-      expect(result.responsePlan).toMatchObject({
-        kind: "whatsapp_interactive",
+      const text = expectSendableResponseText(result.shaped);
+      expect(result.shaped).toMatchObject({
+        kind: "interactive",
       });
       expect(text).toContain(
         "https://manzana.website/?view=pending"
@@ -100,10 +96,8 @@ describeIf("ResponseAgent OpenAI API smoke", () => {
     "aplica una instruccion libre de sesion sin alterar los hechos financieros",
     async () => {
       const result = await enhanceWithRealApi(
-        whatsappFreeformPlan({
-          reason: "movement_created",
-          text: "Listo. Desayuno por S/10.00 registrado.",
-        }),
+        whatsappFreeformShape("Listo. Desayuno por S/10.00 registrado."),
+        "movement_created",
         "gaste 10 en desayuno",
         "trace-response-agent-api-style-session",
         {
@@ -127,7 +121,7 @@ describeIf("ResponseAgent OpenAI API smoke", () => {
         style_scope: "session",
         style_adherence: "applied",
       });
-      const text = expectSendableResponseText(result.responsePlan);
+      const text = expectSendableResponseText(result.shaped);
       expect(text).toContain("S/10.00");
       expect(text.toLowerCase()).toContain("registr");
       expect(countEmoji(text)).toBe(1);
@@ -137,17 +131,16 @@ describeIf("ResponseAgent OpenAI API smoke", () => {
 });
 
 async function enhanceWithRealApi(
-  responsePlan: Extract<
-    ResponsePlannerResult,
-    { kind: "whatsapp_freeform" | "whatsapp_interactive" }
-  >,
+  shaped: WhatsAppShapedResponse,
+  reason: string,
   text: string,
   traceId: string,
   conversationStyle: ConversationStyleProfile | null = null,
 ) {
-  const result = await maybeEnhanceWhatsAppResponseWithAgent({
+  const result = await maybeEnhanceResponseWithAgent({
     externalEvent: externalEvent(text),
-    responsePlan,
+    shaped,
+    reason,
     responseAgent: new ResponseAgent(),
     traceId,
     conversationStyle,
@@ -167,9 +160,7 @@ async function enhanceWithRealApi(
 
   console.info("ResponseAgent API smoke", {
     trace: result.trace,
-    text: result.responsePlan.kind === "no_response"
-      ? null
-      : result.responsePlan.text,
+    text: result.shaped.kind === "not_sendable" ? null : result.shaped.text,
   });
 
   return result;
@@ -182,29 +173,23 @@ function expectCompletedApiTrace(trace: ResponseAgentEnhancementTrace) {
   }
 
   expect(trace.provider).toBe("api");
-  expect(trace.safety_flags.some((flag) => flag.startsWith("runtime_fallback_from")))
-    .toBe(false);
+  expect(
+    trace.safety_flags.some((flag: string) => flag.startsWith("runtime_fallback_from"))
+  ).toBe(false);
 }
 
-function expectSendableResponseText(responsePlan: ResponsePlannerResult) {
-  if (
-    responsePlan.kind !== "whatsapp_freeform" &&
-    responsePlan.kind !== "whatsapp_interactive"
-  ) {
-    throw new Error(`ResponsePlan no enviable: ${JSON.stringify(responsePlan)}`);
+function expectSendableResponseText(shaped: WhatsAppShapedResponse) {
+  if (shaped.kind === "not_sendable") {
+    throw new Error(`Respuesta no enviable: ${JSON.stringify(shaped)}`);
   }
 
-  return responsePlan.text;
+  return shaped.text;
 }
 
-function whatsappFreeformPlan(params: {
-  reason: Extract<ResponsePlannerResult, { kind: "whatsapp_freeform" }>["reason"];
-  text: string;
-}): Extract<ResponsePlannerResult, { kind: "whatsapp_freeform" }> {
+function whatsappFreeformShape(text: string): WhatsAppShapedResponse {
   return {
-    kind: "whatsapp_freeform",
-    reason: params.reason,
-    text: params.text,
+    kind: "freeform",
+    text,
     deliveryPlan: {
       mode: "freeform",
       windowStatus: "open",
@@ -215,17 +200,13 @@ function whatsappFreeformPlan(params: {
   };
 }
 
-function whatsappInteractivePlan(params: {
-  reason: Extract<ResponsePlannerResult, { kind: "whatsapp_interactive" }>["reason"];
-  text: string;
-}): Extract<ResponsePlannerResult, { kind: "whatsapp_interactive" }> {
+function whatsappInteractiveShape(text: string): WhatsAppShapedResponse {
   return {
-    kind: "whatsapp_interactive",
-    reason: params.reason,
-    text: params.text,
+    kind: "interactive",
+    text,
     interactive: {
       type: "button",
-      bodyText: params.text,
+      bodyText: text,
       buttons: [
         { id: "confirmar", title: "Confirmar" },
         { id: "descartar", title: "Descartar" },

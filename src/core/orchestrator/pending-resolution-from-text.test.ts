@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildPendingWhatsAppCode,
-  extractPendingWhatsAppCode,
-} from "@/core/pending/whatsapp-pending-code";
+  buildPendingReferenceCode,
+  extractPendingReferenceCode,
+} from "@/core/pending/reference-code";
 import {
   getPendingResolutionAction,
   isConfirmationText,
@@ -10,9 +10,9 @@ import {
   isPendingListText,
   isPendingReviewText,
   isStructuredPendingResolutionText,
-} from "./whatsapp-pending-confirmation";
+} from "./pending-resolution-from-text";
 
-describe("WhatsApp pending resolution intent", () => {
+describe("pending resolution intent from text", () => {
   it("detecta confirmaciones claras", () => {
     expect(isConfirmationText("confirmo")).toBe(true);
     expect(isConfirmationText("Confirmar")).toBe(true);
@@ -48,22 +48,22 @@ describe("WhatsApp pending resolution intent", () => {
   });
 
   it("crea y extrae codigos estables de pendientes", () => {
-    const code = buildPendingWhatsAppCode({
+    const code = buildPendingReferenceCode({
       userId: "00000000-0000-4000-8000-000000000002",
       pendingItemId: "00000000-0000-4000-8000-000000000020",
     });
 
     expect(code).toMatch(/^P-[A-F0-9]{8}$/);
     expect(
-      buildPendingWhatsAppCode({
+      buildPendingReferenceCode({
         userId: "00000000-0000-4000-8000-000000000002",
         pendingItemId: "00000000-0000-4000-8000-000000000020",
       })
     ).toBe(code);
-    expect(extractPendingWhatsAppCode(`confirmar ${code.toLowerCase()}`)).toBe(
+    expect(extractPendingReferenceCode(`confirmar ${code.toLowerCase()}`)).toBe(
       code
     );
-    expect(extractPendingWhatsAppCode(code.replace("-", " "))).toBe(code);
+    expect(extractPendingReferenceCode(code.replace("-", " "))).toBe(code);
     expect(isConfirmationText(`confirmar ${code}`)).toBe(true);
     expect(isDiscardText(`cancelar ${code}`)).toBe(true);
   });

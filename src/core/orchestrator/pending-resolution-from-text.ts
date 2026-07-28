@@ -1,13 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Channel } from "@/core/channel/types";
 import {
   confirmPendingItemWithCore,
   PendingConfirmationValidationError,
   PendingDuplicateConfirmationRequiredError,
 } from "@/core/pending/confirm-pending";
 import {
-  buildPendingItemWhatsAppCode,
-  extractPendingWhatsAppCode,
-} from "@/core/pending/whatsapp-pending-code";
+  buildPendingItemReferenceCode,
+  extractPendingReferenceCode,
+} from "@/core/pending/reference-code";
 import {
   listPendingItems,
   hasPendingDuplicateConfirmation,
@@ -28,13 +29,13 @@ import type {
 
 type Client = SupabaseClient<Database>;
 
-export type WhatsAppPendingResolutionAction =
+export type PendingResolutionAction =
   | "confirm"
   | "discard"
   | "list"
   | PendingAccountReviewAction;
 
-export type WhatsAppPendingResolutionResult =
+export type PendingResolutionResult =
   | {
       kind: "not_resolution";
       reason: "no_pending_resolution_intent";
@@ -58,7 +59,7 @@ export type WhatsAppPendingResolutionResult =
         | "account_currency_mismatch"
         | "transfer_accounts_must_differ"
         | "pending_account_action_not_supported";
-      action: WhatsAppPendingResolutionAction;
+      action: PendingResolutionAction;
       pending_code: string | null;
       pending_count: number;
       pending_item: PendingItem | null;
@@ -127,33 +128,35 @@ export type WhatsAppPendingResolutionResult =
       idempotent: false;
     };
 
-export async function maybeResolvePendingFromWhatsApp(params: {
+export async function maybeResolvePendingFromText(params: {
   client: Client;
   userId: string;
   text: string;
   traceId: string;
-}): Promise<WhatsAppPendingResolutionResult> {
+  channel: Channel;
+}): Promise<PendingResolutionResult> {
   const action = getPendingResolutionAction(params.text);
-  const pendingCode = extractPendingWhatsAppCode(params.text);
+  const pendingCode = extractPendingReferenceCode(params.text);
 
   if (!action) {
     return notPendingResolution();
   }
 
-  return resolvePendingFromWhatsAppAction({
+  return resolvePendingFromAction({
     client: params.client,
     userId: params.userId,
     action,
     pendingCode,
     traceId: params.traceId,
     userText: params.text,
+    channel: params.channel,
   });
 }
 
-export async function resolvePendingFromWhatsAppAction(params: {
+export async function resolvePendingFromAction(params: {
   client: Client;
   userId: string;
-  action: WhatsAppPendingResolutionAction;
+  action: PendingResolutionAction;
   pendingCode: string | null;
   accountOriginId?: string | null;
   accountDestinationId?: string | null;
@@ -161,7 +164,8 @@ export async function resolvePendingFromWhatsAppAction(params: {
   learnAccountAliases?: boolean;
   userText?: string;
   traceId: string;
-}): Promise<WhatsAppPendingResolutionResult> {
+  channel: Channel;
+}): Promise<PendingResolutionResult> {
   const { action, pendingCode } = params;
 
   if (action === "list") {
@@ -204,7 +208,7 @@ export async function resolvePendingFromWhatsAppAction(params: {
 
   if (pendingCode) {
     const matchingPending = activePending.filter(
-      (item) => buildPendingItemWhatsAppCode(item) === pendingCode
+      (item) => buildPendingItemReferenceCode(item) === pendingCode
     );
 
     if (matchingPending.length === 0) {
@@ -245,6 +249,7 @@ export async function resolvePendingFromWhatsAppAction(params: {
       categoryId: params.categoryId,
       learnAccountAliases: params.learnAccountAliases,
       userText: params.userText,
+      channel: params.channel,
     });
   }
 
@@ -273,10 +278,11 @@ export async function resolvePendingFromWhatsAppAction(params: {
     categoryId: params.categoryId,
     learnAccountAliases: params.learnAccountAliases,
     userText: params.userText,
+    channel: params.channel,
   });
 }
 
-export function notPendingResolution(): WhatsAppPendingResolutionResult {
+export function notPendingResolution(): PendingResolutionResult {
   return {
     kind: "not_resolution",
     reason: "no_pending_resolution_intent",
@@ -291,14 +297,14 @@ export function notPendingResolution(): WhatsAppPendingResolutionResult {
 
 export function isStructuredPendingResolutionText(value: string): boolean {
   return Boolean(
-    extractPendingWhatsAppCode(value) && getPendingResolutionAction(value),
+    extractPendingReferenceCode(value) && getPendingResolutionAction(value),
   );
 }
 
 async function resolveSinglePending(params: {
   client: Client;
   userId: string;
-  action: Exclude<WhatsAppPendingResolutionAction, "list">;
+  action: Exclude<PendingResolutionAction, "list">;
   pendingCode: string | null;
   pendingItem: PendingItem;
   accountOriginId?: string | null;
@@ -307,8 +313,9 @@ async function resolveSinglePending(params: {
   learnAccountAliases?: boolean;
   userText?: string;
   traceId: string;
+  channel: Channel;
 }): Promise<Extract<
-  WhatsAppPendingResolutionResult,
+  PendingResolutionResult,
   {
     kind:
       | "confirmed"
@@ -394,7 +401,7 @@ async function resolveSinglePending(params: {
       params.client,
       params.userId,
       params.pendingItem.id,
-      "whatsapp_user_discarded_single_pending",
+      "user_discarded_single_pending",
       params.userId,
       params.traceId
     );
@@ -418,9 +425,10 @@ async function resolveSinglePending(params: {
       userId: params.userId,
       pendingItemId: params.pendingItem.id,
       actor: { type: "user", id: params.userId },
-      source: "orchestrator.whatsapp.pending_confirm",
+      source: "orchestrator.pending_confirm",
       traceId: params.traceId,
       confirmDuplicate: hasPendingDuplicateConfirmation(params.pendingItem),
+      channel: params.channel,
     });
   } catch (error) {
     if (error instanceof PendingDuplicateConfirmationRequiredError) {
@@ -466,12 +474,12 @@ async function resolveSinglePending(params: {
 
 export function getPendingResolutionAction(
   value: string
-): WhatsAppPendingResolutionAction | null {
+): PendingResolutionAction | null {
   if (isPendingListText(value)) return "list";
   if (isDiscardText(value)) return "discard";
   if (isConfirmationText(value)) return "confirm";
   if (isPendingReviewText(value)) return "review";
-  if (extractPendingWhatsAppCode(value)) {
+  if (extractPendingReferenceCode(value)) {
     const text = normalize(value);
     if (/\b(gasto|compra|pago a un tercero|pago externo)\b/.test(text)) {
       return "classify_expense";
@@ -493,7 +501,7 @@ export function isPendingReviewText(value: string): boolean {
   const text = normalize(value);
   if (!text) return false;
   return Boolean(
-    extractPendingWhatsAppCode(value) &&
+    extractPendingReferenceCode(value) &&
       /\b(revisar|revisa|ver opciones|completar|corregir)\b/.test(text),
   );
 }
@@ -530,7 +538,7 @@ export function isConfirmationText(value: string): boolean {
   }
 
   if (
-    extractPendingWhatsAppCode(value) &&
+    extractPendingReferenceCode(value) &&
     /\b(confirmo|confirma|confirmar|registralo|guardalo)\b/.test(text)
   ) {
     return true;
@@ -562,7 +570,7 @@ export function isDiscardText(value: string): boolean {
   }
 
   if (
-    extractPendingWhatsAppCode(value) &&
+    extractPendingReferenceCode(value) &&
     /\b(cancelar|cancela|descartar|descarta|descartalo|borra|elimina)\b/.test(
       text
     )
@@ -594,7 +602,7 @@ function normalize(value: string): string {
 }
 
 function isPendingAccountReviewAction(
-  action: WhatsAppPendingResolutionAction,
+  action: PendingResolutionAction,
 ): action is PendingAccountReviewAction {
   return [
     "review",

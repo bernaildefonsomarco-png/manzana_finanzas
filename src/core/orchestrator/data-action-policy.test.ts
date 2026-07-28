@@ -61,6 +61,7 @@ function plan(
     categories,
     sourceRef: "whatsapp:external-event-1",
     receivedAt: "2026-06-08T10:00:00.000-05:00",
+    channel: "whatsapp",
     ...params,
   });
 }

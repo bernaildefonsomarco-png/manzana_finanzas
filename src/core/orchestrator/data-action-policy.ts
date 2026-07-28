@@ -4,6 +4,7 @@ import type {
   ProposedAction,
 } from "@/agents/data-agent";
 import type { RiskSignalAssessment } from "@/agents/risk-signal-agent";
+import type { Channel } from "@/core/channel/types";
 import { evaluateMovementRisk } from "@/core/risk";
 import type { MovementInput } from "@/shared/schemas/money";
 import type { CategoryId, MovementType, RiskLevel } from "@/shared/types/domain";
@@ -130,6 +131,7 @@ export function planDataAgentFinancialActions(params: {
   riskAssessments?: RiskSignalAssessment[];
   recentMedianAmount?: number | null;
   confirmedByUser?: boolean;
+  channel: Channel;
 }): DataActionPlan {
   const actions = params.dataAgentOutput.result.map((action) =>
     planSingleAction(action, params),
@@ -275,6 +277,7 @@ function planSingleAction(
     riskAssessments?: RiskSignalAssessment[];
     recentMedianAmount?: number | null;
     confirmedByUser?: boolean;
+    channel: Channel;
   },
 ): PlannedDataAction {
   if (
@@ -358,6 +361,7 @@ function planSingleAction(
           sourceRef: `${params.sourceRef}:${action.action_id}`,
           requiresReview: confirmationReasons.length > 0,
           policyReasons: reasons,
+          channel: params.channel,
         })
       : null;
 
@@ -883,6 +887,12 @@ function resolveAccounts(
   };
 }
 
+// domain.ts nombra esta variante "dashboard_manual", no "dashboard": el
+// unico punto donde los dos vocabularios se traducen.
+function toMovementSource(channel: Channel): "whatsapp" | "dashboard_manual" {
+  return channel === "whatsapp" ? "whatsapp" : "dashboard_manual";
+}
+
 function buildMovementInput(
   action: ProposedAction,
   params: {
@@ -892,6 +902,7 @@ function buildMovementInput(
     sourceRef: string;
     requiresReview: boolean;
     policyReasons: string[];
+    channel: Channel;
   },
 ): MovementInput {
   return {
@@ -911,7 +922,7 @@ function buildMovementInput(
     debt_id: null,
     recurring_rule_id: null,
     recurring_occurrence_id: null,
-    source: "whatsapp",
+    source: toMovementSource(params.channel),
     source_ref: params.sourceRef,
     confidence: action.confidence,
     requires_review: params.requiresReview,

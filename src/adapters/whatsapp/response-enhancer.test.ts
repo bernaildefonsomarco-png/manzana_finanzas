@@ -1,4 +1,4 @@
-﻿import { describe, expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import type {
   AgentRuntime,
   AgentRuntimeRequest,
@@ -11,8 +11,8 @@ import type {
   ConversationTurnState,
 } from "@/agents/conversation-agent";
 import type { ExternalEventLog } from "@/core/events/domain-events";
-import { maybeEnhanceWhatsAppResponseWithAgent } from "./response-agent-enhancer";
-import type { ResponsePlannerResult } from "./response-planner";
+import { maybeEnhanceResponseWithAgent } from "./response-enhancer";
+import type { WhatsAppShapedResponse } from "./response-shaper";
 
 function externalEvent(): ExternalEventLog {
   return {
@@ -35,12 +35,11 @@ function externalEvent(): ExternalEventLog {
   };
 }
 
-function freeformPlan(
+function freeformShape(
   text = "Listo. Cafe por S/8.00 registrado."
-): ResponsePlannerResult {
+): WhatsAppShapedResponse {
   return {
-    kind: "whatsapp_freeform",
-    reason: "movement_created",
+    kind: "freeform",
     text,
     deliveryPlan: {
       mode: "freeform",
@@ -70,27 +69,29 @@ function turnState(
   };
 }
 
-describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
+describe("maybeEnhanceResponseWithAgent", () => {
   it("acepta una mejora que preserva los hechos", async () => {
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan: freeformPlan(),
+      shaped: freeformShape(),
+      reason: "movement_created",
       responseAgent: new ResponseAgent(),
       traceId: "trace-1",
       conversationTurnState: turnState(),
     });
 
     expect(result.trace.status).toBe("completed");
-    expect(result.responsePlan).toMatchObject({
-      kind: "whatsapp_freeform",
+    expect(result.shaped).toMatchObject({
+      kind: "freeform",
       text: "Listo. Cafe por S/8.00 registrado. Ya quedó en tus movimientos.",
     });
   });
 
   it("rechaza una respuesta que pierde el monto", async () => {
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan: freeformPlan(),
+      shaped: freeformShape(),
+      reason: "movement_created",
       responseAgent: new ResponseAgent(new FixedResponseRuntime("Listo.")),
       traceId: "trace-2",
       conversationTurnState: turnState(),
@@ -100,16 +101,15 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       status: "rejected",
       reason: "missing_amount",
     });
-    expect(result.responsePlan).toEqual(freeformPlan());
+    expect(result.shaped).toEqual(freeformShape());
   });
 
   it("rechaza una respuesta que pierde la promesa de saldo protegido", async () => {
     const baseText =
       "Lo separé para revisar. Falta confirmar un dato y no toca tu saldo.\n" +
       "También puedes abrir Pendientes: http://127.0.0.1:3100/?view=pending";
-    const responsePlan: ResponsePlannerResult = {
-      kind: "whatsapp_freeform",
-      reason: "pending_created",
+    const shaped: WhatsAppShapedResponse = {
+      kind: "freeform",
       text: baseText,
       deliveryPlan: {
         mode: "freeform",
@@ -120,9 +120,10 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       },
     };
 
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan,
+      shaped,
+      reason: "pending_created",
       responseAgent: new ResponseAgent(
         new FixedResponseRuntime(
           "Lo puse para revisar.\n" +
@@ -137,16 +138,15 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       status: "rejected",
       reason: "missing_safety_phrase",
     });
-    expect(result.responsePlan).toEqual(responsePlan);
+    expect(result.shaped).toEqual(shaped);
   });
 
   it("actualiza el body interactivo cuando acepta la mejora", async () => {
     const baseText =
       "Lo separé para revisar. Falta confirmar un dato y no toca tu saldo.\n" +
       "También puedes abrir Pendientes: http://127.0.0.1:3100/?view=pending";
-    const responsePlan: ResponsePlannerResult = {
-      kind: "whatsapp_interactive",
-      reason: "pending_created",
+    const shaped: WhatsAppShapedResponse = {
+      kind: "interactive",
       text: baseText,
       interactive: {
         type: "button",
@@ -165,17 +165,18 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       },
     };
 
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan,
+      shaped,
+      reason: "pending_created",
       responseAgent: new ResponseAgent(),
       traceId: "trace-4",
       conversationTurnState: turnState(),
     });
 
     expect(result.trace.status).toBe("completed");
-    expect(result.responsePlan).toMatchObject({
-      kind: "whatsapp_interactive",
+    expect(result.shaped).toMatchObject({
+      kind: "interactive",
       text:
         "Lo separé para revisar. No toca tu saldo hasta que confirmes.\n" +
         "También puedes abrir Pendientes: http://127.0.0.1:3100/?view=pending",
@@ -188,9 +189,10 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
   });
 
   it("rechaza una respuesta que inventa otro monto", async () => {
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan: freeformPlan(),
+      shaped: freeformShape(),
+      reason: "movement_created",
       responseAgent: new ResponseAgent(
         new FixedResponseRuntime(
           "Listo. Cafe por S/8.00 registrado. Te quedan S/120.00."
@@ -204,16 +206,17 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       status: "rejected",
       reason: "invented_amount",
     });
-    expect(result.responsePlan).toEqual(freeformPlan());
+    expect(result.shaped).toEqual(freeformShape());
   });
 
   it("rechaza pedir confirmacion despues de una operacion ejecutada", async () => {
-    const responsePlan = freeformPlan(
+    const shaped = freeformShape(
       "Listo. Registre el pago de deuda por S/30.00. Saldo pendiente S/70.00.",
     );
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan,
+      shaped,
+      reason: "movement_created",
       responseAgent: new ResponseAgent(
         new FixedResponseRuntime(
           "Para registrar el pago de deuda por S/30.00, ¿me confirmas? El saldo pendiente quedaria en S/70.00.",
@@ -227,20 +230,17 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       status: "rejected",
       reason: "operation_state_changed",
     });
-    expect(result.responsePlan).toEqual(responsePlan);
+    expect(result.shaped).toEqual(shaped);
   });
 
   it("rechaza inventar una cuenta como requisito de una deuda ambigua", async () => {
-    const responsePlan = freeformPlan(
+    const shaped = freeformShape(
       "Entendi el pago, pero hay mas de una deuda compatible. Dime el nombre de la deuda o la persona para elegirla sin asumir.",
     );
-    if (responsePlan.kind !== "whatsapp_freeform") {
-      throw new Error("plan invalido");
-    }
-    responsePlan.reason = "blocked_financial_action";
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan,
+      shaped,
+      reason: "blocked_financial_action",
       responseAgent: new ResponseAgent(
         new FixedResponseRuntime(
           "Entendi el pago, pero hay mas de una deuda compatible. Dime el nombre de la deuda, la persona y la cuenta de origen para elegirla sin asumir.",
@@ -254,15 +254,16 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       status: "rejected",
       reason: "invented_account_context",
     });
-    expect(result.responsePlan).toEqual(responsePlan);
+    expect(result.shaped).toEqual(shaped);
   });
 
   it("entrega continuidad y estado emocional al agente de experiencia", async () => {
     const runtime = new CapturingResponseRuntime();
 
-    await maybeEnhanceWhatsAppResponseWithAgent({
+    await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan: freeformPlan(),
+      shaped: freeformShape(),
+      reason: "movement_created",
       responseAgent: new ResponseAgent(runtime),
       traceId: "trace-6",
       preferredTone: "breve e informal",
@@ -287,9 +288,10 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       "Listo. Cafe por S/8.00 registrado, como una nota breve en tu bitacora.",
     );
 
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan: freeformPlan(),
+      shaped: freeformShape(),
+      reason: "movement_created",
       responseAgent: new ResponseAgent(runtime),
       traceId: "trace-style-session",
       conversationStyle: style({
@@ -323,9 +325,10 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       "Listo. Cafe por S/8.00 registrado. ☕",
     ]);
 
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan: freeformPlan(),
+      shaped: freeformShape(),
+      reason: "movement_created",
       responseAgent: new ResponseAgent(runtime),
       traceId: "trace-style-retry",
       conversationStyle: style({
@@ -346,7 +349,7 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
       attempt: 2,
       retry_feedback: "emoji_required",
     });
-    expect(result.responsePlan).toMatchObject({
+    expect(result.shaped).toMatchObject({
       text: "Listo. Cafe por S/8.00 registrado. ☕",
     });
   });
@@ -355,15 +358,14 @@ describe("maybeEnhanceWhatsAppResponseWithAgent", () => {
     const runtime = new CapturingResponseRuntime(
       "Lo separé para revisar. No toca tu saldo hasta que confirmes.",
     );
-    const responsePlan = freeformPlan(
+    const shaped = freeformShape(
       "Lo separé para revisar. No toca tu saldo hasta que confirmes.",
     );
-    if (responsePlan.kind !== "whatsapp_freeform") throw new Error("plan invalido");
-    responsePlan.reason = "blocked_financial_action";
 
-    const result = await maybeEnhanceWhatsAppResponseWithAgent({
+    const result = await maybeEnhanceResponseWithAgent({
       externalEvent: externalEvent(),
-      responsePlan,
+      shaped,
+      reason: "blocked_financial_action",
       responseAgent: new ResponseAgent(runtime),
       traceId: "trace-style-sensitive",
       conversationStyle: style({

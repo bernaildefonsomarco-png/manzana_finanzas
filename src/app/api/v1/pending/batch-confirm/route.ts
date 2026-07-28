@@ -61,6 +61,7 @@ export async function POST(request: Request) {
           actor: { type: "user", id: auth.userId },
           source: "api.v1.pending.batch-confirm",
           traceId: trace_id,
+          channel: "dashboard",
         });
         results.push({
           pending_item_id: pendingItemId,
