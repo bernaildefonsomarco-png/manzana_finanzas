@@ -43,19 +43,21 @@ describe("generador de la matriz de trazabilidad", () => {
     expect(matriz.censo.criterios.porPorton).toEqual({ G1: 558, G2: 11, G3: 139 });
   });
 
-  it("50 §3.1: 87 criterios tienen clase asignada, con el reparto declarado", () => {
+  it("50 §3.1: 90 criterios tienen clase asignada, con el reparto declarado", () => {
+    // W-02 añadió tres: AC-SEG-02 y AC-SEG-03 (integracion, 51 §8) y
+    // AC-SEG-04 (lint, agregado sobre las 58 rutas de /api/v1).
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 15,
-      lint: 14,
+      lint: 15,
       e2e: 8,
       presupuesto: 2,
       contenido: 1,
-      integracion: 1,
+      integracion: 3,
       unidad: 1,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(87);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(544);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(90);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(541);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {
@@ -74,11 +76,12 @@ describe("generador de la matriz de trazabilidad", () => {
     expect(matriz.superficies.conRuta + matriz.superficies.sinRuta.length).toBe(119);
   });
 
-  it("RUL-PLAN-04: los tres criterios con excepcion de cierre apuntan al corte correcto", () => {
+  it("RUL-PLAN-04: los cuatro criterios con excepcion de cierre apuntan al corte correcto", () => {
     const porId = new Map(matriz.filas.map((f) => [f.id, f]));
     expect(porId.get("AC-RT-01")?.corte).toBe("W-02");
     expect(porId.get("AC-REU-06")?.corte).toBe("W-02");
     expect(porId.get("AC-INV-03")?.corte).toBe("W-04");
     expect(porId.get("AC-INV-04")?.corte).toBe("W-04");
+    expect(porId.get("AC-PRUEBA-05")?.corte).toBe("W-02"); // documento 51, dueño W-03
   });
 });

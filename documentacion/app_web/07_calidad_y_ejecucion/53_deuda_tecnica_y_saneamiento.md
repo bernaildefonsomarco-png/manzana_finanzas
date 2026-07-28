@@ -119,13 +119,19 @@ que hoy es imposible de escribir.
 |---|---|
 | **Qué** | 48 de las 58 rutas de `/api/v1` importan `createServiceClient`. No hay lista blanca ni prueba que lo impida |
 | **Por qué bloquea** | RLS está activa en las 43 tablas y hay 65 políticas, y 48 rutas pasan por encima. La protección que el `15` describe no está en efecto |
-| **Evidencia de resolución** | `AC-SEG-01` implementado como test de clase `build`, con la lista blanca justificada línea a línea. La lista de excepciones temporales vacía (`AC-SEG-07`) |
-| **Criterios** | `AC-SEG-01`, `AC-SEG-07`, `AC-TRAZ-11` |
-| **Corte** | Temprano. El `54` lo coloca antes que cualquier módulo |
+| **Evidencia de resolución (parcial, en `W-02`)** | `AC-SEG-01` implementado como test de clase `build`: toda importación de `createServiceClient` fuera de `/api/v1` está en la lista blanca permanente, y las 48 rutas de dentro están declaradas como excepciones temporales justificadas |
+| **Evidencia de resolución (completa)** | Además de lo anterior, la lista de excepciones temporales vacía (`AC-SEG-07`) — no ocurre en `W-02`, es agregada y cierra en el corte que migre la última ruta (`WEB-D168`) |
+| **Criterios** | `AC-SEG-01` (cierra en `W-02`), `AC-SEG-07` (agregado, sin corte propio), `AC-TRAZ-11` |
+| **Corte** | `W-02` para `AC-SEG-01`. `AC-SEG-07` no tiene corte propio |
 
 Las 14 rutas de fuera de `/api/v1` —salud, trabajos internos, webhooks— entran
 en la lista blanca por categoría: no tienen sesión de usuario que usar. Esa
 distinción es lo que hace el gate cumplible en vez de decorativo.
+
+`D-02` no se cierra por completo en `W-02` (`WEB-D168`): el gate que impide
+que una ruta esquive RLS **sin justificación** sí existe desde `W-02`, pero
+las 48 rutas siguen ahí, justificadas como pendientes de migración. `R-01`
+sigue abierto hasta que la última salga de la lista.
 
 ### 2.3 `D-03` — Ninguna prueba verifica el aislamiento entre usuarios
 
@@ -205,12 +211,14 @@ reutilizar en la fase 2 concluiría lo contrario de la verdad.
 
 | ID | Riesgo | Hasta cuándo | Quién decidió |
 |---|---|---|---|
-| `R-01` | RLS esquivada en 48 rutas durante el periodo de documentación | Hasta el corte de `D-02`. El producto no tiene usuarios reales todavía | `WEB-D006` y la Ola 0, registrado |
+| `R-01` | RLS esquivada en 48 rutas, ahora con justificación y gate registrados desde `W-02` | Hasta que `AC-SEG-07` cierre — la última ruta sale de la lista de excepciones (`WEB-D168`). El producto no tiene usuarios reales todavía | `WEB-D006` y la Ola 0, registrado |
 | `R-02` | Los ocho ficheros de `42` §8 sin veredicto | Hasta el corte que los toque (`AC-REU-10`) | `42` §8 |
 
 `R-01` es un riesgo aceptado **con condición**: es aceptable porque no hay
 usuarios reales. Deja de serlo el día que los haya, y esa es la razón por la
-que `D-02` va antes que cualquier módulo en el `54`.
+que `W-02` va antes que cualquier módulo en el `54` — no porque migre las 48
+rutas, sino porque desde ahí ninguna ruta nueva puede esquivar RLS sin que el
+build lo note.
 
 `R-02` es honestidad, no pereza: emitir el veredicto sobre lectura de
 superficie sería peor que no emitirlo.

@@ -101,17 +101,22 @@ cosas distintas.** El documento tiene un solo corte dueño, que es quien
 responde de que quede implementado entero. Pero un corte anterior puede cerrar
 criterios sueltos de ese documento, y la matriz registra cuál lo hizo.
 
-Tres casos reales, y los tres son deliberados:
+Cuatro casos reales, y los cuatro son deliberados:
 
 | Criterio | Lo cierra | El documento es de |
 |---|---|---|
 | `AC-RT-01` — el proceso no arranca con motor de prueba en producción | `W-02` | `W-16` |
 | `AC-REU-06` — el arranque falla si `production_safe` es falso | `W-02` | `W-16` |
 | `AC-INV-03`, `AC-INV-04` — el canal fuera del núcleo | `W-04` | `W-01` |
+| `AC-PRUEBA-05` — la prueba de aislamiento por tabla existe y pasa | `W-02` | `W-03` |
 
 Los dos primeros son gates de seguridad que no pueden esperar al corte del
 motor. El tercero es la auditoría de canal, que tiene corte propio aunque su
-documento sea el inventario.
+documento sea el inventario. El cuarto es la misma prueba de aislamiento que
+`AC-SEG-02`: vive conceptualmente en `51` (estrategia de pruebas, `W-03`),
+pero es exactamente lo que `D-03` exige pagar junto con `D-02`, así que
+cierra en `W-02` y no espera a que `W-03` construya el resto de la
+infraestructura de pruebas.
 
 ---
 
@@ -166,13 +171,35 @@ lo que el repositorio dice** — y ahora también en poder comprobarlo.
 | **Entrega** | El build falla si una ruta esquiva RLS sin justificación, y si el motor de prueba puede servir en producción |
 | **Implementa** | `13`, `15`. Cierra además `AC-RT-01` y `AC-REU-06`, cuyos documentos son de `W-16` (`RUL-PLAN-04`) |
 | **Precondición** | `W-01` |
-| **Paga** | `D-02`, `D-03`, `D-04` |
-| **Cierra** | `AC-SEG-01` a `AC-SEG-08`, `AC-RT-01`, `AC-REU-06`, `AC-PRUEBA-05` |
+| **Paga** | `D-03`, `D-04`. De `D-02` paga la parte verificable ahora — ver abajo |
+| **Cierra** | `AC-SEG-01` a `AC-SEG-04`, `AC-RT-01`, `AC-REU-06`, `AC-PRUEBA-05` |
 
-Las 48 rutas pasan a cliente autenticado, con lista blanca justificada línea a
-línea para las que de verdad necesitan service-role. Una prueba de aislamiento
-por tabla, con los cuatro asertos de `51` §8. Gates de arranque para
-`local_fixture` y `production_safe`.
+**Este corte NO migra las 48 rutas a cliente autenticado (`WEB-D168`).** `15`
+§9 es explícito: esa migración va acoplada al rediseño de paginación y
+filtros de `14`, en `W-05` y en cada corte de módulo — "tocarlas dos veces
+sería peor". Lo que `W-02` entrega es la lista blanca permanente (para las 14
+rutas fuera de `/api/v1` que de verdad no tienen sesión de usuario) más las
+48 rutas declaradas como **excepciones temporales justificadas**, y el test
+que falla el build si aparece una importación sin ninguna de las dos
+justificaciones. Con eso, `AC-SEG-01` ya es verificable hoy: no exige que la
+lista esté vacía, exige que **todo lo que esquiva RLS lo haga con
+justificación registrada**.
+
+Una prueba de aislamiento por tabla, con los cuatro asertos de `51` §8,
+contra una base de datos de prueba real — no depende de qué cliente use la
+ruta, así que cierra completa en este corte (`AC-SEG-02`, `AC-SEG-03`).
+`AC-SEG-04` (404 nunca 403) cierra como criterio agregado sobre el conjunto
+de rutas que ya devuelven ese contrato hoy; las que se rediseñen después lo
+heredan al migrar. Gates de arranque para `local_fixture` y
+`production_safe`.
+
+**Lo que este corte NO cierra, y por qué:** `AC-SEG-05` (mensajes de
+autenticación) es de `W-18`, doc `43`. `AC-SEG-06` (sin datos sensibles en
+registros) es de `W-19`, doc `19`. `AC-SEG-08` (CSRF) ya estaba asignado por
+`53` §3 a `D-09` → `W-05`; `54` lo repetía aquí por error. `AC-SEG-07` (la
+lista de excepciones temporales vacía) es agregado: no tiene corte propio,
+cierra cuando la última ruta sale de la lista, en el corte que la migre —
+mismo patrón que `AC-TRAZ-04` (`WEB-D167`).
 
 **Va antes que cualquier módulo, y esa es la única decisión de orden de este
 plan que no admite discusión.** `R-01` declara el riesgo aceptable solo

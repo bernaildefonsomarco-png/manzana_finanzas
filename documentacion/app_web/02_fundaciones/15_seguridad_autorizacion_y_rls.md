@@ -153,9 +153,13 @@ filtros y límite de peticiones. Tocarlas dos veces sería peor.
 
 Orden de ejecución, en `54_plan_de_implementacion_web.md`:
 
-1. Escribir la prueba de importación y la lista blanca, **con las 48 rutas
-   ya listadas como excepciones temporales**. Así la regla existe desde el
-   principio y ninguna ruta nueva nace mal.
+1. Escribir la prueba de importación y la lista blanca, **con 46 de las 48
+   rutas listadas como excepciones temporales** (`W-02`, `WEB-D168`). Las
+   otras dos —`/api/v1/onboarding` y `/api/v1/privacy/account`— ya están
+   justificadas como permanentes en §4 y no entran en la lista que este plan
+   quiere vaciar: nunca van a migrar a cliente autenticado, por las mismas
+   dos razones de §4. Así la regla existe desde el principio y ninguna ruta
+   nueva nace mal.
 2. Escribir las pruebas de aislamiento por tabla. Detectan políticas mal
    escritas antes de confiar en ellas.
 3. Migrar por familia de endpoints, junto con su rediseño de paginación y
@@ -188,11 +192,15 @@ desconectar, sin que el esquema obligue a conservar un secreto.
   salvo las de la lista blanca justificada. Evidencia: `TEST`. Clase: `build`.
 - `AC-SEG-02` — Para cada tabla con datos de usuario existe una prueba que
   verifica que el cliente autenticado no puede leer ni escribir filas de
-  otro usuario. Evidencia: `TEST`.
+  otro usuario. Evidencia: `TEST`. Clase: `integracion`.
 - `AC-SEG-03` — El rol `authenticated` no puede escribir directamente
   columnas de saldo ni insertar en `movements`. Evidencia: `TEST`.
+  Clase: `integracion`.
 - `AC-SEG-04` — Un recurso de otro usuario devuelve 404, nunca 403.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `lint`. **Agregado** (`51` §5, cierra en `W-02`):
+  su conjunto son las 58 rutas de `/api/v1`, y la prueba lee cada fichero de
+  ruta buscando un `403` que no sea de autenticación de trabajador. Vuelve a
+  medirse cuando el conjunto de 58 cambie.
 - `AC-SEG-05` — Ningún mensaje de autenticación revela si un correo existe.
   Evidencia: `TEST`.
 - `AC-SEG-06` — Ningún registro contiene montos, nombres de personas ni

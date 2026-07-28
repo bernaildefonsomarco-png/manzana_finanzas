@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción empezó.** `W-01` cerró `G1`; no tiene criterios de `G2` ni
-de `G3` propios.
+**La construcción avanza.** `W-01` y `W-02` cerraron `G1` y `G2`. Ninguno de
+los dos tiene criterios de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 1 de 20 |
-| Criterios `verificado` | 9 de 708 |
+| Cortes cerrados | 2 de 20 |
+| Criterios `verificado` | 16 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -292,6 +292,87 @@ comprometer estos cambios.
 - `52` §15: `AC-INV-10` recibe `Clase: lint`, que le faltaba.
 - `54` W-01: `AC-TRAZ-04` retirado de lo que el corte cierra.
 - `03_decisiones_producto_web.md`: `WEB-D167` (nueva).
+
+---
+
+## W-02 — RLS y arranque seguro
+
+**Cerrado:** 2026-07-27
+**Portones:** G1 ✓ · G2 ✓ (con evidencia `LIVE` real, ver abajo) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-27, con `npm run matriz:generar`.
+
+### Qué se entregó
+
+`AC-SEG-01` cierra: un gate de `prebuild` y un test que falla si una ruta de
+`src/app/api/` importa `createServiceClient` sin figurar en la lista blanca
+permanente (14 rutas sin sesión de usuario, por categoría) o en las
+excepciones temporales justificadas (46 de las 48 rutas de `/api/v1` que hoy
+lo usan — dos, `onboarding` y `privacy/account`, resultaron permanentes por
+`15` §4, no temporales). `AC-SEG-02` y `AC-SEG-03` cierran con una prueba de
+integración real contra el stack local de Supabase (`supabase start`, no
+producción): dos usuarios, 43 tablas, los cuatro asertos de `51` §8 —lectura
+cero filas, actualización cero filas, escritura con `user_id` ajeno
+rechazada, y las columnas de dinero sin escritura directa—. `AC-SEG-04`
+cierra como criterio agregado: ninguna de las 58 rutas de `/api/v1` devuelve
+403 para un recurso ajeno (el patrón de repositorio del proyecto ya lo
+garantizaba; esta prueba lo deja verificado, no lo cambia). `AC-RT-01` y
+`AC-REU-06` cierran con `src/instrumentation.ts`: el servidor no arranca en
+producción si el proveedor de modelo es `local_fixture` o si
+`production_safe` es falso — verificado no solo con `TEST` sino con `LIVE`
+real, arrancando el build de producción con una configuración peligrosa y
+confirmando que el proceso muere y deja de aceptar conexiones (ver abajo).
+
+### Qué sorprendió
+
+Dos cosas, y las dos cambiaron el diseño antes de cerrar el corte.
+
+La primera es la que más importa: `54` decía que `W-02` migraba las 48 rutas
+a cliente autenticado y cerraba `AC-SEG-01` a `AC-SEG-08` completos. Pero
+`15` §9 —su propia fuente— dice lo contrario de forma explícita: la
+migración va acoplada al rediseño de paginación y filtros de `14`, y
+"tocarlas dos veces sería peor". Y `53` §3 ya tenía asignado `AC-SEG-08`
+(CSRF) a `D-09` → `W-05`, no a `W-02`. Migrar 48 endpoints de dinero real de
+golpe, sin su contrato nuevo, era exactamente el error que `15` §9 nombra.
+Se corrigió antes de escribir código (`WEB-D168`): `W-02` construye el
+mecanismo — la lista blanca, las excepciones justificadas, la prueba de
+aislamiento — y dejó fuera lo que de verdad pertenece a `W-05`, `W-18` y
+`W-19`.
+
+La segunda: `instrumentation.ts` de Next.js 16 **no impide que el servidor
+acepte conexiones** cuando `register()` lanza. Medido directamente: con
+`next start` en modo producción y una configuración peligrosa forzada, el
+proceso imprime "Ready", el puerto queda abierto, y cada petición responde
+`500` — pero el proceso sigue vivo indefinidamente. El texto de `23`/`42`
+("el servidor no arranca") describe la intención, no lo que la convención de
+Next hace por sí sola. Se corrigió añadiendo `process.exit(1)` explícito en
+el `catch` de `register()`, y se volvió a medir: con eso, el proceso muere
+de verdad y las conexiones nuevas se rechazan. Sin la segunda medición, el
+gate habría quedado con una falsa sensación de seguridad — respondía con
+error, pero no dejaba de responder.
+
+### Qué quedó abierto
+
+Ningún criterio de `G3` propio. `AC-SEG-05` (mensajes de autenticación),
+`AC-SEG-06` (sin datos sensibles en registros) y `AC-SEG-08` (CSRF) no
+cierran aquí — son de `W-18`, `W-19` y `W-05` respectivamente (`WEB-D168`).
+`AC-SEG-07` (la lista de excepciones temporales vacía) queda como agregado
+sin corte propio: hoy tiene 46 rutas, y baja de una en una a medida que cada
+familia de endpoints migra en su corte de módulo. `R-01` (RLS esquivada con
+riesgo aceptado) sigue abierto hasta que esa lista llegue a cero.
+
+### Documentos corregidos
+
+- `15` §9: aclara que 46 de las 48 rutas —no 48— son excepción temporal; las
+  otras dos son permanentes por §4.
+- `15` §11: `AC-SEG-02`, `AC-SEG-03` reciben `Clase: integracion`;
+  `AC-SEG-04` recibe `Clase: lint` y se marca agregado.
+- `52` §15 y `53` §2.2, §5: `D-02` se redefine como parcialmente pagado en
+  `W-02` (el gate existe; la lista no está vacía) y `R-01` se reformula en
+  consecuencia.
+- `54` W-02: reescrito completo — quita la migración de las 48 rutas y
+  `AC-SEG-05/06/08` de lo que cierra; añade `AC-PRUEBA-05` a la tabla de
+  excepciones de `RUL-PLAN-04` (documento `51`/`W-03`, cierra en `W-02`).
+- `03_decisiones_producto_web.md`: `WEB-D168` (nueva).
 
 ---
 
