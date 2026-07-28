@@ -201,9 +201,11 @@ transversales no tienen forma de cerrarse.
 `AC-PAT-03` —*"todo listado recorre su conjunto completo mediante cursor"*—
 es agregado: no existe un solo test que lo pruebe, existe uno por listado.
 Igual `AC-A11Y-01` (*"todo flujo crítico se completa solo con teclado"*),
-`AC-NAV-01` (*"toda pantalla responde en su propia URL"*) y `AC-DS-01`
+`AC-NAV-01` (*"toda pantalla responde en su propia URL"*), `AC-DS-01`
 (*"ningún componente escribe un color literal"*, que es agregado y además
-`lint`).
+`lint`) y `AC-TRAZ-04` (*"las 119 superficies declaran una línea `**Ruta:**`"*,
+`WEB-D167` — su conjunto son las 119 `SCR-` y cierra una por una, a medida que
+el corte dueño de cada documento la etiqueta).
 
 **`RUL-PRUEBA-01` — Un criterio agregado declara su conjunto.** "Todo
 listado" no vale: la matriz enumera cuáles son los listados, y añadir uno

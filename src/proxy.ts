@@ -1,12 +1,25 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_PATHS = [
+// Rutas públicas de `10_sitemap_rutas_y_navegacion.md` §3.1, más `/estado` y
+// `/baja`, que son las dos que ese mapa no conocía (`50` §5.2). No incluye
+// `/`: su redirección (`WEB-D151`) la implementa `W-07`, no este proxy —
+// añadirla aquí saltaría el refresco de sesión que la SPA de `page.tsx`
+// todavía necesita.
+export const PUBLIC_PATHS = [
   "/empresa",
   "/privacidad",
   "/terminos",
   "/contacto",
   "/eliminar-datos",
+  "/entrar",
+  "/crear-cuenta",
+  "/recuperar-clave",
+  "/restablecer-clave",
+  "/verificar",
+  "/auth/callback",
+  "/baja",
+  "/estado",
   "/api/health",
   "/api/webhooks/whatsapp",
 ];

@@ -3,7 +3,7 @@
 **Bloque:** 07 — Calidad y ejecución
 **Alcance:** V1
 **Estado:** vivo
-**Fecha de última actualización:** 26 de julio de 2026
+**Fecha de última actualización:** 27 de julio de 2026
 **Docs fuente:** `54` (los veinte cortes), `49` §8 y §9 (protocolos de `USER` y `METRIC`), `50` (matriz)
 **Documentos que dependen de este:** `56` (puente a WhatsApp)
 
@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción no ha empezado.** El corpus está en la Ola 13 y `W-01` no
-puede arrancar hasta que el `56` cierre el corpus.
+**La construcción empezó.** `W-01` cerró `G1`; no tiene criterios de `G2` ni
+de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 0 de 20 |
-| Criterios `verificado` | 0 de 691 |
+| Cortes cerrados | 1 de 20 |
+| Criterios `verificado` | 9 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -218,7 +218,82 @@ Esta tabla se actualiza con cada corte y es lo primero que se lee.
 
 ## 7. Entradas
 
-*(Ninguna todavía. La primera será `W-01`.)*
+## W-01 — La verdad del repositorio
+
+**Cerrado:** 2026-07-27
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-27, con `npm run matriz:generar`. **Commit: pendiente** —
+este corte no incluye el commit de cierre; `AC-TRAZ-12` exige una regeneración
+posterior al último commit, así que la entrada queda con el hash pendiente
+hasta que el usuario decida hacer ese commit.
+
+### Qué se entregó
+
+El generador de la matriz de trazabilidad existe
+(`scripts/matriz/generar.ts`) y produce el censo de los 1.552 identificadores,
+la validación de `AC-TRAZ-01` a `AC-TRAZ-03`, y una fila por identificador con
+las columnas de `50` §4 que hoy se pueden derivar. `supabase/migrations/` es
+la única rama de migraciones, con un gate de `prebuild` que falla si
+reaparece una segunda. Las seis carpetas con solo `.gitkeep` sin destino
+desaparecieron; las cuatro que el diseño llenará se conservan. El `README.md`
+describe el árbol real de `src/`, verificado en las dos direcciones. El proxy
+completó `PUBLIC_PATHS` con las ocho rutas públicas que faltaban —sin tocar la
+redirección de `/`, que es de `W-07`—. `npm run typecheck`, `npm run lint`,
+`npm run build` y `npm test` terminan sin errores (902 pasan, 7 saltados por
+diseño).
+
+### Qué sorprendió
+
+Tres cosas, y las tres las encontró la propia herramienta que este corte
+construye — no un lector.
+
+La primera ya estaba resuelta antes de escribir código: el `54` original
+asignaba a `W-01` cerrar `AC-TRAZ-04` (que las 119 superficies declaren
+`**Ruta:**`), pero medido contra el árbol real solo 37 de 119 la declaran, y
+las 82 restantes viven en documentos de `W-08` a `W-19`, no en los de `W-01`.
+Pasó a criterio agregado que cierra por superficie (`WEB-D167`), y `W-01`
+entrega el generador y el test que lo miden, no su cierre completo.
+
+La segunda: el generador, al construirse, encontró dos identificadores del
+corpus sin definición real —una errata en `49` §10.1 que escribía mal el
+token de `RUL-CUENTAS-02`, y `MOD-ASISTENTE` (registrado en `50` §2.1 contra
+el documento `41`) sin su campo `**ID de módulo:**` en la cabecera de ese
+documento—. Los dos eran defectos genuinos que ningún lector había visto
+porque nadie había escrito antes un test que los pudiera encontrar.
+
+La tercera es sobre el generador mismo: sus dos primeras versiones tenían
+errores de forma que solo aparecieron al contrastar sus cifras contra las ya
+escritas a mano en `50` §3.1 —la expresión de `Clase:` no aceptaba dígitos, así
+que `e2e` no se reconocía nunca, y la búsqueda de `Clase:` se detenía en
+cuanto encontraba `Evidencia:`, sin seguir buscando cuando la clase venía en
+una tercera línea distinta (`AC-HECHO-01`, `AC-TRAZ-03`, `AC-PLAN-01`,
+`AC-PUENTE-03`)—. Sin el conteo manual previo como referencia, ninguno de los
+dos se habría notado: las cifras del generador se explican solas y no gritan
+que están mal.
+
+### Qué quedó abierto
+
+Ningún criterio de `G3` propio de este corte queda abierto: `W-01` no
+declara ninguno. `AC-TRAZ-04` queda como agregado en 37/119 y se cierra por
+partes en `W-08`–`W-19` (`WEB-D167`). El commit de cierre y la regeneración
+posterior a él (`AC-TRAZ-12`) quedan pendientes de que el usuario decida
+comprometer estos cambios.
+
+### Documentos corregidos
+
+- `52` §11: corregida la contradicción sobre `src/app/(dashboard)/` (ya
+  resuelta antes de este corte, ver el commit `1c3ac7f`).
+- `54` §3.1 (nueva): tabla de corte dueño por documento y `RUL-PLAN-04` (ya
+  resuelta antes de este corte).
+- `49` §10.1: corregida la errata de tecleo que dejaba mal escrito el token
+  de `RUL-CUENTAS-02`.
+- `41`: añadido `**ID de módulo:** \`MOD-ASISTENTE\`` a la cabecera.
+- `50` §3, §3.1, §10, §5.1: censo regenerado (1.552 identificadores, no 1.551;
+  `RUL-` 317, no 316; clase `lint` 14, no 13); `AC-TRAZ-04` marcado agregado.
+- `51` §5: `AC-TRAZ-04` añadido a los ejemplos de criterio agregado.
+- `52` §15: `AC-INV-10` recibe `Clase: lint`, que le faltaba.
+- `54` W-01: `AC-TRAZ-04` retirado de lo que el corte cierra.
+- `03_decisiones_producto_web.md`: `WEB-D167` (nueva).
 
 ---
 

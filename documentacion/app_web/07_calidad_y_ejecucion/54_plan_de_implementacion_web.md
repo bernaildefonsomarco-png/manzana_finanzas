@@ -125,7 +125,7 @@ documento sea el inventario.
 | **Implementa** | `50`, `52`, `53`; y las aserciones sobre el corpus de `06`, `07`, `49`, `54`, `56` |
 | **Precondición** | Ninguna |
 | **Paga** | `D-05` (dos ramas), `D-10` (README), `D-11` (carpetas). `D-12` ya resuelta |
-| **Cierra** | `AC-INV-07`, `AC-INV-08`, `AC-INV-09`, `AC-INV-10`, `AC-DEUDA-04`, `AC-DEUDA-08`, `AC-TRAZ-01` a `AC-TRAZ-04` |
+| **Cierra** | `AC-INV-07`, `AC-INV-08`, `AC-INV-09`, `AC-INV-10`, `AC-DEUDA-04`, `AC-DEUDA-08`, `AC-TRAZ-01` a `AC-TRAZ-03` |
 
 Contenido concreto:
 
@@ -148,6 +148,13 @@ ella, y **ni `/entrar` ni `/inicio` existen todavía**. Implementarla aquí
 dejaría la aplicación inalcanzable. Se implementa en `W-07`, que es el corte
 que crea los dos destinos. Completar `PUBLIC_PATHS` sí es seguro: añadir a una
 lista de exclusión rutas que aún no existen no rompe nada.
+
+**`AC-TRAZ-04` no está en lo que este corte cierra (`WEB-D167`).** Es
+agregado: su conjunto son las 119 superficies `SCR-`, y hoy solo 37 declaran
+su línea `**Ruta:**`. Las 82 restantes viven en documentos de `W-08` a
+`W-19`, no en los de `W-01`. Este corte entrega el generador y el test que lo
+miden — hoy en 37/119 — y cada corte de módulo lo acerca al cierre cuando
+etiqueta las suyas.
 
 Es el corte más pequeño y va primero porque **todo lo demás se apoya en creer
 lo que el repositorio dice** — y ahora también en poder comprobarlo.

@@ -408,7 +408,8 @@ tras medir el árbol entero, que no era obvio de antemano.
 - `AC-INV-09` — El fichero de sesión se llama `proxy.ts` y exporta `proxy`; no
   existe `middleware.ts`. Evidencia: `TEST`. Clase: `lint`.
 - `AC-INV-10` — `PUBLIC_PATHS` del proxy contiene todas las rutas que `10`
-  §3.1 declara públicas. Evidencia: `TEST`.
+  §3.1 declara públicas, más `/estado` y `/baja` (`50` §5.2). Evidencia:
+  `TEST`. Clase: `lint`.
 - `AC-INV-11` — Los repositorios y adaptadores de WhatsApp se conservan sin
   cambios y no bloquean ningún corte web. Evidencia: `CODE`.
 - `AC-INV-12` — Ninguna pantalla reemplazada deja controles sin manejador en

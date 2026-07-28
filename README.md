@@ -24,16 +24,18 @@ npm run lint       # ESLint
 
 ## Estructura
 
-> Esta sección refleja las carpetas reales de `src/` al 25 de julio de 2026.
-> `src/app/(dashboard)/` todavía no tiene rutas propias: la app autenticada
-> es una SPA montada en `src/app/page.tsx` vía `src/features/dashboard/`.
-> El detalle y el plan de reestructuración viven en `documentacion/app_web/`.
+> Esta sección refleja las carpetas reales de `src/` al 27 de julio de 2026.
+> La app autenticada sigue siendo una SPA montada en `src/app/page.tsx` vía
+> `src/features/dashboard/`; no existe todavía un grupo de rutas `(app)` con
+> páginas propias — lo crea `W-07` del plan de implementación. El detalle y
+> el plan de reestructuración viven en `documentacion/app_web/`.
 
 ```
 src/
   app/
     api/            # Route Handlers (webhooks, endpoints internos, health, /v1)
-    (dashboard)/    # Grupo de rutas reservado; sin páginas propias todavía
+    contacto/, empresa/, privacidad/, terminos/, eliminar-datos/  # páginas legales, ya existen
+    fonts/          # DM Sans e Inter, self-hosted
   core/
     finance/        # CommandDispatcher, Balance Engine, validadores de dinero
     debts/          # Debt Engine: creación, pagos, cuotas
@@ -48,10 +50,11 @@ src/
     conversation/   # ToolGateway, TurnCoordinator, TurnWorkspace (motor conversacional)
     orchestrator/   # FinancialOrchestrator
     response/       # Response Planner
-    onboarding/, disclosure/, risk/, events/, commands/, engines/, validators/
+    onboarding/, disclosure/, risk/, events/
+    commands/, engines/, validators/  # vacías: marcador para el diseño de `core/` (documentacion/app_web/02_fundaciones/12)
   adapters/
-    whatsapp/       # WhatsAppAdapter (reservado; sin implementación aún)
-    email/          # EmailAdapter (reservado; la lógica real vive en core/email)
+    whatsapp/       # WhatsAppAdapter — implementado, 2.639 líneas
+    email/          # EmailAdapter (la lógica real vive en core/email)
   agents/
     runtime/                        # AgentRuntime, readiness, config de providers
     conversational-executive-agent/ # Agente cabeza (modo shadow/active), sin documentar
@@ -62,28 +65,28 @@ src/
     orchestration-planning-agent/, evals/
   workers/
     outbox/         # Publicador de transactional_outbox
-    pending/        # TTL y lifecycle de pendientes
-    recurring/      # Detección y ocurrencias recurrentes
-    insights/
-    nudges/
-    email/
+    nudges/         # Evaluación y entrega de nudges proactivos
   shared/
     ui/             # Primitivas de UI (8 componentes: button, card, field, states, money, badge, switch, cn)
     schemas/        # Schemas Zod compartidos
     types/          # Tipos TypeScript globales
+    money/          # Utilidades de dinero (céntimos enteros, formato S/)
     accessibility/  # Parche de accesibilidad de modales (modal-accessibility-guard)
     privacy/        # Modo discreto
     telemetry/      # Logger estructurado y trace IDs
+    dates/          # vacía: marcador para el módulo único de fechas (documentacion/app_web/02_fundaciones/17, AC-PAT-09)
   data/
     supabase/       # Clientes Supabase (browser, server, service)
     repositories/   # Repositorios de datos
-    migrations/     # Migraciones SQL versionadas (espejo de supabase/migrations, usado por los tests)
+    migrations.test.ts  # Lee y verifica supabase/migrations/ — no hay una segunda copia de los .sql
   features/         # Screens de la app (money, settings, upcoming, movements, debts,
                      # pending, home, insights, search, auth, app-shell, onboarding,
                      # public-site, dashboard) — SPA con routing por ?view=, en reconstrucción
 ```
 
-`supabase/migrations/` es la fuente canónica de migraciones (usada por Supabase CLI). `src/data/migrations/` es un espejo sincronizado que consume `migrations.test.ts`; ambos deben mantenerse idénticos en los archivos `NNN_*.sql`.
+`supabase/migrations/` es la única rama de migraciones (`WEB-D163`): la fuente
+canónica que usa Supabase CLI y también la que lee `src/data/migrations.test.ts`.
+No existe `src/data/migrations/`; un test de clase `build` falla si reaparece.
 
 ## Variables de entorno
 

@@ -46,3 +46,6 @@ tmp-*.err.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# matriz de trazabilidad: se genera, no se versiona (RUL-TRAZ-06)
+/scripts/matriz/matriz.generada.json

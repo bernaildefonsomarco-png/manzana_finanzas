@@ -621,7 +621,7 @@ S/220.00 / S/170.00. Evidencia: `TEST`."*
 ```text
 1. Clase asignada:        unidad
 2. Test escrito:          calcula las cuatro capas con el fixture de 24 §6
-3. RUL-AC-02:             se cambia la fórmula de dinero libre a la anterior
+3. RUL-CUENTAS-02:        se cambia la fórmula de dinero libre a la anterior
                           (con la resta duplicada de compromisos) → el test
                           debe fallar. Si pasa, el test no mide la fórmula.
 4. Estado:                verificado

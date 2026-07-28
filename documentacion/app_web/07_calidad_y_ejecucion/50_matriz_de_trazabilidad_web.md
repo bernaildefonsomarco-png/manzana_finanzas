@@ -155,18 +155,26 @@ criterios que existían antes del bloque `07` y deliberadamente no publica
 totales: los documentos de este bloque siguen añadiendo identificadores, y un
 total escrito en un documento `aprobado` nace desactualizado.
 
-Última regeneración: 26 de julio de 2026, tras el documento `56`. **El corpus queda cerrado.**
-**1.551 identificadores en 57 documentos.**
+Última regeneración: 27 de julio de 2026, con el generador de `W-01`
+(`scripts/matriz/generar.ts`, `npm run matriz:generar`). Es la primera vez que
+esta tabla sale de ejecutar código y no de contarlo a mano.
+
+**1.552 identificadores en 59 documentos.** Una unidad más que el conteo
+manual anterior: dos defectos reales que el generador destapó al construirse
+—una errata en `49` §10.1 que escribía mal el token de `RUL-CUENTAS-02`, y
+`MOD-ASISTENTE` sin su campo de cabecera en el `41`— se corrigieron, y quedó
+un `RUL-` de más en el conteo a mano de antes, que esta tabla ya no hereda
+(`WEB-D167`, ver también §9).
 
 | Familia | Únicos | Qué identifica |
 |---|---|---|
 | `MOD-` | 17 | Módulo funcional completo |
 | `SCR-` | 119 | Pantalla, panel o componente de superficie |
 | `ACT-` | 232 | Acción que el usuario puede disparar |
-| `RUL-` | 316 | Regla de negocio verificable |
+| `RUL-` | 317 | Regla de negocio verificable |
 | `ERR-` | 159 | Error de dominio con mensaje visible |
 | `AC-` | 708 | Criterio de aceptación |
-| **Total** | **1.551** | |
+| **Total** | **1.552** | |
 
 **Ningún identificador citado queda sin definición.** Se verificó familia por
 familia; los tres colgantes que había estaban en la tabla de ejemplos de `01`
@@ -193,18 +201,22 @@ test las distingue por familia.
 |---|---|
 | `corpus` | 45 |
 | `build` | 15 |
-| `lint` | 13 |
+| `lint` | 14 |
 | `e2e` | 8 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
 | `integracion` | 1 |
 | `unidad` | 1 |
-| **Con clase** | **86** |
-| **Con `TEST` y sin clase** | **545** |
+| **Con clase** | **87** |
+| **Con `TEST` y sin clase** | **544** |
 | **Total con `TEST`** | **631** |
 
+`lint` sube de 13 a 14 en `W-01`: `AC-INV-10` recibe su clase al escribir su
+prueba (`51` §4.1), como manda el árbol de decisión — es una comparación
+leída sin ejecutar la aplicación.
+
 Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
-posible. Las 545 sin clase las reparte el `51` §4 al escribir cada prueba, y
+posible. Las 544 sin clase las reparte el `51` §4 al escribir cada prueba, y
 `AC-HECHO-03` impide que ninguna llegue a `verificado` sin ella.
 
 ---
@@ -267,6 +279,14 @@ línea:
 Esto corrige también la plantilla: `01` §8 item 8 pedía *"una sola ruta URL
 real"* de toda superficie, lo cual es imposible para un modal y llevó a que
 cada autor lo resolviera en prosa a su manera.
+
+**`AC-TRAZ-04` es agregado, no se cierra de una vez (`WEB-D167`).** La regla
+se declaró aquí, pero aplicarla a las 82 superficies que hoy le faltan es
+trabajo de veinte documentos repartidos entre `W-08` y `W-19` — no de `W-01`,
+que es dueño de este documento pero no de ninguno de los que declaran una
+superficie. Cada corte de módulo añade su línea `**Ruta:**` al cerrar su
+propio `G1`; el criterio cierra por superficie, y el conjunto completo cierra
+cuando lo hace el último.
 
 ### 5.2 Las rutas declaradas por los módulos
 
@@ -487,7 +507,13 @@ Documentos corregidos: `39` §8, `44` §8, `10` §3.1, `12` §5, `07` §3.16.
 - `AC-TRAZ-03` — Ningún ID citado carece de definición. Evidencia: `TEST`.
   Clase: `corpus`.
 - `AC-TRAZ-04` — Las 119 superficies declaran una línea `**Ruta:**`, con ruta
-  o con tratamiento. Evidencia: `TEST`. Clase: `corpus`.
+  o con tratamiento. Evidencia: `TEST`. Clase: `corpus`. **Agregado**
+  (`51` §5, `WEB-D167`): su conjunto son las 119 `SCR-` y cierra por
+  superficie, no de una vez. Medido al construir el generador (`W-01`):
+  **37 de 119** la tienen hoy. Las 82 restantes viven en los 20 documentos
+  que declaran superficies (`24`–`39`, `41`, `43`–`46`, `48`), y cada uno
+  añade su línea al cerrar su propio `G1` en su corte dueño (§3.1 de `54`).
+  `W-01` no lo cierra: construye el generador y el test que lo miden.
 - `AC-TRAZ-05` — El inventario de rutas del mapa de `10` §3 coincide
   exactamente con el declarado por las §8. Evidencia: `TEST`. Clase: `build`.
 - `AC-TRAZ-06` — Ninguna página publicada carece de documento dueño.

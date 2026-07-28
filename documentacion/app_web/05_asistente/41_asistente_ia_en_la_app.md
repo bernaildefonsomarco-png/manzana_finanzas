@@ -1,5 +1,6 @@
 # 41 — El asistente en la aplicación
 
+**ID de módulo:** `MOD-ASISTENTE`
 **Bloque:** 05 — Asistente
 **Alcance:** V1
 **Fecha:** 26 de julio de 2026
