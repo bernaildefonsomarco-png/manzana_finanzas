@@ -299,7 +299,8 @@ comprometer estos cambios.
 
 **Cerrado:** 2026-07-27
 **Portones:** G1 ✓ · G2 ✓ (con evidencia `LIVE` real, ver abajo) · G3 ninguno propio
-**Matriz regenerada:** 2026-07-27, con `npm run matriz:generar`.
+**Matriz regenerada:** 2026-07-27, con `npm run matriz:generar`, posterior al
+commit `9871e09` (`AC-TRAZ-12`).
 
 ### Qué se entregó
 
