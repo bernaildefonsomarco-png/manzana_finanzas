@@ -855,7 +855,7 @@ contradicción de criterios, solo queda pendiente.
 **Cerrado:** 2026-07-28
 **Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
 **Matriz regenerada:** 2026-07-28, con `npm run matriz:generar`, posterior
-al commit de cierre de este corte (`AC-TRAZ-12`, hash registrado abajo).
+al commit `01b1158` (`AC-TRAZ-12`).
 
 ### Qué se entregó
 
