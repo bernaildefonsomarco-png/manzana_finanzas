@@ -974,7 +974,7 @@ dispara desde una fila real hasta que `W-09` reconstruya la pantalla.
 **Cerrado:** 2026-07-29
 **Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
 **Matriz regenerada:** 2026-07-29, con `npm run matriz:generar`, posterior
-al commit de cierre de este corte (`AC-TRAZ-12`, hash registrado abajo).
+al commit `7df5b91` (`AC-TRAZ-12`).
 
 ### Qué se entregó
 
