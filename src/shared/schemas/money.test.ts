@@ -119,10 +119,18 @@ describe("MovementDecimalAmountSchema", () => {
     expect(MovementDecimalAmountSchema.parse(8.55)).toBe(8.55);
   });
 
-  it("rechaza cero, negativos y mas de dos decimales", () => {
+  it("rechaza cero y mas de dos decimales", () => {
     expect(() => MovementDecimalAmountSchema.parse(0)).toThrow();
-    expect(() => MovementDecimalAmountSchema.parse(-1)).toThrow();
     expect(() => MovementDecimalAmountSchema.parse(8.555)).toThrow();
+  });
+
+  // WEB-D197: el signo solo lo valida `requireAmount` (balance-engine.ts)
+  // segun el tipo de movimiento; este esquema no conoce el tipo, asi que
+  // acepta negativos y deja que "ajuste" sea el unico que los use en la
+  // practica.
+  it("acepta montos negativos: la exclusividad de ajuste se valida en balance-engine, no aqui", () => {
+    expect(MovementDecimalAmountSchema.parse(-1)).toBe(-1);
+    expect(MovementDecimalAmountSchema.parse(-8.5)).toBe(-8.5);
   });
 });
 

@@ -75,12 +75,19 @@ function hasAtMostTwoDecimals(value: number): boolean {
   return Math.abs(value * 100 - Math.round(value * 100)) < 1e-8;
 }
 
-/** Monto decimal para movimientos persistidos en DB numeric(14,2). */
+/**
+ * Monto decimal para movimientos persistidos en DB numeric(14,2).
+ *
+ * WEB-D197: solo "ajuste" puede ser negativo (el signo indica si el saldo
+ * sube o baja); para el resto de tipos, `requireAmount` en
+ * `balance-engine.ts` exige que sea mayor a cero. Este esquema solo
+ * descarta cero y magnitudes/decimales invalidos, sin conocer el tipo.
+ */
 export const MovementDecimalAmountSchema = z
   .number()
   .finite()
-  .positive("El monto de un movimiento confirmado debe ser mayor a cero")
-  .max(999_999_999.99, "Monto demasiado grande")
+  .refine((value) => value !== 0, "El monto no puede ser cero")
+  .refine((value) => Math.abs(value) <= 999_999_999.99, "Monto demasiado grande")
   .refine(hasAtMostTwoDecimals, "El monto acepta maximo dos decimales");
 
 export const MovementInputSchema = z.object({

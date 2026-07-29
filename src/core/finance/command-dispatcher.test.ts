@@ -410,6 +410,120 @@ describe("CommandDispatcher", () => {
     });
   });
 
+  it("ajusta una cuenta con monto negativo: el saldo baja segun el signo (WEB-D197)", async () => {
+    const repository = new InMemoryFinancialCoreRepository({
+      accountBalances: { [accountA]: 100 },
+    });
+    const dispatcher = new CommandDispatcher(repository);
+
+    const result = await dispatcher.dispatch(
+      createMovementCommand(
+        movementInput({
+          type: "ajuste",
+          amount: -15,
+          account_origin_id: null,
+          account_destination_id: accountA,
+          category_id: null,
+          metadata: { reason: "conte mal el efectivo" },
+        })
+      )
+    );
+
+    expect(result.movement.type).toBe("ajuste");
+    expect(result.movement.amount).toBe(-15);
+    expect(repository.accountBalances.get(accountA)).toBe(85);
+  });
+
+  it("rechaza ajustes con monto cero desde el esquema (no llega a INVALID_MOVEMENT_AMOUNT)", async () => {
+    const repository = new InMemoryFinancialCoreRepository({
+      accountBalances: { [accountA]: 100 },
+    });
+    const dispatcher = new CommandDispatcher(repository);
+
+    // El cero lo rechaza MovementDecimalAmountSchema (ZodError) antes de
+    // llegar a `requireAmount`: ningun monto de movimiento puede ser cero,
+    // sin importar el tipo.
+    await expect(
+      dispatcher.dispatch(
+        createMovementCommand(
+          movementInput({
+            type: "ajuste",
+            amount: 0,
+            account_destination_id: accountA,
+            category_id: null,
+            metadata: { reason: "sin cambio" },
+          })
+        )
+      )
+    ).rejects.toThrow();
+  });
+
+  it("rechaza montos negativos para tipos que no son ajuste", async () => {
+    const repository = new InMemoryFinancialCoreRepository({
+      accountBalances: { [accountA]: 100 },
+    });
+    const dispatcher = new CommandDispatcher(repository);
+
+    await expect(
+      dispatcher.dispatch(
+        createMovementCommand(
+          movementInput({
+            type: "gasto",
+            amount: -15,
+            account_origin_id: accountA,
+          })
+        )
+      )
+    ).rejects.toMatchObject({
+      code: "INVALID_MOVEMENT_AMOUNT",
+    } satisfies Partial<CoreError>);
+  });
+
+  it("rechaza un ajuste sin ninguna cuenta destino (WEB-D197)", async () => {
+    const repository = new InMemoryFinancialCoreRepository({
+      accountBalances: { [accountA]: 100 },
+    });
+    const dispatcher = new CommandDispatcher(repository);
+
+    await expect(
+      dispatcher.dispatch(
+        createMovementCommand(
+          movementInput({
+            type: "ajuste",
+            amount: 10,
+            category_id: null,
+            metadata: { reason: "sin cuenta" },
+          })
+        )
+      )
+    ).rejects.toMatchObject({
+      code: "INVALID_MOVEMENT_ACCOUNTS",
+    } satisfies Partial<CoreError>);
+  });
+
+  it("rechaza un ajuste que use cuenta origen en vez de destino (WEB-D197)", async () => {
+    const repository = new InMemoryFinancialCoreRepository({
+      accountBalances: { [accountA]: 100 },
+    });
+    const dispatcher = new CommandDispatcher(repository);
+
+    await expect(
+      dispatcher.dispatch(
+        createMovementCommand(
+          movementInput({
+            type: "ajuste",
+            amount: -10,
+            account_origin_id: accountA,
+            category_id: null,
+            metadata: { reason: "cuenta equivocada" },
+          })
+        )
+      )
+    ).rejects.toMatchObject({
+      code: "INVALID_MOVEMENT_ACCOUNTS",
+    } satisfies Partial<CoreError>);
+  });
+
   it("rechaza ajustes sin metadata.reason", async () => {
     const repository = new InMemoryFinancialCoreRepository({
       accountBalances: { [accountA]: 100 },

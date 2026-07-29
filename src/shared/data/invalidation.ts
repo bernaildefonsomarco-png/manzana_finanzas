@@ -15,6 +15,7 @@ export type MutationType =
   | "box.upsert"
   | "subcategory.edit"
   | "debt.pay"
+  | "debt.create"
   | "budget.edit"
   | "import.confirm"
   | "preferences.change";
@@ -40,6 +41,7 @@ function keysFor(mutation: MutationType, params?: { debtId?: string }): QueryKey
     case "subcategory.edit":
       return [queryKeys.subcategories.all, queryKeys.categories, queryKeys.movements.all];
     case "debt.pay":
+    case "debt.create":
       return [
         queryKeys.debts.all,
         ...(params?.debtId ? [queryKeys.debts.detail(params.debtId)] : []),

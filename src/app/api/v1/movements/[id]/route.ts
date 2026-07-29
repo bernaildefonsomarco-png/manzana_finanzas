@@ -43,7 +43,9 @@ export async function GET(request: Request, context: RouteContext) {
     const params = ParamsSchema.parse(await context.params);
     const { data, error } = await auth.client
       .from("movements")
-      .select("*")
+      .select(
+        "id, user_id, type, status, amount, currency, occurred_at, description, merchant, category_id, subcategory_id, source, source_ref, idempotency_key, confidence, requires_review, account_origin_id, account_destination_id, box_origin_id, box_destination_id, debt_id, recurring_rule_id, recurring_occurrence_id, related_person_id, affects_total_balance, affects_account_balance, created_at, updated_at, deleted_at, metadata"
+      )
       .eq("user_id", auth.userId)
       .eq("id", params.id)
       .maybeSingle();
@@ -80,6 +82,19 @@ export async function PATCH(request: Request, context: RouteContext) {
     const params = ParamsSchema.parse(await context.params);
     const body = await readJsonBody(request);
     const parsed = UpdateMovementRequestSchema.parse(body);
+    // `RUL-MOV-10`/`ERR-MOV-08`: tambien se aplica al corregir la fecha.
+    if (
+      parsed.patch.occurred_at &&
+      new Date(parsed.patch.occurred_at).getTime() > Date.now()
+    ) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "Esa fecha todavía no llega. ¿Quieres anotarlo como un pago que viene?",
+        meta,
+        400,
+        { reason: "future_date" },
+      );
+    }
     const dispatcher = new CommandDispatcher(
       new SupabaseFinancialCoreRepository(createServiceClient())
     );

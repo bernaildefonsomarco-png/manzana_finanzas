@@ -73,18 +73,25 @@ describe("generador de la matriz de trazabilidad", () => {
     // que es lo que mide el generador. `AC-DINERO-03/04`, `AC-CUENTAS-05`,
     // `13`, `17`, `18` y `AC-CAT-08` a `12`, `15` quedan sin clase nueva:
     // diferidos (`WEB-D190`, `WEB-D191`) o sin `TEST` propio todavía.
+    // W-09 añadió doce: en `26` (`AC-MOV-01`, `03`, `05`, `06`, `07`, `08`,
+    // `09`, `12`, `13`, `19`, diez `integracion`; `AC-MOV-10`, `unidad`;
+    // `AC-MOV-17`, `lint`). `AC-MOV-02` ya tenía `e2e` desde antes de este
+    // corte. `AC-MOV-04`, `11`, `14`, `15`, `16`, `18`, `20` quedan sin clase
+    // nueva: diferidos (`WEB-D195`, `WEB-D199`, `WEB-D201`), bloqueados por
+    // falta de sesión de navegador en este entorno, o sin prueba dedicada
+    // todavía (mismo tratamiento que `AC-CUENTAS-17` en `W-08`).
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 16,
-      lint: 28,
+      lint: 29,
       e2e: 7,
       presupuesto: 2,
       contenido: 1,
-      integracion: 11,
-      unidad: 49,
+      integracion: 21,
+      unidad: 50,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(159);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(472);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(171);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(460);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {

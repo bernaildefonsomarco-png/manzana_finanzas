@@ -56,6 +56,43 @@ describe("CreateDebtCommand", () => {
     );
   });
 
+  it("acepta deuda_adquirida sin cuenta y no crea movimiento (WEB-D198)", async () => {
+    const port = fakePort();
+    const result = await dispatcher(port).dispatch(
+      command({ movement_type: "deuda_adquirida", account_id: null }),
+    );
+
+    expect(result.type).toBe("debt_created");
+    if (result.type !== "debt_created") return;
+    expect(result.loan_movement).toBeNull();
+    expect(port.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ movementCommit: null }),
+    );
+  });
+
+  it("rechaza deuda_adquirida con cuenta: no hay movimiento de efectivo que registrar", async () => {
+    const port = fakePort({ account: accountFixture() });
+    await expect(
+      dispatcher(port).dispatch(
+        command({ movement_type: "deuda_adquirida", account_id: accountId }),
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("rechaza movement_type que no coincide con la direccion", async () => {
+    const port = fakePort();
+    await expect(
+      dispatcher(port).dispatch(
+        command({ direction: "they_owe_me", movement_type: "deuda_adquirida" }),
+      ),
+    ).rejects.toThrow();
+    await expect(
+      dispatcher(port).dispatch(
+        command({ direction: "i_owe", movement_type: "prestamo_dado" }),
+      ),
+    ).rejects.toThrow();
+  });
+
   it("ajusta el ultimo importe para que el calendario sume exactamente el principal", async () => {
     const port = fakePort();
     await dispatcher(port).dispatch(

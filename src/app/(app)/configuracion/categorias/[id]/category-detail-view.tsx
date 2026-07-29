@@ -3,14 +3,14 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Archive, Pencil, ShieldCheck, X } from "lucide-react";
+import { ShieldCheck, X } from "lucide-react";
 import { Card, SectionHeader } from "@/ui/primitivas/card";
-import { Button } from "@/ui/primitivas/button";
 import { ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import { queryKeys } from "@/shared/data/query-keys";
 import { getCategories, listSubcategories } from "@/shared/api/categories";
 import { RenameSubcategoryDialog } from "./rename-subcategory-dialog";
 import { ArchiveSubcategoryDialog } from "./archive-subcategory-dialog";
+import { SubcategoryRow } from "./subcategory-row";
 import type { UserSubcategory } from "@/shared/types/domain";
 
 type DetailDialogState =
@@ -64,7 +64,17 @@ export function CategoryDetailView({ categoryId }: { categoryId: string }) {
         <Link href="/configuracion/categorias" className="text-sm text-text-secondary hover:text-text">
           Categorias
         </Link>
-        <h1 className="mt-1 font-heading text-2xl font-semibold text-text">{category.label}</h1>
+        <div className="mt-1 flex items-center justify-between gap-3">
+          <h1 className="font-heading text-2xl font-semibold text-text">{category.label}</h1>
+          {/* WEB-D200: cierra el enlace pendiente de WEB-D194 ahora que el
+              listado de movimientos de W-09 acepta `categoria` de verdad. */}
+          <Link
+            href={`/movimientos?categoria=${category.id}`}
+            className="text-sm font-medium text-brand hover:text-brand-hover"
+          >
+            Ver movimientos de esta categoría
+          </Link>
+        </div>
       </div>
 
       {feedback ? (
@@ -89,34 +99,12 @@ export function CategoryDetailView({ categoryId }: { categoryId: string }) {
         ) : (
           <ul className="mt-3 divide-y divide-border">
             {subcategories.map((subcategory) => (
-              <li key={subcategory.id} className="flex items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <p className="truncate font-medium text-text">{subcategory.label}</p>
-                  <p className="text-xs text-text-muted">
-                    {subcategory.movement_count} movimiento{subcategory.movement_count === 1 ? "" : "s"}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    title={`Renombrar ${subcategory.label}`}
-                    aria-label={`Renombrar ${subcategory.label}`}
-                    onClick={() => setDialog({ kind: "rename", subcategory })}
-                  >
-                    <Pencil className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    title={`Archivar ${subcategory.label}`}
-                    aria-label={`Archivar ${subcategory.label}`}
-                    onClick={() => setDialog({ kind: "archive", subcategory })}
-                  >
-                    <Archive className="h-4 w-4" aria-hidden="true" />
-                  </Button>
-                </div>
-              </li>
+              <SubcategoryRow
+                key={subcategory.id}
+                subcategory={subcategory}
+                onRename={() => setDialog({ kind: "rename", subcategory })}
+                onArchive={() => setDialog({ kind: "archive", subcategory })}
+              />
             ))}
           </ul>
         )}

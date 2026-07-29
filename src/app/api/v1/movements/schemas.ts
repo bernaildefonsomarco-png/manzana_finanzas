@@ -11,9 +11,60 @@ const OptionalNullableUuidSchema = z.string().uuid().nullable().optional();
 const OptionalNullableTextSchema = z.string().trim().min(1).nullable().optional();
 const CurrencyCodeSchema = z.enum(["PEN", "USD"]);
 
-export const CreateMovementRequestSchema = z
+// WEB-D195: los 11 tipos de movimiento no comparten un solo camino de
+// escritura. Estos tres grupos determinan que esquema y que comando del
+// Core atiende una creacion, segun `type`.
+export const GENERIC_MOVEMENT_TYPES = [
+  "gasto",
+  "ingreso",
+  "transferencia",
+  "asignacion_interna",
+  "ajuste",
+  "pago_recurrente",
+] as const;
+
+export const DEBT_ORIGINATION_MOVEMENT_TYPES = [
+  "deuda_adquirida",
+  "prestamo_dado",
+  "prestamo_recibido",
+] as const;
+
+export const DEBT_PAYMENT_MOVEMENT_TYPES = [
+  "pago_deuda",
+  "devolucion_recibida",
+] as const;
+
+export type GenericMovementType = (typeof GENERIC_MOVEMENT_TYPES)[number];
+export type DebtOriginationMovementType =
+  (typeof DEBT_ORIGINATION_MOVEMENT_TYPES)[number];
+export type DebtPaymentMovementType =
+  (typeof DEBT_PAYMENT_MOVEMENT_TYPES)[number];
+
+function isDebtOriginationType(
+  value: unknown,
+): value is DebtOriginationMovementType {
+  return (DEBT_ORIGINATION_MOVEMENT_TYPES as readonly unknown[]).includes(
+    value,
+  );
+}
+
+function isDebtPaymentType(value: unknown): value is DebtPaymentMovementType {
+  return (DEBT_PAYMENT_MOVEMENT_TYPES as readonly unknown[]).includes(value);
+}
+
+/** `ERR-MOV-06`: un campo prohibido para el tipo no se ignora, se rechaza. */
+function rejectProhibitedField(
+  ctx: z.RefinementCtx,
+  present: boolean,
+  path: string,
+  message: string,
+): void {
+  if (present) ctx.addIssue({ code: "custom", path: [path], message });
+}
+
+const CreateMovementRequestObjectSchema = z
   .object({
-    type: MovementTypeSchema,
+    type: z.enum(GENERIC_MOVEMENT_TYPES),
     amount: MovementDecimalAmountSchema,
     currency: CurrencyCodeSchema.optional(),
     occurred_at: z.string().datetime({ offset: true }),
@@ -25,10 +76,8 @@ export const CreateMovementRequestSchema = z
     account_destination_id: OptionalNullableUuidSchema,
     box_origin_id: OptionalNullableUuidSchema,
     box_destination_id: OptionalNullableUuidSchema,
-    debt_id: OptionalNullableUuidSchema,
     recurring_rule_id: OptionalNullableUuidSchema,
     related_person_id: OptionalNullableUuidSchema,
-    // RUL-CAT §7 / ERR-CAT-05: maximo 6 etiquetas por movimiento.
     // RUL-CAT §7 / ERR-CAT-05: maximo 6 etiquetas por movimiento.
     tag_ids: z.array(z.string().uuid()).max(6, "Un movimiento puede tener hasta 6 etiquetas.").optional(),
     confidence: z.number().min(0).max(1).nullable().optional(),
@@ -38,7 +87,104 @@ export const CreateMovementRequestSchema = z
   })
   .strict();
 
-export const MovementPatchRequestSchema = CreateMovementRequestSchema.partial()
+function genericMovementSuperRefine(
+  value: z.infer<typeof CreateMovementRequestObjectSchema>,
+  ctx: z.RefinementCtx,
+): void {
+    // `26` §4.3 — campos prohibidos por tipo, entre los seis genericos.
+    switch (value.type) {
+      case "gasto":
+        rejectProhibitedField(
+          ctx,
+          Boolean(value.account_destination_id),
+          "account_destination_id",
+          "Un gasto no lleva cuenta destino.",
+        );
+        break;
+      case "ingreso":
+        rejectProhibitedField(
+          ctx,
+          Boolean(value.account_origin_id),
+          "account_origin_id",
+          "Un ingreso no lleva cuenta origen.",
+        );
+        rejectProhibitedField(
+          ctx,
+          Boolean(value.box_origin_id),
+          "box_origin_id",
+          "Un ingreso no lleva caja origen.",
+        );
+        break;
+      case "transferencia":
+        rejectProhibitedField(
+          ctx,
+          Boolean(value.category_id),
+          "category_id",
+          "Las transferencias no llevan categoria: no son un gasto.",
+        );
+        rejectProhibitedField(
+          ctx,
+          Boolean(value.box_origin_id) || Boolean(value.box_destination_id),
+          "box_origin_id",
+          "Las transferencias no llevan cajas: son entre cuentas.",
+        );
+        break;
+      case "asignacion_interna":
+        rejectProhibitedField(
+          ctx,
+          Boolean(value.category_id),
+          "category_id",
+          "Una asignacion interna no lleva categoria.",
+        );
+        break;
+      case "ajuste":
+        rejectProhibitedField(
+          ctx,
+          Boolean(value.category_id),
+          "category_id",
+          "Un ajuste no lleva categoria.",
+        );
+        // WEB-D197: la cuenta de un ajuste siempre es el destino.
+        rejectProhibitedField(
+          ctx,
+          Boolean(value.account_origin_id),
+          "account_origin_id",
+          "Un ajuste solo usa la cuenta como destino.",
+        );
+        if (
+          typeof value.metadata?.["reason"] !== "string" ||
+          (value.metadata["reason"] as string).trim().length === 0
+        ) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["metadata", "reason"],
+            message: "Un ajuste necesita un motivo.",
+          });
+        }
+        break;
+      case "pago_recurrente":
+        rejectProhibitedField(
+          ctx,
+          Boolean(value.account_destination_id),
+          "account_destination_id",
+          "Un pago recurrente no lleva cuenta destino.",
+        );
+        if (!value.recurring_rule_id) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["recurring_rule_id"],
+            message: "Un pago recurrente necesita su regla recurrente.",
+          });
+        }
+        break;
+    }
+}
+
+export const CreateMovementRequestSchema =
+  CreateMovementRequestObjectSchema.superRefine(genericMovementSuperRefine);
+
+export const MovementPatchRequestSchema = CreateMovementRequestObjectSchema
+  .partial()
   .omit({
     confidence: true,
     confirm_duplicate: true,
@@ -73,6 +219,8 @@ export const ListMovementsQuerySchema = z
     account_id: z.string().uuid().optional(),
     from: z.string().datetime({ offset: true }).optional(),
     to: z.string().datetime({ offset: true }).optional(),
+    // `AC-MOV-05`: la busqueda de texto libre siempre esta disponible.
+    q: z.string().trim().min(1).max(120).optional(),
     include_deleted: z
       .enum(["true", "false"])
       .optional()
@@ -83,6 +231,112 @@ export const ListMovementsQuerySchema = z
     cursor: z.string().optional(),
   })
   .strict();
+
+/**
+ * `deuda_adquirida`, `prestamo_dado`, `prestamo_recibido` (WEB-D195,
+ * WEB-D198): crean una deuda -y opcionalmente un movimiento vinculado si hay
+ * cuenta- via `CreateDebtCommand`, nunca escribiendo `movements` crudo.
+ */
+export const CreateDebtOriginationMovementRequestSchema = z
+  .object({
+    type: z.enum(DEBT_ORIGINATION_MOVEMENT_TYPES),
+    amount: z.number().finite().positive().max(999_999_999.99),
+    currency: CurrencyCodeSchema.optional(),
+    occurred_at: z.string().datetime({ offset: true }),
+    description: OptionalNullableTextSchema,
+    related_person_name: z.string().trim().min(1).max(120),
+    account_id: OptionalNullableUuidSchema,
+    installment_count: z.number().int().min(1).max(240).nullable().optional(),
+    first_due_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .nullable()
+      .optional(),
+    installment_amount: z
+      .number()
+      .finite()
+      .positive()
+      .max(999_999_999.99)
+      .nullable()
+      .optional(),
+    interest_notes: OptionalNullableTextSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    // `26` §4.3: "deuda_adquirida" no lleva cuenta, no hay efectivo de por
+    // medio (ver WEB-D198).
+    if (value.type === "deuda_adquirida" && value.account_id) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["account_id"],
+        message:
+          "Una deuda adquirida no lleva cuenta: no hay movimiento de efectivo.",
+      });
+    }
+    if (value.installment_count && !value.first_due_date) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["first_due_date"],
+        message: "Indica la primera fecha de cuota.",
+      });
+    }
+  });
+
+export type CreateDebtOriginationMovementRequest = z.infer<
+  typeof CreateDebtOriginationMovementRequestSchema
+>;
+
+/**
+ * `pago_deuda`, `devolucion_recibida` (WEB-D195): exigen una deuda existente
+ * y se despachan via `RecordDebtPaymentCommand`, que deriva el tipo real del
+ * `direction` de la deuda.
+ */
+export const CreateDebtPaymentMovementRequestSchema = z
+  .object({
+    type: z.enum(DEBT_PAYMENT_MOVEMENT_TYPES),
+    debt_id: z.string().uuid(),
+    amount: z.number().finite().positive().max(999_999_999.99),
+    currency: CurrencyCodeSchema.nullable().optional(),
+    occurred_at: z.string().datetime({ offset: true }),
+    description: OptionalNullableTextSchema,
+    account_origin_id: OptionalNullableUuidSchema,
+    account_destination_id: OptionalNullableUuidSchema,
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    // `26` §4.3: "pago_deuda" solo admite cuenta origen; "devolucion_recibida"
+    // solo cuenta destino (WEB-D195: sin soporte de caja en este corte).
+    if (value.type === "pago_deuda" && value.account_destination_id) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["account_destination_id"],
+        message: "Un pago de deuda no lleva cuenta destino.",
+      });
+    }
+    if (value.type === "devolucion_recibida" && value.account_origin_id) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["account_origin_id"],
+        message: "Una devolucion recibida no lleva cuenta origen.",
+      });
+    }
+  });
+
+export type CreateDebtPaymentMovementRequest = z.infer<
+  typeof CreateDebtPaymentMovementRequestSchema
+>;
+
+export function detectMovementCreationKind(
+  body: unknown,
+): "debt_origination" | "debt_payment" | "generic" {
+  const type =
+    body && typeof body === "object" && "type" in body
+      ? (body as { type: unknown }).type
+      : undefined;
+  if (isDebtOriginationType(type)) return "debt_origination";
+  if (isDebtPaymentType(type)) return "debt_payment";
+  return "generic";
+}
 
 export type CreateMovementRequest = z.infer<
   typeof CreateMovementRequestSchema
@@ -112,7 +366,7 @@ export function toMovementInput(
     box_origin_id: request.box_origin_id ?? null,
     box_destination_id: request.box_destination_id ?? null,
     related_person_id: request.related_person_id ?? null,
-    debt_id: request.debt_id ?? null,
+    debt_id: null,
     recurring_rule_id: request.recurring_rule_id ?? null,
     recurring_occurrence_id: null,
     source: "dashboard_manual",
@@ -151,7 +405,6 @@ export function toMovementPatch(
   if ("related_person_id" in request) {
     patch.related_person_id = request.related_person_id ?? null;
   }
-  if ("debt_id" in request) patch.debt_id = request.debt_id ?? null;
   if ("recurring_rule_id" in request) {
     patch.recurring_rule_id = request.recurring_rule_id ?? null;
   }

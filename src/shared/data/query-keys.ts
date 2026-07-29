@@ -16,6 +16,12 @@ export const queryKeys = {
     all: ["deudas"] as const,
     detail: (id: string) => ["deuda", id] as const,
   },
+  recurringRules: {
+    all: ["reglas-recurrentes"] as const,
+  },
+  relatedPersons: {
+    all: ["personas-relacionadas"] as const,
+  },
   pending: {
     all: ["pendientes"] as const,
   },

@@ -1609,6 +1609,7 @@ export type Database = {
           recurring_rule_id: string | null
           related_person_id: string | null
           requires_review: boolean
+          search_vector: unknown
           source: Database["public"]["Enums"]["movement_source"]
           source_ref: string | null
           status: Database["public"]["Enums"]["movement_status"]
@@ -1641,6 +1642,7 @@ export type Database = {
           recurring_rule_id?: string | null
           related_person_id?: string | null
           requires_review?: boolean
+          search_vector?: unknown
           source: Database["public"]["Enums"]["movement_source"]
           source_ref?: string | null
           status?: Database["public"]["Enums"]["movement_status"]
@@ -1673,6 +1675,7 @@ export type Database = {
           recurring_rule_id?: string | null
           related_person_id?: string | null
           requires_review?: boolean
+          search_vector?: unknown
           source?: Database["public"]["Enums"]["movement_source"]
           source_ref?: string | null
           status?: Database["public"]["Enums"]["movement_status"]
@@ -2914,6 +2917,7 @@ export type Database = {
               recurring_rule_id: string | null
               related_person_id: string | null
               requires_review: boolean
+              search_vector: unknown
               source: Database["public"]["Enums"]["movement_source"]
               source_ref: string | null
               status: Database["public"]["Enums"]["movement_status"]
@@ -2961,6 +2965,7 @@ export type Database = {
               recurring_rule_id: string | null
               related_person_id: string | null
               requires_review: boolean
+              search_vector: unknown
               source: Database["public"]["Enums"]["movement_source"]
               source_ref: string | null
               status: Database["public"]["Enums"]["movement_status"]
@@ -3008,6 +3013,7 @@ export type Database = {
               recurring_rule_id: string | null
               related_person_id: string | null
               requires_review: boolean
+              search_vector: unknown
               source: Database["public"]["Enums"]["movement_source"]
               source_ref: string | null
               status: Database["public"]["Enums"]["movement_status"]
@@ -3055,6 +3061,7 @@ export type Database = {
               recurring_rule_id: string | null
               related_person_id: string | null
               requires_review: boolean
+              search_vector: unknown
               source: Database["public"]["Enums"]["movement_source"]
               source_ref: string | null
               status: Database["public"]["Enums"]["movement_status"]

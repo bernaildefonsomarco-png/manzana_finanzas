@@ -23,7 +23,16 @@ function fakeMovement(overrides: Partial<Record<string, unknown>> = {}) {
  * devuelve a si mismo, y al ser `await`-ado resuelve `{data, error}`. */
 function fakeMovementsClient(rows: unknown[]) {
   const builder: Record<string, unknown> = {};
-  const chainMethods = ["select", "eq", "order", "is", "gte", "lte", "or"];
+  const chainMethods = [
+    "select",
+    "eq",
+    "order",
+    "is",
+    "gte",
+    "lte",
+    "or",
+    "textSearch",
+  ];
   for (const method of chainMethods) {
     builder[method] = vi.fn(() => builder);
   }
@@ -123,6 +132,25 @@ describe("GET /api/v1/movements", () => {
     expect(builder.eq).toHaveBeenCalledWith("type", "gasto");
     expect(builder.eq).toHaveBeenCalledWith("status", "confirmed");
     expect(builder.eq).toHaveBeenCalledWith("category_id", "alimentacion");
+  });
+
+  it("AC-MOV-05: `q` dispara busqueda de texto sobre comercio y descripcion", async () => {
+    const client = fakeMovementsClient([]);
+    mocks.getApiAuth.mockResolvedValue({
+      client,
+      userId: "11111111-1111-4111-8111-111111111111",
+    });
+    const { GET } = await import("./route");
+
+    await GET(new Request("http://localhost/api/v1/movements?q=Wong"));
+
+    const builder = client.from.mock.results[0]!.value as {
+      textSearch: ReturnType<typeof vi.fn>;
+    };
+    expect(builder.textSearch).toHaveBeenCalledWith("search_vector", "Wong", {
+      type: "websearch",
+      config: "spanish",
+    });
   });
 
   it("AC-API-02: un limit por encima de 100 se recorta a 100 (via limit+1=101 pedido)", async () => {

@@ -23,14 +23,23 @@ export function normalizeMovementAmount(amount: number): number {
 }
 
 function requireAmount(input: MovementInput): number {
-  if (input.amount == null || input.amount <= 0) {
+  // WEB-D197: "ajuste" es el unico tipo que puede llevar monto negativo
+  // (26_modulo_movimientos.md §4.1/§7) porque el signo es la unica senal de
+  // si el saldo sube o baja; el resto de tipos exige monto positivo.
+  const { amount } = input;
+  const isValid =
+    amount != null && (input.type === "ajuste" ? amount !== 0 : amount > 0);
+
+  if (!isValid || amount == null) {
     throw new CoreError(
       "INVALID_MOVEMENT_AMOUNT",
-      "El movimiento confirmado necesita un monto mayor a cero"
+      input.type === "ajuste"
+        ? "El ajuste necesita un monto distinto de cero"
+        : "El movimiento confirmado necesita un monto mayor a cero"
     );
   }
 
-  return normalizeMovementAmount(input.amount);
+  return normalizeMovementAmount(amount);
 }
 
 function addAccountDelta(
@@ -137,17 +146,27 @@ export function calculateMovementBalanceEffect(
         );
       }
 
-      if (input.account_origin_id && input.account_destination_id) {
+      // WEB-D197: "cuenta" de un ajuste es siempre el destino; el signo del
+      // monto (ya validado por requireAmount) es la unica senal de si sube
+      // o baja. Usar el origen duplicaria esa senal con un segundo signo.
+      if (
+        input.account_origin_id ||
+        input.box_origin_id ||
+        input.box_destination_id
+      ) {
         throw new CoreError(
           "INVALID_MOVEMENT_ACCOUNTS",
-          "Un ajuste solo puede tener origen o destino, no ambos"
+          "Un ajuste solo usa la cuenta como destino"
+        );
+      }
+      if (!input.account_destination_id) {
+        throw new CoreError(
+          "INVALID_MOVEMENT_ACCOUNTS",
+          "Un ajuste necesita una cuenta"
         );
       }
 
-      addAccountDelta(accountDeltas, input.account_origin_id, -amount);
       addAccountDelta(accountDeltas, input.account_destination_id, amount);
-      addBoxDelta(boxDeltas, input.box_origin_id, -amount);
-      addBoxDelta(boxDeltas, input.box_destination_id, amount);
       break;
     }
   }

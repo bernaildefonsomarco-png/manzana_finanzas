@@ -138,7 +138,11 @@ export const CreateDebtCommandSchema = CommandEnvelopeBaseSchema.extend({
       installment_amount: PositiveMoneySchema.nullable(),
       interest_notes: z.string().trim().min(1).max(300).nullable(),
       account_id: z.string().uuid().nullable(),
-      movement_type: z.enum(["prestamo_recibido", "prestamo_dado"]),
+      movement_type: z.enum([
+        "prestamo_recibido",
+        "prestamo_dado",
+        "deuda_adquirida",
+      ]),
       idempotency_key: z.string().trim().min(8).max(180),
       creation_source: z.enum(["whatsapp", "dashboard_manual"]),
     })
@@ -151,15 +155,27 @@ export const CreateDebtCommandSchema = CommandEnvelopeBaseSchema.extend({
           message: "La deuda en cuotas necesita fecha de primera cuota.",
         });
       }
-      const expectedType =
+      // WEB-D198: direction "i_owe" admite dos tipos ("recibi efectivo" vs
+      // "adquiri una deuda sin movimiento de efectivo"); "they_owe_me" solo
+      // tiene un caso porque no hay un "deuda_adquirida" simetrico para
+      // cuando soy yo quien presta.
+      const expectedTypes =
         payload.direction === "i_owe"
-          ? "prestamo_recibido"
-          : "prestamo_dado";
-      if (payload.movement_type !== expectedType) {
+          ? (["prestamo_recibido", "deuda_adquirida"] as const)
+          : (["prestamo_dado"] as const);
+      if (!expectedTypes.includes(payload.movement_type as never)) {
         ctx.addIssue({
           code: "custom",
           path: ["movement_type"],
           message: "El tipo de movimiento no coincide con la direccion.",
+        });
+      }
+      if (payload.movement_type === "deuda_adquirida" && payload.account_id) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["account_id"],
+          message:
+            "Una deuda adquirida no lleva cuenta: no hay movimiento de efectivo.",
         });
       }
     }),

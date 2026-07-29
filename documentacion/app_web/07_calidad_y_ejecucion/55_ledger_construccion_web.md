@@ -3,7 +3,7 @@
 **Bloque:** 07 — Calidad y ejecución
 **Alcance:** V1
 **Estado:** vivo
-**Fecha de última actualización:** 28 de julio de 2026
+**Fecha de última actualización:** 29 de julio de 2026
 **Docs fuente:** `54` (los veinte cortes), `49` §8 y §9 (protocolos de `USER` y `METRIC`), `50` (matriz)
 **Documentos que dependen de este:** `56` (puente a WhatsApp)
 
@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-08` cerraron `G1` y `G2`. Ninguno
+**La construcción avanza.** `W-01` a `W-09` cerraron `G1` y `G2`. Ninguno
 tiene criterios de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 8 de 20 |
-| Criterios `verificado` | 79 de 708 |
+| Cortes cerrados | 9 de 20 |
+| Criterios `verificado` | 89 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -1074,6 +1074,168 @@ una verificación que no ocurrió.
   28, no 25; `integracion` 11, no 5; `unidad` 49, no 31).
 - `03_decisiones_producto_web.md`: `WEB-D190` a `WEB-D194` (nuevas, cuatro
   del trabajo previo a este cierre más `WEB-D194` de esta sección).
+
+---
+
+## W-09 — Los once tipos de movimiento se guardan desde Movimientos
+
+**Cerrado:** 2026-07-29
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-29, con `npm run matriz:generar`, posterior
+al commit `PENDIENTE` (`AC-TRAZ-12`; hash real registrado en el commit de
+seguimiento de este cierre).
+
+### Qué se entregó
+
+`RUL-MOV-01`/`AC-MOV-01` cierran su parte `TEST`: los 11 tipos de movimiento
+se guardan de verdad desde `POST /api/v1/movements`, cerrando `C-05` (antes
+9 de 11 expulsaban al usuario a otra pantalla). La investigación previa a
+escribir código (`WEB-D195`) encontró que la ruta genérica no impedía crear
+directamente `pago_deuda`, `deuda_adquirida`, `prestamo_dado`,
+`prestamo_recibido` o `devolucion_recibida` sin pasar por sus comandos
+especializados — un movimiento de deuda "huérfano" que no actualizaría
+`debts.current_balance` ni las cuotas. La ruta ahora despacha por grupo:
+`gasto`, `ingreso`, `transferencia`, `asignacion_interna`, `ajuste` y
+`pago_recurrente` (sin ocurrencia) siguen el camino genérico ya existente;
+`deuda_adquirida`/`prestamo_dado`/`prestamo_recibido` despachan
+`CreateDebtCommand` (el mismo comando que ya usa el canal del asistente);
+`pago_deuda`/`devolucion_recibida` exigen una deuda existente y despachan
+`RecordDebtPaymentCommand`, validando que el tipo elegido coincida con la
+dirección real de la deuda antes de comprometer nada. `deuda_adquirida` se
+habilitó como `movement_type` válido de `CreateDebtCommand`
+(`WEB-D198`) — antes solo existían `prestamo_recibido`/`prestamo_dado`, y
+ningún camino del repositorio podía crear una deuda adquirida de verdad.
+
+`ajuste` cierra como el undécimo tipo real: `26` §4.1/§7 documentaba "amount
+> 0 salvo en ajuste, donde puede ser negativo" desde antes de este corte,
+pero el constraint de la migración `006` y `requireAmount` en
+`balance-engine.ts` rechazaban cualquier monto negativo para cualquier tipo
+— la regla estaba escrita, nunca implementada (`WEB-D197`). La migración
+`051` corrige el constraint; el campo "cuenta" de un ajuste se envía siempre
+como destino (nunca origen), para que el signo del monto sea la única señal
+de si el saldo sube o baja. `RUL-MOV-10`/`ERR-MOV-08` (fecha futura
+rechazada, ofrece Pagos que vienen) tampoco existía en ningún lado del
+repositorio; se agregó a los tres caminos de creación y a la corrección de
+fecha por `PATCH`. La búsqueda de texto (`AC-MOV-05`) es nueva en el
+servidor: migración `052` agrega una columna generada `search_vector`
+(`tsvector` en español sobre `merchant`/`description`) con índice GIN, y
+`GET /movements` la usa vía `.textSearch()` en vez de construir un filtro
+`ilike` a mano con el texto del usuario.
+
+El frontend reconstruye `/movimientos` entero en `src/app/(app)/movimientos/`,
+reemplazando `movements-screen.tsx` (1.697 líneas, condenado por
+`WEB-D164`) tras extraer sus doce casos borde rescatables al §19 del
+módulo. `SCR-MOV-01` (listado con `useInfiniteQuery`, búsqueda siempre
+visible, filtros de tipo/estado/categoría/fecha aplicados en servidor,
+estados vacío/sin-resultados/error distintos), `SCR-MOV-02` (detalle con
+editar/eliminar/restaurar/historial/impacto), `SCR-MOV-03` (formulario
+adaptado a los 11 tipos, con enlace secundario a Deudas/Pagos que vienen
+cuando aplica) y `SCR-MOV-05` (confirmación de eliminación nombrando el
+movimiento) están construidas. `SCR-MOV-06`/`07` (panel de filtros con
+previsualización de conteo, acciones en lote) no se construyeron — ver "qué
+quedó abierto". El enlace pendiente de `WEB-D194` (`SCR-CAT-02` → listado
+filtrado por categoría) se cerró (`WEB-D200`): la API ya filtraba por
+`category_id` desde `W-05`, el bloqueo era enteramente del listado viejo.
+
+`GET /movements/[id]/history` es una ruta nueva (no existía ningún endpoint
+que leyera `movement_audit_log`); pagina por cursor, nunca trae el
+historial completo de una vez. `tsc`, `eslint`, `npm run build` (con los
+gates de `prebuild` en verde) y `npm test` (237 ficheros, 1.349 pruebas)
+terminan sin errores, salvo un caso descrito abajo.
+
+### Qué sorprendió
+
+Cinco cosas.
+
+La primera y más seria: la investigación de reconocimiento (antes de
+escribir cualquier código) encontró que el respaldo financiero para los 11
+tipos era mucho más sólido de lo que el módulo `26` asumía —
+`CommandDispatcher`, el cálculo de saldo por tipo, la auditoría y la
+detección de duplicados cross-canal ya existían y funcionaban— pero que
+exactamente los cinco tipos "especializados" tenían una brecha real de
+integridad de datos (arriba, `WEB-D195`) que nadie había notado porque
+nunca se había intentado crearlos desde un formulario genérico. El corte
+que el documento describía como "conectar un formulario a una API que ya
+existe" resultó ser, en su mitad más delicada, cerrar un agujero de
+integridad financiera real.
+
+La segunda: `ajuste` con monto negativo — una regla escrita en el modelo de
+datos del propio módulo `26` desde su redacción original — nunca había sido
+implementada, ni en el constraint de base de datos ni en el Core. Nadie lo
+había notado porque nadie había intentado registrar un ajuste negativo
+antes de este corte.
+
+La tercera: al diseñar `deuda_adquirida`/`prestamo_dado`/`prestamo_recibido`,
+`CreateDebtCommand` resultó tener un test explícito ("crea deuda y
+calendario mensual **sin inventar un movimiento** ni tocar cuentas") que
+documentaba una decisión deliberada anterior: sin cuenta vinculada, no se
+crea ninguna fila en `movements`, ni siquiera para tipos que si tuvieran
+cuenta la usarían. Se preservó ese comportamiento en vez de "corregirlo"
+para forzar una fila que el propio test decía explícitamente que no debía
+existir.
+
+La cuarta: la verificación en navegador con sesión real —el estándar que
+venía rigiendo esta reconstrucción hasta `Mi Dinero`/`Categorías`— no fue
+posible en este entorno: la extensión de Chrome de automatización no está
+conectada en esta sesión. Sí fue posible ejecutar la app real contra el
+proyecto de Supabase de staging (con las migraciones `051`/`052` aplicadas
+ahí mismo) y confirmar por `curl` que las rutas protegidas redirigen sin
+sesión y que la API exige autenticación — no reemplaza una verificación de
+usuario real, y se reporta así en vez de afirmar una que no ocurrió. Por el
+mismo motivo, los dos recorridos de Playwright que `W-03`/`W-07` dejaron
+como `test.fixme()` asignados a este corte (registro rápido, eliminar y
+restaurar) no se implementaron: hacerlo sin poder ejecutarlos contra una
+sesión real habría sido escribir una prueba sin verificar que falla sin el
+código y pasa con él (`RUL-HECHO-02`), exactamente lo que esas reglas
+prohíben.
+
+La quinta, menor: `AC-API-04` de `route.test.ts` (ya existente, de `W-05`)
+resultó intermitente bajo la suite completa de 1.349 pruebas en este
+entorno —pasa siempre en aislamiento y junto a los demás ficheros de
+movimientos, pero falla por timeout de 5s cuando compite por recursos con
+la suite entera—. No es una regresión de este corte: el fichero no se tocó
+y su lógica no cambió.
+
+### Qué quedó abierto
+
+`AC-MOV-11` (cambiar el tipo muestra el efecto antes de confirmar) no se
+construyó: `WEB-D195` solo permite cambiar el tipo entre los seis genéricos
+entre sí (cambiar hacia o desde uno especializado se rechaza con
+`ERR-MOV-06`), y la previsualización de efecto para ese subconjunto queda
+pendiente. `AC-MOV-15`/`SCR-MOV-07` (acciones en lote) se difieren
+completas a `W-10` (`WEB-D199`): el "contrato de operaciones masivas" que
+`RUL-MOV-12` exige seguir es del módulo `27` (dueño `W-10`), y hoy no existe
+ni siquiera en el único código real que se le parece
+(`pending/batch-confirm`, sin preview ni `batch_id` ni deshacer). `AC-MOV-18`
+no cierra: las rutas de movimientos ya estaban en la lista blanca de
+excepciones temporales de `AC-SEG-01` desde `W-02`, y esa lista se vacía
+con `AC-SEG-07`, no con este corte (`WEB-D201`, mismo patrón que
+`WEB-D191`). `AC-MOV-02` (recorrido e2e), `AC-MOV-09`/`14`/`16` en su parte
+`USER`, y `AC-MOV-04`/`20` (sin prueba dedicada, verificados por
+construcción) quedan sin cerrar por las razones del punto cuatro de "qué
+sorprendió". `SCR-MOV-06` (panel de filtros con previsualización de
+conteo) no se construyó — los filtros de `26` §8 sí se aplican todos en
+servidor, pero sin ese panel dedicado; candidato a un corte de pulido
+futuro, sin AC propio que lo exija literalmente. Pagar una deuda desde una
+caja (no solo cuenta) queda fuera de `pago_deuda`/`devolucion_recibida`
+hasta que `W-11` extienda `RecordDebtPaymentCommand` (`WEB-D195`).
+
+### Documentos corregidos
+
+- `26` §19: doce casos borde rescatados de `movements-screen.tsx` antes de
+  borrarla (`RUL-INV-01`), y dos casos nuevos de las decisiones de este
+  corte (`pago_recurrente` sin ocurrencia, `ajuste` con destino).
+- `26` §20: `Clase:` añadida a `AC-MOV-01` (parte `TEST`), `03`, `05`, `06`,
+  `07`, `08`, `09` (parte `TEST`), `10`, `12`, `13`, `17`, `19`; nota de por
+  qué no cierran `02`, `04`, `11`, `14`, `15`, `16`, `18`, `20`.
+- `26` §22: decisiones nuevas listadas (`WEB-D195` a `WEB-D201`).
+- `25` §8: `SCR-CAT-02` enlaza "Ver movimientos de esta categoría" a
+  `/movimientos?categoria=...` (`WEB-D200`, cierra `WEB-D194`).
+- `50` §3.1: censo de clases actualizado (171 con clase, no 159; `lint` 29,
+  no 28; `integracion` 21, no 11; `unidad` 50, no 49).
+- `tests/lint/seg-04-404-no-403.test.ts`: conteo de rutas actualizado a 60
+  (`v1/movements/[id]/history`, nueva).
+- `03_decisiones_producto_web.md`: `WEB-D195` a `WEB-D201` (nuevas).
 
 ---
 

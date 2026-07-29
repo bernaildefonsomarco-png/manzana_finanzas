@@ -598,48 +598,113 @@ restauración.
 12. **Historial de cambios muy largo.** Se pagina; se muestran los 10 últimos
     con opción de ver todo.
 
+Casos rescatados de `src/features/movements/movements-screen.tsx` antes de
+reemplazarla (`RUL-INV-01`, `WEB-D164` la condena; esto es lo que sabía que
+el documento original no capturaba):
+
+13. **Búsqueda tolera plurales, tildes y mayúsculas, e ignora palabras
+    vacías y genéricas** ("el", "de", o "gasto"/"pago" cuando ya hay un
+    término de contenido en la misma búsqueda) para que "compras súper" y
+    "compra super" encuentren lo mismo.
+14. **El listado ordena por recencia de registro, no solo por fecha del
+    movimiento**: primero `created_at` desc, empate por `occurred_at` desc,
+    empate por `id` desc. Un movimiento con fecha retroactiva (caso borde 1)
+    sigue apareciendo arriba si se acaba de crear — perderlo sería
+    indistinguible de que la creación falló en silencio.
+15. **Una fecha capturada como "solo fecha" (sin hora) se ancla a las 12:00
+    hora de Lima antes de convertirla a ISO**, para que nunca cruce de día
+    por un redondeo a medianoche UTC.
+16. **Un movimiento vinculado a una deuda o a una ocurrencia recurrente
+    bloquea edición y eliminación directa desde el detalle**, reflejando en
+    la interfaz lo que `assertStandaloneMovementMutation` ya impone en el
+    Core (`MOVEMENT_REQUIRES_SPECIALIZED_ENGINE`): se explica por qué y se
+    remite a Deudas o a Pagos que vienen en vez de fallar sin contexto.
+17. **Tras eliminar, aparece "Deshacer eliminación" de inmediato**, sin
+    obligar a ir al filtro `estado=eliminado` para restaurar.
+18. **El aviso de duplicado (409) conserva lo ya tecleado.** "Guardar de
+    todos modos" reenvía el mismo formulario con `confirm_duplicate: true`
+    en vez de limpiarlo.
+19. **Crear subcategoría, persona o etiqueta nueva sin salir del formulario
+    de movimiento**, con selección automática de lo recién creado.
+20. **`pago_recurrente` creado desde Movimientos no marca ninguna ocurrencia
+    como pagada** (`WEB-D196`): si el usuario solo indica la regla
+    recurrente, el movimiento queda con `recurring_occurrence_id: null` y la
+    próxima ocurrencia esperada sigue calculándose como si no se hubiera
+    pagado, hasta que `W-10`/`W-11` reconcilien ambos caminos.
+21. **`ajuste` con monto negativo se registra siempre contra
+    `account_destination_id`** (`WEB-D197`): el signo del monto es la única
+    señal de si el saldo sube o baja: nunca se usa `account_origin_id` para
+    este tipo, para no tener que pedir dos campos de cuenta para un solo
+    concepto.
+
 ## 20. Criterios de aceptación
 
 - `AC-MOV-01` — Los 11 tipos se guardan desde `/movimientos/nuevo` sin
-  redirigir a otra pantalla. Evidencia: `TEST` + `USER`.
+  redirigir a otra pantalla. Evidencia: `TEST` + `USER`. Clase: `integracion`.
+  Cierra la parte `TEST` (los 11 tipos, incluidos los 5 con comando
+  especializado, tienen prueba de creación real en
+  `route.post.test.ts`); `USER` no cierra — sin sesión de navegador
+  disponible en este entorno (ver "qué quedó abierto").
 - `AC-MOV-02` — El listado recorre el conjunto completo mediante cursor.
-  Evidencia: `TEST`. Clase: `e2e`.
+  Evidencia: `TEST`. Clase: `e2e`. No cierra: exige un recorrido de
+  Playwright con sesión real, bloqueado por el mismo motivo que `AC-MOV-01`
+  `USER`. El mecanismo de cursor sí está probado a nivel de integración
+  desde `W-05` y el listado nuevo lo consume con `useInfiniteQuery`.
 - `AC-MOV-03` — Todos los filtros se aplican en el servidor.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`.
 - `AC-MOV-04` — Ningún control del listado carece de manejador funcional.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra con prueba dedicada — verificado por
+  construcción durante este corte (cada botón nuevo tiene `onClick` real);
+  mismo tratamiento que `AC-CUENTAS-17` en `W-08`.
 - `AC-MOV-05` — La búsqueda está siempre disponible, sin depender de la URL.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`.
 - `AC-MOV-06` — Un movimiento eliminado se restaura y su impacto se
-  recalcula correctamente. Evidencia: `TEST`.
+  recalcula correctamente. Evidencia: `TEST`. Clase: `integracion`.
 - `AC-MOV-07` — Toda edición queda en el historial con valor anterior y
-  nuevo. Evidencia: `TEST`.
+  nuevo. Evidencia: `TEST`. Clase: `integracion`.
 - `AC-MOV-08` — Repetir una creación con la misma `Idempotency-Key` no
-  duplica. Evidencia: `TEST`.
+  duplica. Evidencia: `TEST`. Clase: `integracion`.
 - `AC-MOV-09` — Un duplicado probable se advierte antes de guardar y ofrece
-  las dos salidas. Evidencia: `TEST` + `USER`.
+  las dos salidas. Evidencia: `TEST` + `USER`. Clase: `integracion`. `USER`
+  no cierra (mismo bloqueo de sesión de navegador).
 - `AC-MOV-10` — El cliente no puede imponer `affects_*`, `status` ni
-  `confidence`. Evidencia: `TEST`.
+  `confidence`. Evidencia: `TEST`. Clase: `unidad`.
 - `AC-MOV-11` — Cambiar el tipo muestra el efecto sobre saldos antes de
-  confirmar. Evidencia: `TEST` + `USER`.
+  confirmar. Evidencia: `TEST` + `USER`. No cierra: `WEB-D195` solo permite
+  cambiar el tipo entre los seis genéricos (rechaza cambiar hacia o desde un
+  tipo especializado, `ERR-MOV-06`); la previsualización de efecto antes de
+  confirmar el cambio no se construyó en este corte.
 - `AC-MOV-12` — Un movimiento a las 23:30 hora de Lima queda con la fecha de
-  ese día. Evidencia: `TEST`.
+  ese día. Evidencia: `TEST`. Clase: `integracion`.
 - `AC-MOV-13` — Una fecha futura se rechaza ofreciendo Pagos que vienen.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`.
 - `AC-MOV-14` — "Vacío" y "sin resultados" son estados distintos.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. No cierra con prueba dedicada — construido
+  (`MovementsResults` distingue ambos mensajes y acciones); sin prueba de
+  componente ni sesión de usuario en este corte.
 - `AC-MOV-15` — Un lote muestra conteo y muestra reales antes de ejecutar, y
-  se deshace entero. Evidencia: `TEST`.
+  se deshace entero. Evidencia: `TEST`. No cierra: diferido a `W-10`
+  (`WEB-D199`).
 - `AC-MOV-16` — El detalle explica el impacto del movimiento en lenguaje del
-  usuario. Evidencia: `USER`.
+  usuario. Evidencia: `USER`. No cierra: `buildImpactExplanation` está
+  construido y en producción, pero `USER` exige el protocolo de tres
+  personas de `WEB-D149`, no disponible en este corte.
 - `AC-MOV-17` — `confidence` no aparece en ninguna superficie.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `lint`. Verificado por auditoría de texto sobre
+  `src/app/(app)/movimientos/`.
 - `AC-MOV-18` — Ninguna ruta de este módulo usa service-role.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra: `POST /movements` ya usaba
+  `createServiceClient()` desde antes de este corte, registrado como
+  excepción temporal justificada desde `W-02` (mismo caso que
+  `WEB-D191` para `24`/`25`) — diferido a `AC-SEG-07`.
 - `AC-MOV-19` — El rol `authenticated` no puede insertar en `movements`
-  directamente. Evidencia: `TEST`.
+  directamente. Evidencia: `TEST`. Clase: `integracion`. Ya probado desde
+  `W-02` (`tests/rls/aislamiento.test.ts`); el módulo lo hereda cerrado.
 - `AC-MOV-20` — Cada fila del listado es navegable con teclado y su monto se
-  anuncia con signo y moneda. Evidencia: `TEST`.
+  anuncia con signo y moneda. Evidencia: `TEST`. No cierra con prueba
+  dedicada — `MovementRow` es un `<Link>` con `aria-label` que incluye tipo,
+  comercio, fecha y monto con signo, sin prueba de accesibilidad
+  automatizada en este corte (mismo tratamiento que `AC-CUENTAS-17`).
 
 ## 21. Fuera de alcance y puente a WhatsApp
 
@@ -670,3 +735,13 @@ acción de primera clase, posible desde la migración `046`; se añaden las
 acciones en lote, que ninguna fuente contemplaba; se prohíbe explícitamente
 la fecha futura, que las fuentes no acotaban; y se retira `confidence` de
 toda superficie visible.
+
+**Decisiones nuevas de `W-09`:** `WEB-D195` (ruta de creación por tipo: cinco
+de los once tipos despachan comandos especializados del Core en vez de
+`CreateMovementCommand` genérico), `WEB-D196` (`pago_recurrente` sin
+ocurrencia no reconcilia la bandeja de pendientes), `WEB-D197` (`ajuste`
+admite monto negativo — corrige un constraint de base de datos que
+contradecía este mismo documento desde antes de `W-09`), `WEB-D198`
+(`deuda_adquirida` habilitado como `movement_type` de `CreateDebtCommand`),
+`WEB-D199` (acciones en lote diferidas a `W-10`, `AC-MOV-15` no cierra aquí),
+`WEB-D200` (cierre del enlace pendiente de `WEB-D194`).
