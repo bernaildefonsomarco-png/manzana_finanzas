@@ -7,6 +7,7 @@ import {
   getAccountById,
   getActiveBoxes,
   getBoxById,
+  getFreeBalanceForAccount,
   softDeleteBox,
 } from "@/data/repositories/accounts.repository";
 import { SupabaseFinancialCoreRepository } from "@/data/repositories/movements.repository";
@@ -81,6 +82,22 @@ export async function POST(request: Request) {
         meta,
         404
       );
+    }
+
+    // RUL-CUENTAS-06 / ERR-CUENTAS-04: separar dinero de inmediato al crear
+    // la caja no puede dejar el libre de la cuenta en negativo.
+    if (parsed.initial_balance > 0) {
+      const freeBalance = roundMoney(
+        await getFreeBalanceForAccount(auth.client, auth.userId, account.id)
+      );
+      if (parsed.initial_balance > freeBalance) {
+        return errorJson(
+          "VALIDATION_ERROR",
+          `Solo tienes S/${freeBalance.toFixed(2)} libres en ${account.name}.`,
+          meta,
+          400
+        );
+      }
     }
 
     const serviceClient = createServiceClient();
@@ -176,6 +193,10 @@ export async function POST(request: Request) {
 
 function normalizeCurrency(currency: string): "PEN" | "USD" {
   return currency === "USD" ? "USD" : "PEN";
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
 }
 
 function isZodLike(error: unknown): boolean {

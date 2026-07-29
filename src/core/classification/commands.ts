@@ -69,7 +69,8 @@ export const ClassificationCommandSchema = z.discriminatedUnion("type", [
     type: z.literal("SetMovementTagsCommand"),
     payload: z.object({
       movement_id: z.string().uuid(),
-      tag_ids: z.array(z.string().uuid()).max(12),
+      // RUL-CAT §7 / ERR-CAT-05: maximo 6 etiquetas por movimiento.
+      tag_ids: z.array(z.string().uuid()).max(6, "Un movimiento puede tener hasta 6 etiquetas."),
       assignment_source: z.enum(["user", "agent", "learning", "import"]),
       confirmed_by_user: z.boolean(),
     }),

@@ -1,12 +1,18 @@
-import { PlaceholderSection } from "@/shared/placeholder-section";
+"use client";
 
-export default function CajaDetallePage() {
+import { use } from "react";
+import { AppShell } from "@/features/app-shell/app-shell";
+import { useLegacyNavigate, useLegacySignOut } from "@/shared/legacy-nav/legacy-view-routes";
+import { BoxDetailView } from "./box-detail-view";
+
+export default function CajaDetallePage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
+  const onNavigate = useLegacyNavigate();
+  const onSignOut = useLegacySignOut();
+
   return (
-    <PlaceholderSection
-      title="Detalle de caja"
-      description="El detalle con URL propia llega junto a la reconstrucción de Mi Dinero."
-      backHref="/mi-dinero"
-      backLabel="Volver a Mi Dinero"
-    />
+    <AppShell title="Caja" activeView="money" onNavigate={onNavigate} onSignOut={onSignOut}>
+      <BoxDetailView boxId={id} />
+    </AppShell>
   );
 }

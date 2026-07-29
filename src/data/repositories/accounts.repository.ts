@@ -5,18 +5,28 @@ import { logger } from "@/shared/telemetry/logger";
 
 type Client = SupabaseClient<Database>;
 
-/** Retorna las cuentas activas del usuario. */
+/**
+ * Retorna las cuentas del usuario. `includeArchived` trae tambien las
+ * archivadas (24 §10: `GET /accounts` filtro `include_archived`), para
+ * poder ofrecer restaurarlas (`ACT-CUENTAS-04`).
+ */
 export async function getActiveAccounts(
   client: Client,
-  userId: string
+  userId: string,
+  options: { includeArchived?: boolean } = {}
 ): Promise<Account[]> {
-  const { data, error } = await client
+  let query = client
     .from("accounts")
     .select("*")
     .eq("user_id", userId)
-    .is("deleted_at", null)
     .order("is_default", { ascending: false })
     .order("created_at", { ascending: true });
+
+  if (!options.includeArchived) {
+    query = query.is("deleted_at", null);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     logger.error("accounts.get_active_failed", { error, user_id: userId });
@@ -212,7 +222,7 @@ export async function linkEmailAccountHint(
   );
 }
 
-/** Soft-delete de una cuenta. El saldo debe ser 0 o transferido antes. */
+/** Soft-delete de una cuenta. Archivar no exige saldo cero ni cajas vacias (24 S5.1). */
 export async function softDeleteAccount(
   client: Client,
   userId: string,
@@ -232,6 +242,59 @@ export async function softDeleteAccount(
     });
     throw error;
   }
+}
+
+/**
+ * Restaura una cuenta archivada (ACT-CUENTAS-04). `null` si no existe o ya
+ * esta activa — el llamador lo trata como 404, igual que `getAccountById`.
+ */
+export async function restoreAccount(
+  client: Client,
+  userId: string,
+  accountId: string
+): Promise<Account | null> {
+  const { data, error } = await client
+    .from("accounts")
+    .update({ deleted_at: null })
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .not("deleted_at", "is", null)
+    .select()
+    .maybeSingle();
+
+  if (error) {
+    logger.error("accounts.restore_failed", {
+      error,
+      user_id: userId,
+      account_id: accountId,
+    });
+    throw error;
+  }
+
+  return (data as Account | null) ?? null;
+}
+
+/**
+ * `RUL-CUENTAS-13`: como maximo una cuenta activa `is_default = true`.
+ * Marcar una nueva desmarca la anterior en la misma operacion.
+ */
+export async function setDefaultAccount(
+  client: Client,
+  userId: string,
+  accountId: string
+): Promise<Account> {
+  const active = await getActiveAccounts(client, userId);
+  const previousDefault = active.find(
+    (account) => account.is_default && account.id !== accountId
+  );
+
+  if (previousDefault) {
+    await updateAccountMeta(client, userId, previousDefault.id, {
+      is_default: false,
+    });
+  }
+
+  return updateAccountMeta(client, userId, accountId, { is_default: true });
 }
 
 // Boxes -----------------------------------------------------------------------
@@ -374,6 +437,62 @@ export async function softDeleteBox(
     });
     throw error;
   }
+}
+
+/**
+ * Archiva en cascada las cajas activas de una cuenta (24 S5.1: "archivar no
+ * es borrar" — el dinero sigue contabilizado en el saldo de la cuenta
+ * archivada, que deja de sumar al total). Devuelve las cajas archivadas.
+ */
+export async function archiveBoxesForAccount(
+  client: Client,
+  userId: string,
+  accountId: string
+): Promise<Box[]> {
+  const { data, error } = await client
+    .from("boxes")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("user_id", userId)
+    .eq("account_id", accountId)
+    .is("deleted_at", null)
+    .select();
+
+  if (error) {
+    logger.error("accounts.archive_boxes_for_account_failed", {
+      error,
+      user_id: userId,
+      account_id: accountId,
+    });
+    throw error;
+  }
+
+  return (data ?? []) as Box[];
+}
+
+/** Restaura, en cascada, las cajas archivadas de una cuenta (ACT-CUENTAS-04). */
+export async function restoreBoxesForAccount(
+  client: Client,
+  userId: string,
+  accountId: string
+): Promise<Box[]> {
+  const { data, error } = await client
+    .from("boxes")
+    .update({ deleted_at: null })
+    .eq("user_id", userId)
+    .eq("account_id", accountId)
+    .not("deleted_at", "is", null)
+    .select();
+
+  if (error) {
+    logger.error("accounts.restore_boxes_for_account_failed", {
+      error,
+      user_id: userId,
+      account_id: accountId,
+    });
+    throw error;
+  }
+
+  return (data ?? []) as Box[];
 }
 
 /**

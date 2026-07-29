@@ -464,22 +464,45 @@ Base: `/api/v1/accounts` y `/api/v1/boxes`. Contrato general en
 | `GET /summary` | Las cuatro capas con sus referencias de evidencia |
 | `POST /money/actions` | Transferir, separar, devolver, mover. **Requiere `Idempotency-Key`** |
 
-`POST /money/actions` recibe:
+`POST /money/actions` recibe (contrato real, corregido por `WEB-D192`; también
+resuelve el ajuste de saldo, que este documento originalmente separaba en
+`POST /accounts/[id]/adjust`):
 
 ```jsonc
+// action: "transfer_between_accounts"
 {
-  "action": "transferir | separar | devolver | mover_entre_cajas",
+  "action": "transfer_between_accounts",
   "amount": "150.00",
-  "from": { "account_id": "...", "box_id": null },
-  "to":   { "account_id": "...", "box_id": "..." },
+  "from_account_id": "...",
+  "to_account_id": "...",
   "occurred_at": "2026-07-25T15:30:00-05:00",
   "note": "opcional"
 }
+
+// action: "move_box_money", con mode según dirección
+{
+  "action": "move_box_money",
+  "mode": "separate_to_box | release_from_box | box_to_box",
+  "amount": "150.00",
+  "account_id": "...",
+  "origin_box_id": null,       // null si mode = separate_to_box
+  "destination_box_id": "...", // null si mode = release_from_box
+  "occurred_at": "2026-07-25T15:30:00-05:00"
+}
+
+// action: "adjust_account_balance"
+{
+  "action": "adjust_account_balance",
+  "account_id": "...",
+  "new_balance": "350.00",
+  "reason": "opcional, máximo 200 caracteres"
+}
 ```
 
-El servidor **deduce el tipo de movimiento** a partir de origen y destino; el
-cliente no lo envía. Esto evita que la interfaz y el asistente puedan crear
-un tipo incorrecto.
+El servidor **deduce el tipo de movimiento** (`transferencia`,
+`asignacion_interna` o `ajuste`) a partir de `action`/`mode`; el cliente nunca
+envía `movement.type`. Esto evita que la interfaz y el asistente puedan crear
+un tipo incorrecto (`AC-CUENTAS-15`).
 
 Errores: los de §13, mapeados según `14_contratos_api_web.md` §4.
 
@@ -676,41 +699,98 @@ con saldo negativo.
 ## 20. Criterios de aceptación
 
 - `AC-CUENTAS-01` — El ejemplo de §6 produce exactamente S/800.00 / S/580.00
-  / S/220.00 / S/170.00. Evidencia: `TEST`.
+  / S/220.00 / S/170.00. Evidencia: `TEST`. Clase: `unidad`. Cierra en
+  `W-08`: `src/core/finance/money-layers.test.ts` prueba el ejemplo exacto;
+  `src/app/api/v1/money/route.test.ts` lo prueba de nuevo contra la ruta.
 - `AC-CUENTAS-02` — Un compromiso cubierto por su caja no se descuenta dos
-  veces. Evidencia: `TEST`.
+  veces. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-08`:
+  `money-layers.test.ts`, verificado con `RUL-HECHO-02` (era exactamente el
+  bug de doble descuento que este corte corrigió en `GET /api/v1/money`,
+  `tool-gateway.ts` e `insight-engine.ts`).
 - `AC-CUENTAS-03` — Una cobertura parcial descuenta solo la diferencia.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-08`:
+  `money-layers.test.ts` prueba `Math.min(compromiso, saldo_de_la_caja)`
+  contra el saldo real, no contra el monto nominal del compromiso.
 - `AC-CUENTAS-04` — Sin cuentas, no se muestra "Dinero libre: S/0.00".
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `unidad` para el `TEST`
+  (`money/route.test.ts`, "sin cuentas..."); `USER` (el `EmptyState` de
+  `mi-dinero-screen.tsx`, `W-08`) no verificado interactivamente este corte
+  (sin usuario de prueba disponible contra el proyecto de Supabase real).
 - `AC-CUENTAS-05` — El desglose de las cuatro capas está accesible desde
-  donde se muestre el dinero libre. Evidencia: `TEST` + `USER`.
+  donde se muestre el dinero libre. Evidencia: `TEST` + `USER`. `hero-card.tsx`
+  (`W-08`) expone el desglose; `USER` no verificado interactivamente (misma
+  limitación de entorno que `AC-CUENTAS-04`).
 - `AC-CUENTAS-06` — `current_balance` nunca se modifica sin un movimiento
-  `ajuste` asociado. Evidencia: `TEST`.
+  `ajuste` asociado. Evidencia: `TEST`. Clase: `unidad`. Cierra por herencia
+  de un corte anterior al esqueleto web: `src/core/finance/command-dispatcher.test.ts`
+  ("ajusta una cuenta con motivo y deja trazabilidad"); sin cambios en
+  `W-08`.
 - `AC-CUENTAS-07` — Una transferencia no cambia el dinero total.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra por herencia:
+  `command-dispatcher.test.ts` ("transfiere entre cuentas sin cambiar el
+  total financiero"); sin cambios en `W-08`.
 - `AC-CUENTAS-08` — Una asignación interna no cambia el saldo de la cuenta.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra por herencia:
+  `command-dispatcher.test.ts` ("mueve dinero entre cajas sin cambiar cuenta
+  total"); sin cambios en `W-08`.
 - `AC-CUENTAS-09` — Eliminar una caja con saldo devuelve el dinero a libre y
-  no lo pierde. Evidencia: `TEST`.
+  no lo pierde. Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-08`:
+  `src/app/api/v1/boxes/route.test.ts` y el flujo de `DELETE /boxes/[id]`
+  (release-to-free antes de archivar).
 - `AC-CUENTAS-10` — Una caja nunca queda con saldo negativo.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion` + invariante de base de datos.
+  Cierra en `W-08`: migración `049_account_box_invariants.sql`
+  (`boxes_current_balance_non_negative`), probada contra Postgres real en
+  `tests/rls/account-box-invariants.test.ts`, verificada con `RUL-HECHO-02`
+  (update directo a saldo negativo, confirmado rechazado, restaurado).
 - `AC-CUENTAS-11` — Un saldo negativo de cuenta no bloquea ningún
-  movimiento. Evidencia: `TEST`.
+  movimiento. Evidencia: `TEST`. Clase: `unidad`. Ninguna ruta ni comando de
+  escritura financiera consulta `current_balance < 0` como precondición de
+  bloqueo (auditado en `src/app/api/v1/money/actions/route.ts`,
+  `src/core/finance/command-dispatcher.ts`); sin cambios en `W-08`.
 - `AC-CUENTAS-12` — Existe como máximo una cuenta por defecto activa.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Doble protección: el índice de
+  exclusión `accounts_one_default_per_user` (migración `004`, a nivel de
+  base de datos) y `setDefaultAccount()` (aplicación) desmarcando la
+  anterior en la misma operación. Prueba añadida en `W-08`:
+  `tests/rls/account-box-invariants.test.ts` ("setDefaultAccount desmarca la
+  anterior..."), verificada con `RUL-HECHO-02` (se quitó el desmarcado, la
+  prueba falló contra la restricción de la base de datos, se restauró) — el
+  gap de cobertura de este criterio (nunca tenía prueba propia) se cerró en
+  este corte.
 - `AC-CUENTAS-13` — Ninguna ruta de este módulo usa service-role.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. **No cierra en `W-08`** (`WEB-D191`): las rutas de
+  cuentas y cajas están en la lista de excepciones temporales de
+  `AC-SEG-01` desde `W-02`; vaciar esa lista es transversal (`AC-SEG-07`),
+  no específico de este módulo.
 - `AC-CUENTAS-14` — Una cuenta de otro usuario devuelve 404.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-08`:
+  `accounts/[id]/route.test.ts` y `boxes/[id]/route.test.ts` ("de otro
+  usuario: 404, nunca 403") para las rutas nuevas/tocadas de este corte;
+  las rutas de listado (`GET /accounts`, `GET /boxes`) no tienen este caso
+  porque ya filtran por `user_id` de origen, no hay recurso ajeno que pedir.
 - `AC-CUENTAS-15` — El servidor deduce el tipo de movimiento en
-  `/money/actions`; el cliente no puede imponerlo. Evidencia: `TEST`.
+  `/money/actions`; el cliente no puede imponerlo. Evidencia: `TEST`. Clase:
+  `integracion`. `money/actions/route.test.ts` (`W-08`); contrato real
+  documentado en `WEB-D192` (tres acciones discriminadas, no el `from`/`to`
+  genérico que describía la versión anterior de este documento).
 - `AC-CUENTAS-16` — Las cuatro capas se calculan en una sola consulta.
-  Evidencia: `CODE` + `TEST`.
+  Evidencia: `CODE` + `TEST`. Clase: `integracion`. Interpretado como "sin
+  `N+1` por cuenta" (`WEB-D193`), no como una única sentencia SQL literal:
+  `money/route.test.ts` ("el numero de consultas no crece con el numero de
+  cuentas/cajas").
 - `AC-CUENTAS-17` — El saldo negativo se comunica con icono y signo, no solo
-  con color. Evidencia: `TEST`.
+  con color. Evidencia: `TEST`. `AccountsPanel` (`W-08`) usa una etiqueta de
+  texto (`Badge`, "Saldo negativo"/"Libre negativo") además del color, y
+  `MoneyText` antepone el signo al monto — no hay una prueba automatizada
+  dedicada a este criterio todavía (gap conocido, candidato a
+  `tests/a11y/` en un corte futuro).
 - `AC-CUENTAS-18` — El asistente puede ejecutar los 12 comandos de §14.2 con
-  confirmación. Evidencia: `TEST` + `USER`.
+  confirmación. Evidencia: `TEST` + `USER`. **No cierra en `W-08`**: ninguno
+  de los comandos de §14.2 (`crear_cuenta`, `archivar_cuenta`,
+  `ajustar_saldo`, etc.) existe todavía en `src/core/classification/commands.ts`
+  ni en `src/core/finance/` — depende del puente a la fase WhatsApp
+  (`WEB-D001`), fuera del alcance de la app web V1.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 
@@ -739,3 +819,14 @@ base de `C-04` (modo discreto transversal) en lo que respecta a montos.
 inferencia de cuenta por IA de `05e` §10 como responsabilidad de este módulo;
 la inferencia vive ahora en el motor (`20b`) y en la memoria (`36`), y aquí
 solo se declara qué señales aporta (§15).
+
+**Diferencias registradas en `W-08`:** el contrato de §10 para
+`POST /money/actions` se corrigió para describir la API real
+(`WEB-D192`) — tres acciones con discriminante, no cuatro con `from`/`to`, y
+el ajuste de saldo vive en este mismo endpoint, no en
+`POST /accounts/[id]/adjust`. `AC-CUENTAS-13` ("ninguna ruta usa
+service-role") no cierra en `W-08`: las rutas de este módulo están en la
+lista de excepciones temporales de `AC-SEG-01` desde `W-02`, y su migración
+es transversal a `AC-SEG-07` (`WEB-D191`). `AC-CUENTAS-16` ("una sola
+consulta") se interpreta como "sin `N+1` por cuenta", no como una única
+sentencia SQL literal (`WEB-D193`).

@@ -74,6 +74,7 @@ export const EXCEPCIONES_TEMPORALES: EntradaLista[] = [
   // Cuentas y cajas (24)
   "v1/accounts",
   "v1/accounts/*",
+  "v1/accounts/*/restore",
   "v1/boxes",
   "v1/boxes/*",
   "v1/money/actions",

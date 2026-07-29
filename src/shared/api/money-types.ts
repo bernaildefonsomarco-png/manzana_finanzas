@@ -35,6 +35,7 @@ export type MoneyEmptyState = {
   description: string;
 };
 
+/** `GET /api/v1/money` — las cuatro capas (`09` §2-3, `24` §6). */
 export type MoneyDashboardResponse = {
   total_balance: number;
   free_in_accounts: number;

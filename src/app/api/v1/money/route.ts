@@ -17,7 +17,11 @@ import type {
   AccountMoneySummary,
   BoxMoneySummary,
   MoneyDashboardResponse,
-} from "@/features/money/money-types";
+} from "@/shared/api/money-types";
+import {
+  calculateMoneyLayers,
+  COMMITMENT_HORIZON_DAYS,
+} from "@/core/finance/money-layers";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +38,8 @@ export async function GET(request: Request) {
     const [accounts, boxes, recurringCommitments, debtCommitments] = await Promise.all([
       getActiveAccounts(auth.client, auth.userId),
       getActiveBoxes(auth.client, auth.userId),
-      listUpcomingCommitments(auth.client, auth.userId),
-      listDebtInstallmentCommitments(auth.client, auth.userId),
+      listUpcomingCommitments(auth.client, auth.userId, COMMITMENT_HORIZON_DAYS),
+      listDebtInstallmentCommitments(auth.client, auth.userId, COMMITMENT_HORIZON_DAYS),
     ]);
     const commitments = [...recurringCommitments, ...debtCommitments].sort(
       compareCommitments
@@ -91,25 +95,21 @@ function buildMoneyResponse(
       "Cuenta",
   }));
 
-  const totalBalance = roundMoney(
-    accountSummaries.reduce((sum, account) => sum + account.current_balance, 0)
-  );
-  const separatedInBoxes = roundMoney(
-    boxSummaries.reduce((sum, box) => sum + box.current_balance, 0)
-  );
-  const freeInAccounts = roundMoney(totalBalance - separatedInBoxes);
-  const upcomingUncoveredCommitments = roundMoney(
-    commitments
-      .filter((commitment) => !commitment.linked_box_id)
-      .reduce((sum, commitment) => sum + commitment.amount, 0)
-  );
+  const layers = calculateMoneyLayers({
+    accounts: accounts.map((account) => ({ current_balance: Number(account.current_balance) })),
+    boxes: boxes.map((box) => ({ id: box.id, current_balance: Number(box.current_balance) })),
+    commitments: commitments.map((commitment) => ({
+      amount: commitment.amount,
+      linked_box_id: commitment.linked_box_id,
+    })),
+  });
 
   return {
-    total_balance: totalBalance,
-    free_in_accounts: freeInAccounts,
-    operational_free_money: roundMoney(freeInAccounts - upcomingUncoveredCommitments),
-    separated_in_boxes: separatedInBoxes,
-    upcoming_uncovered_commitments: upcomingUncoveredCommitments,
+    total_balance: layers.total_balance,
+    free_in_accounts: layers.free_in_accounts,
+    operational_free_money: layers.operational_free_money,
+    separated_in_boxes: layers.separated_in_boxes,
+    upcoming_uncovered_commitments: layers.upcoming_uncovered_commitments,
     accounts: accountSummaries,
     boxes: boxSummaries,
     commitments,

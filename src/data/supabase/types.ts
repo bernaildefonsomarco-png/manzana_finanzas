@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -85,6 +85,27 @@ export type Database = {
           type?: Database["public"]["Enums"]["account_type"]
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      api_rate_limit_counters: {
+        Row: {
+          count: number
+          key: string
+          updated_at: string
+          window_start: string
+        }
+        Insert: {
+          count?: number
+          key: string
+          updated_at?: string
+          window_start: string
+        }
+        Update: {
+          count?: number
+          key?: string
+          updated_at?: string
+          window_start?: string
         }
         Relationships: []
       }
@@ -2685,6 +2706,15 @@ export type Database = {
         }
         Returns: Json
       }
+      check_and_increment_rate_limit: {
+        Args: {
+          p_key: string
+          p_max_count: number
+          p_now?: string
+          p_window_seconds: number
+        }
+        Returns: Json
+      }
       claim_outbox_events: {
         Args: { p_limit?: number }
         Returns: {
@@ -3040,6 +3070,13 @@ export type Database = {
               isSetofReturn: false
             }
           }
+      count_movements_by_subcategory: {
+        Args: never
+        Returns: {
+          movement_count: number
+          subcategory_id: string
+        }[]
+      }
       decide_learning_candidate: {
         Args: {
           p_actor_type: string
@@ -3467,6 +3504,7 @@ export type Database = {
           p_discreet_mode_enabled: boolean
           p_idempotency_key: string
           p_insights_whatsapp_opt_in: boolean
+          p_theme_preference?: string
           p_user_id: string
           p_weekly_summary_channel: string
           p_weekly_summary_enabled: boolean

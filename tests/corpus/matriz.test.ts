@@ -43,7 +43,7 @@ describe("generador de la matriz de trazabilidad", () => {
     expect(matriz.censo.criterios.porPorton).toEqual({ G1: 558, G2: 11, G3: 139 });
   });
 
-  it("50 §3.1: 132 criterios tienen clase asignada, con el reparto declarado", () => {
+  it("50 §3.1: 159 criterios tienen clase asignada, con el reparto declarado", () => {
     // W-02 añadió tres: AC-SEG-02 y AC-SEG-03 (integracion, 51 §8) y
     // AC-SEG-04 (lint, agregado sobre las 58 rutas de /api/v1). W-04 añadió
     // seis `unidad`: AC-CANAL-01 (agregado, WEB-D173), AC-CANAL-03, 04, 05,
@@ -62,19 +62,29 @@ describe("generador de la matriz de trazabilidad", () => {
     // AC-NAV-08, AC-CONFIANZA-02, AC-CONFIANZA-06, AC-ARQ-06, AC-PAT-02,
     // AC-PAT-07 y AC-PAT-10. Además, `AC-NAV-01` se reclasificó de `e2e` a
     // `build` (`WEB-D187`: no necesita navegador), así que `e2e` baja de 8 a
-    // 7 y `build` sube de 15 a 16 — sin cambio neto en el total.
+    // 7 y `build` sube de 15 a 16 — sin cambio neto en el total. W-08 añadió
+    // veintisiete: en `09` (`AC-DINERO-01`, `02`, `05`, `06`, cuatro
+    // `unidad`); en `24` (`AC-CUENTAS-01` a `04`, `06`, `07`, `08`, `11`,
+    // ocho `unidad`, y `AC-CUENTAS-09`, `10`, `12`, `14`, `15`, `16`, seis
+    // `integracion`); en `25` (`AC-CAT-01`, `02`, `04`, `05`, `06`, `13`,
+    // seis `unidad`, y `AC-CAT-03`, `07`, `14`, tres `lint`). Los criterios
+    // con evidencia compuesta (`AC-CAT-04`: `unidad` + `integracion`;
+    // `AC-CAT-14`: `lint` + `unidad`) cuentan por su primera clase citada,
+    // que es lo que mide el generador. `AC-DINERO-03/04`, `AC-CUENTAS-05`,
+    // `13`, `17`, `18` y `AC-CAT-08` a `12`, `15` quedan sin clase nueva:
+    // diferidos (`WEB-D190`, `WEB-D191`) o sin `TEST` propio todavía.
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 16,
-      lint: 25,
+      lint: 28,
       e2e: 7,
       presupuesto: 2,
       contenido: 1,
-      integracion: 5,
-      unidad: 31,
+      integracion: 11,
+      unidad: 49,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(132);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(499);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(159);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(472);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {

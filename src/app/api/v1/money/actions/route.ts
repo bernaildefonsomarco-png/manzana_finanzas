@@ -4,6 +4,7 @@ import { CoreError } from "@/core/finance/errors";
 import {
   getAccountById,
   getBoxById,
+  getFreeBalanceForAccount,
 } from "@/data/repositories/accounts.repository";
 import { SupabaseFinancialCoreRepository } from "@/data/repositories/movements.repository";
 import { createServiceClient } from "@/data/supabase/server";
@@ -59,6 +60,8 @@ export async function POST(request: Request) {
         getAccount: (accountId) =>
           getAccountById(auth.client, auth.userId, accountId),
         getBox: (boxId) => getBoxById(auth.client, auth.userId, boxId),
+        getFreeBalance: (accountId) =>
+          getFreeBalanceForAccount(auth.client, auth.userId, accountId),
       },
     });
 
@@ -107,6 +110,7 @@ async function buildMovementForAction(params: {
   read: {
     getAccount: (accountId: string) => Promise<Account | null>;
     getBox: (boxId: string) => Promise<Box | null>;
+    getFreeBalance: (accountId: string) => Promise<number>;
   };
 }): Promise<MovementInput> {
   switch (params.action.action) {
@@ -224,6 +228,7 @@ async function buildBoxMovement(params: {
   read: {
     getAccount: (accountId: string) => Promise<Account | null>;
     getBox: (boxId: string) => Promise<Box | null>;
+    getFreeBalance: (accountId: string) => Promise<number>;
   };
 }): Promise<MovementInput> {
   const originBox = params.action.box_origin_id
@@ -272,6 +277,21 @@ async function buildBoxMovement(params: {
       "INVALID_MOVEMENT_ACCOUNTS",
       "No encontre la cuenta vinculada a la caja."
     );
+  }
+
+  // RUL-CUENTAS-06 / ERR-CUENTAS-04: separar dinero no puede dejar el libre
+  // de la cuenta en negativo. `box_to_box` no lo necesita: redistribuye
+  // saldo ya separado, no crea separacion nueva.
+  if (params.action.mode === "separate_to_box") {
+    const freeBalance = roundMoney(
+      await params.read.getFreeBalance(account.id)
+    );
+    if (params.action.amount > freeBalance) {
+      throw new CoreError(
+        "INVALID_MOVEMENT_BOXES",
+        `Solo tienes S/${freeBalance.toFixed(2)} libres en ${account.name}.`
+      );
+    }
   }
 
   return movementInputBase({

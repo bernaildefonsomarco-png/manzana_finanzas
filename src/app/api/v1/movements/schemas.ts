@@ -28,7 +28,9 @@ export const CreateMovementRequestSchema = z
     debt_id: OptionalNullableUuidSchema,
     recurring_rule_id: OptionalNullableUuidSchema,
     related_person_id: OptionalNullableUuidSchema,
-    tag_ids: z.array(z.string().uuid()).max(12).optional(),
+    // RUL-CAT §7 / ERR-CAT-05: maximo 6 etiquetas por movimiento.
+    // RUL-CAT §7 / ERR-CAT-05: maximo 6 etiquetas por movimiento.
+    tag_ids: z.array(z.string().uuid()).max(6, "Un movimiento puede tener hasta 6 etiquetas.").optional(),
     confidence: z.number().min(0).max(1).nullable().optional(),
     requires_review: z.boolean().optional(),
     confirm_duplicate: z.boolean().optional(),

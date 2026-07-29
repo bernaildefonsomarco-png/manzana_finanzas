@@ -1,10 +1,16 @@
 "use client";
 
-import { MoneyScreen } from "@/features/money/money-screen";
+import { AppShell } from "@/features/app-shell/app-shell";
 import { useLegacyNavigate, useLegacySignOut } from "@/shared/legacy-nav/legacy-view-routes";
+import { MiDineroScreen } from "./mi-dinero-screen";
 
 export default function MiDineroPage() {
   const onNavigate = useLegacyNavigate();
   const onSignOut = useLegacySignOut();
-  return <MoneyScreen onNavigate={onNavigate} onSignOut={onSignOut} />;
+
+  return (
+    <AppShell title="Mi Dinero" activeView="money" onNavigate={onNavigate} onSignOut={onSignOut}>
+      <MiDineroScreen />
+    </AppShell>
+  );
 }

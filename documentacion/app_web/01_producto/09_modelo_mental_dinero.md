@@ -205,14 +205,41 @@ faltan. Estos son los casos y su comportamiento:
 
 - `AC-DINERO-01` — El cálculo del ejemplo de §4 produce exactamente
   S/800.00 / S/580.00 / S/220.00 / S/170.00 en todos los módulos que lo
-  exhiban. Evidencia: `TEST`.
+  exhiban. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-08`:
+  `src/core/finance/money-layers.ts::calculateMoneyLayers` es la única
+  implementación (`money-layers.test.ts` prueba el ejemplo exacto), y
+  `GET /api/v1/money`, `tool-gateway.ts::buildBalanceSnapshot` e
+  `insight-engine.ts` — que antes de este corte tenían tres implementaciones
+  divergentes con un bug de doble descuento — ahora la llaman en vez de
+  reimplementarla. `insight-engine.test.ts` ejercita el mismo ejemplo
+  numérico sobre esa ruta; `tool-gateway.ts::buildBalanceSnapshot` no tiene
+  prueba propia todavía (función privada, sin exportar) — hereda cobertura
+  de `calculateMoneyLayers` pero su propio mapeo de datos no está probado
+  de forma aislada, gap conocido para un corte futuro.
 - `AC-DINERO-02` — Un compromiso cubierto por una caja con saldo suficiente
-  no se descuenta dos veces del dinero libre. Evidencia: `TEST`.
+  no se descuenta dos veces del dinero libre. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-08`: era el bug que motivó `WEB-D` de este corte —
+  `money-layers.test.ts` prueba cobertura total y parcial (`Math.min` contra
+  el saldo real de la caja), verificado con `RUL-HECHO-02` (revertido al
+  filtro anterior, las pruebas de cobertura fallaron, restaurado).
 - `AC-DINERO-03` — Un presupuesto no modifica el dinero libre bajo ninguna
-  circunstancia. Evidencia: `TEST`.
+  circunstancia. Evidencia: `TEST`. **No cierra en `W-08`**: el módulo de
+  presupuestos (`31_modulo_presupuestos_y_metas.md`, dueño de un corte
+  futuro) todavía no existe en `src/` — no hay nada que probar todavía.
 - `AC-DINERO-04` — El dinero total nunca se presenta como la cifra principal
-  de una pantalla de resumen. Evidencia: `DOC` + `USER`.
+  de una pantalla de resumen. Evidencia: `DOC` + `USER`. `hero-card.tsx`
+  (`W-08`) muestra "Dinero libre" como cifra principal y el total como cifra
+  secundaria, siguiendo esta regla; no verificado interactivamente en
+  navegador este corte (limitación de entorno: sin usuario de prueba
+  disponible contra el proyecto real).
 - `AC-DINERO-05` — Sin cuentas registradas, la app no muestra "S/0.00" como
-  dinero libre. Evidencia: `TEST`.
+  dinero libre. Evidencia: `TEST`. Clase: `unidad`.
+  `src/app/api/v1/money/route.test.ts` ("sin cuentas: no muestra...",
+  `W-08`); en el frontend, `mi-dinero-screen.tsx` reemplaza la cifra por un
+  `EmptyState` de "Agrega tu primera cuenta" cuando `accounts.length === 0`.
 - `AC-DINERO-06` — El desglose completo de las cuatro capas está disponible
-  desde cualquier lugar donde se muestre el dinero libre. Evidencia: `TEST` + `USER`.
+  desde cualquier lugar donde se muestre el dinero libre. Evidencia: `TEST` +
+  `USER`. Clase: `unidad` para la consistencia numérica (mismo argumento que
+  `AC-DINERO-01`: una sola implementación compartida en vez de tres
+  divergentes); `USER` para la disponibilidad visual del desglose en cada
+  pantalla, no verificada interactivamente este corte.

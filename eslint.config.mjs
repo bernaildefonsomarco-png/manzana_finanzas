@@ -28,6 +28,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Estado en tiempo de ejecucion del CLI de Supabase local (secretos y
+    // artefactos regenerados por `supabase start`/`db reset`), no codigo
+    // fuente — nunca debe entrar al lint.
+    "supabase/.temp/**",
   ]),
 ]);
 

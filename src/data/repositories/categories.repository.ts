@@ -70,37 +70,8 @@ export async function getUserSubcategories(
   return (data ?? []) as UserSubcategory[];
 }
 
-/** Crea una subcategoría para el usuario. */
-export async function createUserSubcategory(
-  client: Client,
-  params: {
-    userId: string;
-    categoryId: CategoryId;
-    label: string;
-    createdBy: "user" | "llm" | "learning" | "import";
-  }
-): Promise<UserSubcategory> {
-  const normalizedLabel = params.label.toLowerCase().trim();
-
-  const { data, error } = await client
-    .from("user_subcategories")
-    .insert({
-      user_id: params.userId,
-      category_id: params.categoryId,
-      label: params.label.trim(),
-      normalized_label: normalizedLabel,
-      created_by: params.createdBy,
-    })
-    .select()
-    .single();
-
-  if (error) {
-    logger.error("categories.create_subcategory_failed", {
-      error,
-      user_id: params.userId,
-    });
-    throw error;
-  }
-
-  return data as UserSubcategory;
-}
+// Crear/renombrar subcategorías pasa por `ClassificationCommandDispatcher`
+// (`src/core/classification/classification-command-dispatcher.ts`) y
+// `insertSubcategory`/`updateSubcategory` en `classification.repository.ts`,
+// que normalizan con `normalizeClassificationKey` (NFD, sin tildes). Este
+// archivo no reimplementa esa escritura.

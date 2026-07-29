@@ -13,6 +13,7 @@ export type MutationType =
   | "pending.confirm"
   | "account.upsert"
   | "box.upsert"
+  | "subcategory.edit"
   | "debt.pay"
   | "budget.edit"
   | "import.confirm"
@@ -36,6 +37,8 @@ function keysFor(mutation: MutationType, params?: { debtId?: string }): QueryKey
       return [queryKeys.accounts, queryKeys.summary];
     case "box.upsert":
       return [queryKeys.boxes, queryKeys.summary];
+    case "subcategory.edit":
+      return [queryKeys.subcategories.all, queryKeys.categories, queryKeys.movements.all];
     case "debt.pay":
       return [
         queryKeys.debts.all,

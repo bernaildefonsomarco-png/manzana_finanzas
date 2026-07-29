@@ -34,6 +34,10 @@ import {
 } from "@/data/repositories/insights.repository";
 import { readPersistentConversationStyle } from "./conversation-style-preferences";
 import {
+  calculateMoneyLayers,
+  COMMITMENT_HORIZON_DAYS,
+} from "@/core/finance/money-layers";
+import {
   listRecurringDashboard,
   listUpcomingCommitments,
 } from "@/data/repositories/recurring.repository";
@@ -326,8 +330,8 @@ export class ToolGateway {
         await Promise.all([
           getActiveAccounts(this.client, userId),
           getActiveBoxes(this.client, userId),
-          listUpcomingCommitments(this.client, userId, 31),
-          listDebtInstallmentCommitments(this.client, userId, 31),
+          listUpcomingCommitments(this.client, userId, COMMITMENT_HORIZON_DAYS),
+          listDebtInstallmentCommitments(this.client, userId, COMMITMENT_HORIZON_DAYS),
         ]);
       const commitments = [...recurringCommitments, ...debtCommitments];
       const snapshot = buildBalanceSnapshot(accounts, boxes, commitments);
@@ -1416,27 +1420,21 @@ function buildBalanceSnapshot(
     };
   });
 
-  const totalBalance = roundMoney(
-    accountSummaries.reduce((sum, account) => sum + account.current_balance, 0)
-  );
-  const separatedInBoxes = roundMoney(
-    boxes.reduce((sum, box) => sum + Number(box.current_balance), 0)
-  );
-  const freeInAccounts = roundMoney(totalBalance - separatedInBoxes);
-  const upcomingUncoveredCommitments = roundMoney(
-    commitments
-      .filter((commitment) => !commitment.linked_box_id)
-      .reduce((sum, commitment) => sum + commitment.amount, 0)
-  );
+  const layers = calculateMoneyLayers({
+    accounts: accounts.map((account) => ({ current_balance: Number(account.current_balance) })),
+    boxes: boxes.map((box) => ({ id: box.id, current_balance: Number(box.current_balance) })),
+    commitments: commitments.map((commitment) => ({
+      amount: commitment.amount,
+      linked_box_id: commitment.linked_box_id,
+    })),
+  });
 
   return {
-    total_balance: totalBalance,
-    free_in_accounts: freeInAccounts,
-    operational_free_money: roundMoney(
-      freeInAccounts - upcomingUncoveredCommitments
-    ),
-    separated_in_boxes: separatedInBoxes,
-    upcoming_uncovered_commitments: upcomingUncoveredCommitments,
+    total_balance: layers.total_balance,
+    free_in_accounts: layers.free_in_accounts,
+    operational_free_money: layers.operational_free_money,
+    separated_in_boxes: layers.separated_in_boxes,
+    upcoming_uncovered_commitments: layers.upcoming_uncovered_commitments,
     has_accounts: accounts.length > 0,
     account_count: accounts.length,
     box_count: boxes.length,

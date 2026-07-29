@@ -132,7 +132,11 @@ aparece en mensajes proactivos ni con modo discreto activo.
 
 ### 4.4 Migraciones requeridas
 
-Ninguna nueva. Las tablas existen desde las migraciones `007` y `030`.
+Ninguna nueva. Las tablas existen desde la migración `003_categories_tags.sql`
+(corregido en `W-08`: este documento citaba `007` y `030` — `007` no toca
+estas tablas; `030_classification_governance.sql` sí es real y añade
+`updated_at`/`deleted_at` a `tags` y retira la escritura directa de
+`authenticated`).
 
 ## 5. Máquina de estados
 
@@ -602,35 +606,84 @@ demás.
 ## 20. Criterios de aceptación
 
 - `AC-CAT-01` — `sin clasificar` y `otros` son estados distintos en datos y
-  en interfaz. Evidencia: `TEST` + `USER`.
+  en interfaz. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra en `W-08`
+  (`WEB-D190`): `src/core/classification/category-totals.test.ts`
+  ("`AC-CAT-01`: `sin_clasificar` ... y 'otros' se agregan por separado");
+  `GET /api/v1/categories` (`categories/route.test.ts`) nunca funde
+  `unclassified` dentro de la lista de 12 categorías. `USER` (distinción
+  visual en `categories-screen.tsx`) no verificado interactivamente este
+  corte.
 - `AC-CAT-02` — Ningún movimiento se bloquea por falta de categoría.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra por herencia (`WEB-D190`):
+  `category_id` es `nullable().optional()` en
+  `src/app/api/v1/movements/schemas.ts` desde antes de este corte — crear o
+  editar un movimiento nunca exige categoría.
 - `AC-CAT-03` — Las 12 categorías base no se pueden crear, editar ni
   eliminar desde ninguna vía, incluido el asistente. Evidencia: `TEST`.
+  Clase: `lint`. Cierra en `W-08` (`WEB-D190`):
+  `tests/lint/ac-cat-03-categorias-inmutables.test.ts` (prueba estructural:
+  no existe ningún comando ni ruta que mute `CategoryCommand`, solo
+  `Sub`categoryCommand).
 - `AC-CAT-04` — Crear una subcategoría que ya existe con otra grafía
-  reutiliza la existente. Evidencia: `TEST`.
+  reutiliza la existente. Evidencia: `TEST`. Clase: `unidad` + `integracion`.
+  Cierra en `W-08` (`WEB-D190`): `classification.repository.test.ts`
+  (`normalizeClassificationKey`) para la normalización, y
+  `subcategories/route.test.ts` + `subcategories/[id]/route.test.ts`
+  (`W-08`) para el `CONFLICT` 409 al crear o renombrar hacia un duplicado
+  normalizado.
 - `AC-CAT-05` — No se crea una subcategoría nueva automáticamente cuando hay
-  duda entre dos existentes. Evidencia: `TEST`.
+  duda entre dos existentes. Evidencia: `TEST`. Clase: `unidad`. Cierra por
+  herencia (`WEB-D190`): `normalizeClassificationKey` distingue grafías
+  reales de conceptos distintos (`classification.repository.test.ts`,
+  "'cafecito' no colapsa con 'cafe'"); la creación de subcategorías siempre
+  requiere una acción explícita del usuario (`CreateUserSubcategoryCommand`
+  o, en `W-08`, el botón "Nueva subcategoria" de `CategorySelector`), nunca
+  automática ante ambigüedad.
 - `AC-CAT-06` — Las transferencias y asignaciones internas no aparecen en
-  ningún reporte por categoría. Evidencia: `TEST`.
+  ningún reporte por categoría. Evidencia: `TEST`. Clase: `unidad`. Cierra
+  en `W-08` (`WEB-D190`): `category-totals.test.ts` prueba
+  `CATEGORY_EXCLUDED_MOVEMENT_TYPES` (`transferencia`, `asignacion_interna`)
+  excluidos de `aggregateCategoryTotals`.
 - `AC-CAT-07` — No se muestra confianza numérica en ninguna superficie.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `lint`. Cierra por herencia de `W-07`:
+  `tests/lint/sin-confianza-numerica.test.ts` corre sobre todo `src/` fuera
+  de `src/features/**`; sin cambios en `W-08`.
 - `AC-CAT-08` — Una reclasificación masiva muestra conteo real y muestra
   antes de ejecutar, y se puede deshacer entera. Evidencia: `TEST` + `USER`.
+  **No cierra en `W-08`** (`WEB-D190`): no existe comando de reclasificación
+  en lote en `src/core/classification/commands.ts` — depende de la ventana
+  de deshacer de `36_modulo_memoria_y_aprendizaje.md`, dueño `W-13`.
 - `AC-CAT-09` — Cada corrección genera evidencia negativa contra la
-  clasificación anterior. Evidencia: `TEST`.
+  clasificación anterior. Evidencia: `TEST`. **No cierra en `W-08`**
+  (`WEB-D190`): depende de la misma maquinaria de evidencia de `36`, `W-13`.
 - `AC-CAT-10` — El usuario puede ver por qué se clasificó algo, con evidencia
-  concreta y sin jerga. Evidencia: `TEST` + `USER`.
+  concreta y sin jerga. Evidencia: `TEST` + `USER`. **No cierra en `W-08`**
+  (`WEB-D190`): `SCR-CAT-05` (panel "por qué") depende de la misma evidencia
+  de `36`, `W-13`.
 - `AC-CAT-11` — El usuario puede olvidar un aprendizaje de clasificación y
-  deja de aplicarse. Evidencia: `TEST`.
+  deja de aplicarse. Evidencia: `TEST`. **No cierra en `W-08`** (`WEB-D190`):
+  "olvidar" exige la misma ventana de deshacer de `36`, `W-13`.
 - `AC-CAT-12` — Fusionar subcategorías avisa el conteo antes y no pierde
-  ningún movimiento. Evidencia: `TEST`.
+  ningún movimiento. Evidencia: `TEST`. **No cierra en `W-08`** (`WEB-D190`):
+  no existe comando de fusión — `SCR-CAT-02` construida en `W-08` ofrece
+  renombrar y archivar, explícitamente sin fusionar, hasta que `36` (`W-13`)
+  aporte la reversibilidad de 7 días que `RUL-CAT-07` exige.
 - `AC-CAT-13` — Un movimiento admite hasta 6 etiquetas simultáneas.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-08`: el máximo estaba mal
+  puesto en `12` (contradecía `RUL-CAT §7`/`ERR-CAT-05`) en
+  `SetMovementTagsCommand` y en el schema de `POST /movements`; corregido a
+  `6` en ambos, verificado con `RUL-HECHO-02` (revertido a `12`, la prueba
+  nueva de `commands.test.ts` falló, restaurado a `6`).
 - `AC-CAT-14` — Las categorías nunca se distinguen solo por color.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `lint` + `unidad`. Cierra por herencia
+  (`WEB-D190`): cada categoría tiene `label` textual obligatorio
+  (`categories-screen.tsx`, `24` primitivas de `W-06`); no existe ningún
+  color como único identificador en el modelo de datos (`shared/types/domain.ts::Category`
+  no tiene campo `color`).
 - `AC-CAT-15` — Ninguna ruta de este módulo usa service-role.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. **No cierra en `W-08`** (`WEB-D191`): las rutas de
+  subcategorías y etiquetas están en la lista de excepciones temporales de
+  `AC-SEG-01` desde `W-02`; vaciar esa lista es transversal (`AC-SEG-07`).
 
 ## 21. Fuera de alcance y puente a WhatsApp
 
@@ -657,3 +710,15 @@ masiva, que `05f` no contemplaba; se añade la evidencia negativa en el
 aprendizaje, posible desde la migración `044`; y se elimina la exposición de
 `confidence` en el contrato de datos visible, que `05f` §8.2 mostraba en un
 ejemplo.
+
+**Diferencias registradas en `W-08`:** `AC-CAT-08` a `12` (fusión,
+reclasificación masiva, panel "por qué", olvidar un aprendizaje) no cierran
+en `W-08` — dependen de la maquinaria de evidencia y ventana de deshacer de
+`36_modulo_memoria_y_aprendizaje.md`, dueño `W-13` (`WEB-D190`).
+`AC-CAT-15` ("ninguna ruta usa service-role") no cierra en `W-08` por la
+misma razón que `AC-CUENTAS-13`: las rutas de este módulo están en la lista
+de excepciones temporales de `AC-SEG-01` desde `W-02` (`WEB-D191`).
+`SCR-CAT-02` (detalle de categoría) no incluye el enlace al listado de
+movimientos filtrado por esa categoría: la pantalla de movimientos sigue
+siendo la condenada `movements-screen.tsx`, que solo filtra por texto libre
+y no acepta `category_id` — ese enlace llega con `W-09` (`WEB-D194`).

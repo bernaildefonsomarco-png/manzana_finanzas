@@ -11,6 +11,7 @@ import type {
   RiskLevel,
   Tag,
 } from "@/shared/types/domain";
+import { calculateMoneyLayers } from "@/core/finance/money-layers";
 
 export type InsightCurrency = "PEN" | "USD";
 
@@ -473,23 +474,21 @@ function buildFreeMoneyInsights(input: {
     const commitments = input.commitments.filter(
       (commitment) => commitment.currency === currency,
     );
-    const totalBalance = roundMoney(
-      accounts.reduce((sum, account) => sum + Number(account.current_balance), 0),
-    );
-    const separated = roundMoney(
-      boxes.reduce((sum, box) => sum + Number(box.current_balance), 0),
-    );
-    const uncoveredCommitments = roundMoney(
-      commitments
-        .filter((commitment) => !commitment.linked_box_id)
-        .reduce((sum, commitment) => sum + Number(commitment.amount), 0),
-    );
+    const layers = calculateMoneyLayers({
+      accounts: accounts.map((account) => ({ current_balance: Number(account.current_balance) })),
+      boxes: boxes.map((box) => ({ id: box.id, current_balance: Number(box.current_balance) })),
+      commitments: commitments.map((commitment) => ({
+        amount: Number(commitment.amount),
+        linked_box_id: commitment.linked_box_id,
+      })),
+    });
+    const totalBalance = layers.total_balance;
+    const separated = layers.separated_in_boxes;
+    const uncoveredCommitments = layers.upcoming_uncovered_commitments;
     if (separated <= 0 && uncoveredCommitments <= 0) return [];
 
-    const freeInAccounts = roundMoney(totalBalance - separated);
-    const operationalFreeMoney = roundMoney(
-      freeInAccounts - uncoveredCommitments,
-    );
+    const freeInAccounts = layers.free_in_accounts;
+    const operationalFreeMoney = layers.operational_free_money;
     const sourceIds = [
       ...accounts.map((account) => account.id),
       ...boxes.map((box) => box.id),
@@ -609,20 +608,15 @@ function buildMonthlyProjectionInsights(input: {
       return [];
     }
 
-    const totalBalance = roundMoney(
-      accounts.reduce((sum, account) => sum + Number(account.current_balance), 0),
-    );
-    const separated = roundMoney(
-      boxes.reduce((sum, box) => sum + Number(box.current_balance), 0),
-    );
-    const uncoveredCommitments = roundMoney(
-      commitments
-        .filter((commitment) => !commitment.linked_box_id)
-        .reduce((sum, commitment) => sum + Number(commitment.amount), 0),
-    );
-    const operationalFreeMoney = roundMoney(
-      totalBalance - separated - uncoveredCommitments,
-    );
+    const projectionLayers = calculateMoneyLayers({
+      accounts: accounts.map((account) => ({ current_balance: Number(account.current_balance) })),
+      boxes: boxes.map((box) => ({ id: box.id, current_balance: Number(box.current_balance) })),
+      commitments: commitments.map((commitment) => ({
+        amount: Number(commitment.amount),
+        linked_box_id: commitment.linked_box_id,
+      })),
+    });
+    const operationalFreeMoney = projectionLayers.operational_free_money;
     const currentSpendTotal = sumAmounts(currentSpend);
     const historicalSpendTotal = sumAmounts(historicalSpend);
     const currentDailyPace = currentSpendTotal / daysElapsed;

@@ -38,6 +38,8 @@ export const ListClassificationQuerySchema = z
   .object({
     limit: z.coerce.number().int().positive().optional(),
     cursor: z.string().optional(),
+    // `25` §10: `GET /subcategories` filtra por `category_id` (SCR-CAT-02).
+    category_id: z.enum(CATEGORY_IDS).optional(),
   })
   .strict();
 

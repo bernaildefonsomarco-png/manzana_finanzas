@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-07` cerraron `G1` y `G2`. Ninguno
+**La construcción avanza.** `W-01` a `W-08` cerraron `G1` y `G2`. Ninguno
 tiene criterios de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 7 de 20 |
-| Criterios `verificado` | 68 de 708 |
+| Cortes cerrados | 8 de 20 |
+| Criterios `verificado` | 79 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -968,6 +968,112 @@ dispara desde una fila real hasta que `W-09` reconstruya la pantalla.
 - `03_decisiones_producto_web.md`: `WEB-D186` a `WEB-D189` (nuevas), y
   correcciones a `WEB-D187`/`188`/`189` tras auditar `WEB-D154` y el
   estado real de `auth-screen.tsx` antes de firmar la versión final.
+
+## W-08 — Las cuatro capas del dinero
+
+**Cerrado:** 2026-07-29
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-29, con `npm run matriz:generar`, posterior
+al commit de cierre de este corte (`AC-TRAZ-12`, hash registrado abajo).
+
+### Qué se entregó
+
+Un bug real de doble descuento en las cuatro capas: cuando un compromiso
+estaba parcialmente cubierto por una caja, `GET /api/v1/money` restaba el
+monto nominal del compromiso en vez de `Math.min(compromiso, saldo real de
+la caja)`, y la misma lógica estaba reimplementada por separado (y mal) en
+`tool-gateway.ts::buildBalanceSnapshot` e `insight-engine.ts` (dos veces).
+Las cuatro quedaron en un único módulo (`src/core/finance/money-layers.ts`),
+probado contra el ejemplo canónico de `09` §4 (800/580/220/170) y contra
+cobertura parcial, verificado con `RUL-HECHO-02`. Cajas ganan una
+invariante de base de datos (`boxes_current_balance_non_negative`,
+migración `049`) y las cuentas, unicidad de nombre sin distinguir
+mayúsculas (`accounts_unique_name_per_user_ci`) — ambas probadas contra
+Postgres real en `tests/rls/`. Ciclo de vida de cuenta completo: restaurar
+una archivada (`POST /accounts/[id]/restore`), cambiar la cuenta por
+defecto (`PATCH .../[id]` con `is_default`), y archivar en cascada con sus
+cajas sin exigir saldo cero ni cajas vacías — con dos rutas `GET` nuevas
+(`accounts/[id]`, `boxes/[id]`) que el documento `24` §10 exigía y no
+existían. Categorías: `GET /categories` trae el total del período por
+categoría con `sin_clasificar` separado de `otros`; `GET /subcategories`
+trae conteo de movimientos y ordena por uso; el límite de etiquetas por
+movimiento se corrigió de 12 a 6 (contradecía `RUL-CAT §7`/`ERR-CAT-05`
+desde antes de este corte, nadie lo había notado hasta escribir la prueba).
+
+El frontend de Mi Dinero (`SCR-CUENTAS-01` a `07`) se reconstruyó entero
+en `src/app/(app)/mi-dinero/`, reemplazando el `money-screen.tsx` condenado
+de `src/features/money/` (`WEB-D164`) tras extraer su conocimiento de
+copys y casos borde antes de borrarlo. Categorías (`SCR-CAT-01` a `03`,
+alcance recortado por `WEB-D190`): gestión de las 12 categorías con su
+total, detalle de categoría con renombrar/archivar subcategorías (sin
+fusionar), y `CategorySelector` — un componente compartido con búsqueda,
+"sin clasificar" explícito, y crear subcategoría inline — construido sin
+consumidor propio todavía porque su primer consumidor real es el
+formulario de movimientos de `W-09`.
+
+### Qué sorprendió
+
+El bug de doble descuento no vivía en un solo lugar: existían **tres**
+implementaciones independientes del cálculo de las cuatro capas
+(`money/route.ts`, `tool-gateway.ts`, `insight-engine.ts` dos veces) y
+ninguna prueba existente las comparaba entre sí ni contra el ejemplo
+canónico del documento — las cuatro pasaban sus propias pruebas
+individuales mientras calculaban números distintos ante el mismo caso de
+cobertura parcial.
+
+Auditar la cobertura de `AC-CUENTAS-12` ("máximo una cuenta por defecto
+activa") antes de darla por cerrada encontró que nunca había tenido una
+prueba propia — el único test que la tocaba mockeaba `setDefaultAccount`
+en vez de ejercitarla. Al escribir la prueba real contra Postgres
+(`tests/rls/account-box-invariants.test.ts`) y romper la implementación
+para verificarla (`RUL-HECHO-02`), apareció una segunda protección que
+nadie había documentado: un índice de exclusión
+`accounts_one_default_per_user` de la migración `004`, anterior a esta
+reconstrucción — el criterio ya estaba doblemente protegido, solo sin
+prueba.
+
+`subcategories/[id]/route.ts` (`PATCH`/`DELETE`, ya existente) no tenía
+ningún test — cero, ni siquiera el camino feliz — a pesar de ser la ruta
+que las nuevas pantallas de `SCR-CAT-02` ahora ejercitan en producción.
+Se cerró con los cinco casos de `51` §6.2.
+
+### Qué quedó abierto
+
+`AC-CAT-08` a `12` (fusión, reclasificación masiva, panel "por qué",
+olvidar un aprendizaje) y `AC-CUENTAS-18` (comandos del asistente):
+dependen de módulos que todavía no existen (`36`, `W-13`) o de la fase
+WhatsApp (`WEB-D001`). `AC-CUENTAS-13`/`AC-CAT-15` (nada de service-role):
+diferido a `AC-SEG-07`, transversal (`WEB-D191`). `AC-CUENTAS-17` (icono +
+signo, no solo color): construido en `AccountsPanel`, sin prueba
+automatizada dedicada — candidato a `tests/a11y/` en un corte futuro.
+`tool-gateway.ts::buildBalanceSnapshot` no tiene prueba propia (función
+privada, hereda cobertura de `calculateMoneyLayers` pero su mapeo de datos
+no está aislado). Verificación interactiva en navegador de las pantallas
+nuevas: bloqueada dos veces — el entorno de vista previa no alcanza al
+Supabase local (`127.0.0.1`, aislamiento de red del sandbox), y crear un
+usuario de prueba desechable contra el proyecto de Supabase real fue
+denegado por el clasificador de modo automático. Se verificó en su lugar
+que la ruta protegida redirige correctamente sin sesión (sin error de
+servidor) y que `tsc`/`eslint`/`test`/`build` pasan limpios — no
+reemplaza una prueba de usuario real, y se reporta así en vez de afirmar
+una verificación que no ocurrió.
+
+### Documentos corregidos
+
+- `09` §11: `Clase:` añadida a `AC-DINERO-01`, `02`, `05`, `06`; nota de
+  por qué no cierran `03` (módulo de presupuestos inexistente) y `04`
+  (`USER` no verificado).
+- `24` §20: `Clase:` añadida a `AC-CUENTAS-01` a `04`, `06` a `12`, `14`
+  a `16`; nota de por qué no cierran `05`, `13`, `17`, `18`.
+- `25` §20: `Clase:` añadida a `AC-CAT-01` a `07`, `13`, `14`; nota de por
+  qué no cierran `08` a `12`, `15`.
+- `24` §22 y `25` §22: `WEB-D194` (nuevo) — `SCR-CAT-02` no enlaza al
+  listado de movimientos filtrado por categoría, porque la pantalla de
+  movimientos (`W-09`) todavía no acepta ese filtro.
+- `50` §3.1: censo de clases actualizado (159 con clase, no 132; `lint`
+  28, no 25; `integracion` 11, no 5; `unidad` 49, no 31).
+- `03_decisiones_producto_web.md`: `WEB-D190` a `WEB-D194` (nuevas, cuatro
+  del trabajo previo a este cierre más `WEB-D194` de esta sección).
 
 ---
 

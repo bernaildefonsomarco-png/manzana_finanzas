@@ -3,10 +3,17 @@ import type { Database, Json } from "@/data/supabase/types";
 import type {
   Category,
   CategoryId,
+  MovementType,
   RelatedPerson,
   Tag,
   UserSubcategory,
 } from "@/shared/types/domain";
+import {
+  aggregateCategoryTotals,
+  type CategoryTotal,
+  type SubcategoryCount,
+} from "@/core/classification/category-totals";
+import { toIsoDate, todayInLima, limaLocalInputToUtcIso } from "@/shared/dates/lima";
 
 type Client = SupabaseClient<Database>;
 
@@ -66,6 +73,62 @@ export async function getClassificationCatalog(
     tags: (tags.data ?? []) as Tag[],
     related_people: (relatedPeople.data ?? []) as RelatedPerson[],
   };
+}
+
+/** Rango `[inicio, fin)` del mes de calendario actual en `America/Lima`, en UTC. */
+function currentLimaMonthRangeUtc(): { startUtc: string; endUtc: string } {
+  const today = todayInLima();
+  const nextMonth = today.month === 11 ? 0 : today.month + 1;
+  const nextYear = today.month === 11 ? today.year + 1 : today.year;
+
+  return {
+    startUtc: limaLocalInputToUtcIso(`${toIsoDate(today.year, today.month, 1)}T00:00`),
+    endUtc: limaLocalInputToUtcIso(`${toIsoDate(nextYear, nextMonth, 1)}T00:00`),
+  };
+}
+
+/**
+ * `25` §10 (`GET /categories`: "Las 12 con totales del periodo"), `09` §7
+ * (periodo mensual por defecto). Excluye los tipos de `RUL-CAT-11` en
+ * `aggregateCategoryTotals`, y separa `sin_clasificar` de `otros`.
+ */
+export async function getCategoryTotalsForCurrentPeriod(
+  client: Client,
+  userId: string
+): Promise<CategoryTotal[]> {
+  const { startUtc, endUtc } = currentLimaMonthRangeUtc();
+
+  const { data, error } = await client
+    .from("movements")
+    .select("type, category_id, amount")
+    .eq("user_id", userId)
+    .in("status", ["confirmed", "needs_review", "corrected"])
+    .gte("occurred_at", startUtc)
+    .lt("occurred_at", endUtc);
+
+  if (error) throw error;
+
+  return aggregateCategoryTotals(
+    (data ?? []).map((row) => ({
+      type: row.type as MovementType,
+      category_id: row.category_id as CategoryId | null,
+      amount: Number(row.amount),
+    }))
+  );
+}
+
+/**
+ * SCR-CAT-02/03: conteo de movimientos por subcategoría del usuario
+ * (migración 050, `count_movements_by_subcategory`; RLS via `auth.uid()`
+ * hace que el cliente deba ser el autenticado, nunca el de servicio).
+ */
+export async function getSubcategoryMovementCounts(client: Client): Promise<SubcategoryCount[]> {
+  const { data, error } = await client.rpc("count_movements_by_subcategory");
+  if (error) throw error;
+  return (data ?? []).map((row) => ({
+    subcategory_id: row.subcategory_id,
+    movement_count: Number(row.movement_count),
+  }));
 }
 
 export async function insertSubcategory(

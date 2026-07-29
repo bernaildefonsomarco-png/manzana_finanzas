@@ -33,6 +33,35 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
+/** 24 §10: `GET /boxes/[id]` — detalle con progreso. */
+export async function GET(request: Request, context: RouteContext) {
+  const trace_id = getTraceId(request);
+  const meta = { trace_id };
+
+  try {
+    const auth = await getApiAuth(request);
+    if (!auth) {
+      return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
+    }
+
+    const params = ParamsSchema.parse(await context.params);
+    const box = await getBoxById(auth.client, auth.userId, params.id);
+
+    if (!box) {
+      return errorJson("NOT_FOUND", "Caja no encontrada.", meta, 404);
+    }
+
+    const account = await getAccountById(auth.client, auth.userId, box.account_id);
+
+    return okJson({ box, account }, meta);
+  } catch (error) {
+    if (isZodLike(error)) {
+      return errorJson("VALIDATION_ERROR", "Id de caja invalido.", meta, 400);
+    }
+    return unexpectedError(error, meta);
+  }
+}
+
 export async function PATCH(request: Request, context: RouteContext) {
   const trace_id = getTraceId(request);
   const meta = { trace_id };

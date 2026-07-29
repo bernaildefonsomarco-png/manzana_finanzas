@@ -21,6 +21,11 @@ export const queryKeys = {
   },
   accounts: ["cuentas"] as const,
   boxes: ["cajas"] as const,
+  categories: ["categorias"] as const,
+  subcategories: {
+    all: ["subcategorias"] as const,
+    list: (categoryId?: string) => ["subcategorias", categoryId ?? "todas"] as const,
+  },
   discoveries: {
     all: ["descubrimientos"] as const,
   },

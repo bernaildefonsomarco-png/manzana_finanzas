@@ -11,7 +11,10 @@ import {
   decodeCursor,
   paginateInMemory,
 } from "@/app/api/_lib/pagination";
-import { getClassificationCatalog } from "@/data/repositories/classification.repository";
+import {
+  getCategoryTotalsForCurrentPeriod,
+  getClassificationCatalog,
+} from "@/data/repositories/classification.repository";
 import { ListClassificationQuerySchema } from "../classification/schemas";
 import { isZodLike } from "../classification/route-helpers";
 
@@ -33,14 +36,47 @@ export async function GET(request: Request) {
     }
     const limit = clampLimit(query.limit);
 
-    const catalog = await getClassificationCatalog(auth.client, auth.userId);
+    const [catalog, totals] = await Promise.all([
+      getClassificationCatalog(auth.client, auth.userId),
+      getCategoryTotalsForCurrentPeriod(auth.client, auth.userId),
+    ]);
+    const totalsByCategory = new Map(
+      totals
+        .filter((row) => row.category_id !== null)
+        .map((row) => [row.category_id, row])
+    );
+    const unclassified = totals.find((row) => row.category_id === null) ?? {
+      category_id: null,
+      total: 0,
+      movement_count: 0,
+    };
+
+    const categoriesWithTotals = catalog.categories.map((category) => {
+      const total = totalsByCategory.get(category.id);
+      return {
+        ...category,
+        total_this_period: total?.total ?? 0,
+        movement_count_this_period: total?.movement_count ?? 0,
+      };
+    });
+
     const { data: pageRows, page } = paginateInMemory(
-      catalog.categories,
+      categoriesWithTotals,
       limit,
       cursor
     );
 
-    return okJson({ categories: pageRows }, { ...meta, page });
+    return okJson(
+      {
+        categories: pageRows,
+        // AC-CAT-01: sin_clasificar nunca se mezcla con "otros".
+        unclassified: {
+          total: unclassified.total,
+          movement_count: unclassified.movement_count,
+        },
+      },
+      { ...meta, page }
+    );
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
     return unexpectedError(error, meta);

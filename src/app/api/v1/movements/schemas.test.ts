@@ -7,6 +7,36 @@ import {
 } from "./schemas";
 
 describe("movement API schemas", () => {
+  it("ERR-CAT-05 / AC-CAT-13: acepta hasta 6 etiquetas por movimiento", () => {
+    const sixTags = Array.from({ length: 6 }, (_, i) => `1111111${i}-1111-4111-8111-111111111111`);
+
+    expect(() =>
+      CreateMovementRequestSchema.parse({
+        type: "gasto",
+        amount: 8,
+        occurred_at: "2026-06-06T12:00:00.000Z",
+        description: "Cafe",
+        category_id: "alimentacion",
+        tag_ids: sixTags,
+      })
+    ).not.toThrow();
+  });
+
+  it("ERR-CAT-05 / AC-CAT-13: rechaza mas de 6 etiquetas por movimiento", () => {
+    const sevenTags = Array.from({ length: 7 }, (_, i) => `1111111${i}-1111-4111-8111-111111111111`);
+
+    expect(() =>
+      CreateMovementRequestSchema.parse({
+        type: "gasto",
+        amount: 8,
+        occurred_at: "2026-06-06T12:00:00.000Z",
+        description: "Cafe",
+        category_id: "alimentacion",
+        tag_ids: sevenTags,
+      })
+    ).toThrow(/hasta 6 etiquetas/);
+  });
+
   it("fuerza movimientos manuales como dashboard_manual", () => {
     const parsed = CreateMovementRequestSchema.parse({
       type: "gasto",

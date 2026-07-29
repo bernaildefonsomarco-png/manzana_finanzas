@@ -3,7 +3,7 @@
 **Bloque:** 07 — Calidad y ejecución
 **Alcance:** V1
 **Estado:** vivo
-**Fecha de última actualización:** 26 de julio de 2026
+**Fecha de última actualización:** 29 de julio de 2026
 **Docs fuente:** los documentos del corpus con identificadores (57 a fecha de hoy)
 **Documentos que dependen de este:** `51` (pruebas), `54` (plan), `55` (ledger)
 
@@ -201,14 +201,14 @@ test las distingue por familia.
 |---|---|
 | `corpus` | 45 |
 | `build` | 16 |
-| `lint` | 25 |
+| `lint` | 28 |
 | `e2e` | 7 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
-| `integracion` | 5 |
-| `unidad` | 31 |
-| **Con clase** | **132** |
-| **Con `TEST` y sin clase** | **499** |
+| `integracion` | 11 |
+| `unidad` | 49 |
+| **Con clase** | **159** |
+| **Con `TEST` y sin clase** | **472** |
 | **Total con `TEST`** | **631** |
 
 `lint` sube de 13 a 14 en `W-01`: `AC-INV-10` recibe su clase al escribir su

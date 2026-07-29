@@ -41,7 +41,9 @@ export async function GET(request: Request) {
     }
     const limit = clampLimit(query.limit);
 
-    const accounts = await getActiveAccounts(auth.client, auth.userId);
+    const accounts = await getActiveAccounts(auth.client, auth.userId, {
+      includeArchived: query.include_archived,
+    });
     const { data: pageRows, page } = paginateInMemory(accounts, limit, cursor);
 
     return okJson({ accounts: pageRows }, { ...meta, page });

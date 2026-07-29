@@ -85,6 +85,11 @@ src/
     data/           # Patrón de obtención de datos (17): TanStack Query, claves de caché,
                      # invalidación selectiva por mutación, mutación optimista
     forms/          # Patrón de formularios (17): useZodForm (react-hook-form + Zod)
+    api/            # Cliente HTTP compartido (envelope {ok,data,meta}) y clientes de API
+                     # por módulo (money.ts) para las pantallas fuera de features/ (W-08+)
+    copy/           # Copys y etiquetas de dominio reutilizables entre pantallas (money-copy.ts)
+    ui/             # Componentes compartidos entre pantallas fuera de features/: DialogMutationError,
+                     # CategorySelector (SCR-CAT-03, W-08+)
     routing/        # Validación de `redirigir` y del deep-link a una deuda
     legacy-nav/      # Puente entre el `onNavigate(view)` de las pantallas condenadas y las rutas reales
     accessibility/  # Parche de accesibilidad de modales (modal-accessibility-guard)
@@ -95,9 +100,10 @@ src/
     supabase/       # Clientes Supabase (browser, server, service)
     repositories/   # Repositorios de datos
     migrations.test.ts  # Lee y verifica supabase/migrations/ — no hay una segunda copia de los .sql
-  features/         # Screens de la app (money, settings, upcoming, movements, debts,
+  features/         # Screens de la app (settings, upcoming, movements, debts,
                      # pending, home, insights, search, auth, app-shell, onboarding,
-                     # public-site) — módulo por módulo, en reconstrucción (52, REEMPLAZAR)
+                     # public-site) — módulo por módulo, en reconstrucción (52, REEMPLAZAR).
+                     # money/ ya no existe: reconstruido en app/(app)/mi-dinero/ (W-08)
 ```
 
 `supabase/migrations/` es la única rama de migraciones (`WEB-D163`): la fuente

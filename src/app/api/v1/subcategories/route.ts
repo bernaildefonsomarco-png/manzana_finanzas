@@ -3,7 +3,10 @@ import { getApiAuth } from "@/app/api/_lib/auth";
 import { errorJson, getTraceId, okJson, readJsonBody, unexpectedError, validationError } from "@/app/api/_lib/http";
 import { clampLimit, decodeCursor, paginateInMemory } from "@/app/api/_lib/pagination";
 import { createServiceClient } from "@/data/supabase/server";
-import { getClassificationCatalog } from "@/data/repositories/classification.repository";
+import {
+  getClassificationCatalog,
+  getSubcategoryMovementCounts,
+} from "@/data/repositories/classification.repository";
 import { CreateSubcategoryRequestSchema, ListClassificationQuerySchema } from "../classification/schemas";
 import { classificationCommand, isConflictError, isZodLike } from "../classification/route-helpers";
 
@@ -25,8 +28,21 @@ export async function GET(request: Request) {
     }
     const limit = clampLimit(query.limit);
 
-    const catalog = await getClassificationCatalog(auth.client, auth.userId);
-    const { data: pageRows, page } = paginateInMemory(catalog.subcategories, limit, cursor);
+    const [catalog, counts] = await Promise.all([
+      getClassificationCatalog(auth.client, auth.userId),
+      getSubcategoryMovementCounts(auth.client),
+    ]);
+    const countBySubcategory = new Map(counts.map((c) => [c.subcategory_id, c.movement_count]));
+    // SCR-CAT-02/03: filtro por categoria, conteo de movimientos, y orden
+    // "las mas usadas primero".
+    const withCounts = catalog.subcategories
+      .filter((subcategory) => !query.category_id || subcategory.category_id === query.category_id)
+      .map((subcategory) => ({
+        ...subcategory,
+        movement_count: countBySubcategory.get(subcategory.id) ?? 0,
+      }))
+      .sort((a, b) => b.movement_count - a.movement_count);
+    const { data: pageRows, page } = paginateInMemory(withCounts, limit, cursor);
 
     return okJson({ subcategories: pageRows }, { ...meta, page });
   } catch (error) {
