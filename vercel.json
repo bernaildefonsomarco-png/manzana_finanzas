@@ -13,6 +13,10 @@
       "schedule": "10 13 * * *"
     },
     {
+      "path": "/api/internal/jobs/budgets-daily",
+      "schedule": "12 13 * * *"
+    },
+    {
       "path": "/api/internal/jobs/nudges-evaluate",
       "schedule": "15 13 * * *"
     },

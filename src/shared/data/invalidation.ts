@@ -17,6 +17,7 @@ export type MutationType =
   | "debt.pay"
   | "debt.create"
   | "budget.edit"
+  | "goal.edit"
   | "import.confirm"
   | "preferences.change";
 
@@ -25,33 +26,64 @@ function keysFor(mutation: MutationType, params?: { debtId?: string }): QueryKey
     case "movement.create":
     case "movement.edit":
     case "movement.delete":
-      return [queryKeys.movements.all, queryKeys.summary, queryKeys.budgets.all, queryKeys.discoveries.all];
+      return [
+        queryKeys.movements.all,
+        queryKeys.summary,
+        queryKeys.budgets.all,
+        queryKeys.goals.all,
+        queryKeys.projections.all,
+        queryKeys.discoveries.all,
+      ];
     case "pending.confirm":
       return [
         queryKeys.pending.all,
         queryKeys.movements.all,
         queryKeys.summary,
         queryKeys.budgets.all,
+        queryKeys.goals.all,
+        queryKeys.projections.all,
         queryKeys.discoveries.all,
       ];
     case "account.upsert":
-      return [queryKeys.accounts, queryKeys.summary];
+      return [queryKeys.accounts, queryKeys.summary, queryKeys.projections.all];
     case "box.upsert":
-      return [queryKeys.boxes, queryKeys.summary];
+      return [
+        queryKeys.boxes,
+        queryKeys.summary,
+        queryKeys.goals.all,
+        queryKeys.projections.all,
+      ];
     case "subcategory.edit":
       return [queryKeys.subcategories.all, queryKeys.categories, queryKeys.movements.all];
     case "debt.pay":
+      return [
+        queryKeys.debts.all,
+        ...(params?.debtId ? [queryKeys.debts.detail(params.debtId)] : []),
+        queryKeys.movements.all,
+        queryKeys.summary,
+        queryKeys.budgets.all,
+        queryKeys.projections.all,
+      ];
     case "debt.create":
       return [
         queryKeys.debts.all,
         ...(params?.debtId ? [queryKeys.debts.detail(params.debtId)] : []),
         queryKeys.movements.all,
         queryKeys.summary,
+        queryKeys.projections.all,
       ];
     case "budget.edit":
       return [queryKeys.budgets.all];
+    case "goal.edit":
+      return [queryKeys.goals.all];
     case "import.confirm":
-      return [queryKeys.movements.all, queryKeys.pending.all, queryKeys.summary, queryKeys.budgets.all];
+      return [
+        queryKeys.movements.all,
+        queryKeys.pending.all,
+        queryKeys.summary,
+        queryKeys.budgets.all,
+        queryKeys.projections.all,
+      ];
     case "preferences.change":
       return [queryKeys.preferences];
   }

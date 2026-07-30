@@ -53,6 +53,8 @@ Jerárquicas, para poder invalidar por familia:
 ["movimientos"]                     todas las páginas
 ["resumen"]                         dinero libre y desglose
 ["presupuestos", periodo]
+["metas"]
+["proyecciones"]                    periodo, situación y desglose
 ["deuda", id]
 ```
 
@@ -60,12 +62,14 @@ Jerárquicas, para poder invalidar por familia:
 
 | Escritura | Invalida |
 |---|---|
-| Crear, editar o eliminar movimiento | `["movimientos"]`, `["resumen"]`, `["presupuestos"]`, descubrimientos afectados |
+| Crear, editar o eliminar movimiento | `["movimientos"]`, `["resumen"]`, `["presupuestos"]`, `["metas"]`, `["proyecciones"]`, descubrimientos afectados |
 | Confirmar pendiente | `["pendientes"]`, más lo mismo que un movimiento |
-| Crear o editar cuenta o caja | `["cuentas"]`, `["cajas"]`, `["resumen"]` |
-| Pagar deuda | `["deudas"]`, `["deuda", id]`, `["movimientos"]`, `["resumen"]` |
+| Crear o editar cuenta | `["cuentas"]`, `["resumen"]`, `["proyecciones"]` |
+| Crear o editar caja | `["cajas"]`, `["resumen"]`, `["metas"]`, `["proyecciones"]` |
+| Pagar deuda | `["deudas"]`, `["deuda", id]`, `["movimientos"]`, `["resumen"]`, `["presupuestos"]`, `["proyecciones"]` (`WEB-D219`) |
 | Editar presupuesto | `["presupuestos"]` |
-| Confirmar importación | `["movimientos"]`, `["pendientes"]`, `["resumen"]`, `["presupuestos"]` |
+| Editar meta | `["metas"]` |
+| Confirmar importación | `["movimientos"]`, `["pendientes"]`, `["resumen"]`, `["presupuestos"]`, `["proyecciones"]` |
 | Cambiar preferencia | `["preferencias"]` |
 
 La regla explícita que rompe con el patrón actual: **crear un movimiento no

@@ -19,7 +19,7 @@ export interface EntradaLista {
 
 /**
  * `15` §4: workers y jobs, webhooks entrantes, y comprobaciones de salud.
- * Cubre las 14 rutas de fuera de `/api/v1` por categoría, no una por una —
+ * Cubre las 17 rutas de fuera de `/api/v1` por categoría, no una por una —
  * es la distinción que hace el gate cumplible (`53` §2.2).
  */
 export const LISTA_BLANCA_PERMANENTE: EntradaLista[] = [

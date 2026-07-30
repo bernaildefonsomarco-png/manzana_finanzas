@@ -29,6 +29,10 @@ beforeEach(() => {
     accounts: [],
     boxes: [],
     movements: [],
+    budgets: [],
+    goals: [],
+    budget_progress_snapshots: [],
+    budget_suggestion_decisions: [],
     debts: [],
     debt_payments: [],
     recurring_rules: [],
@@ -60,6 +64,12 @@ describe("privacy export route", () => {
     );
     const payload = await response.json();
     expect(payload.schema_version).toBe("manzana_user_export_v2");
+    expect(payload).toMatchObject({
+      budgets: [],
+      goals: [],
+      budget_progress_snapshots: [],
+      budget_suggestion_decisions: [],
+    });
     expect(JSON.stringify(payload)).not.toMatch(/refresh_token|access_token/i);
     expect(mocks.exportUserData).toHaveBeenCalledWith({}, "user-1");
   });

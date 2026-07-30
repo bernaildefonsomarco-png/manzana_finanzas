@@ -124,18 +124,6 @@ export function buildAdvancedInsightDrafts(
   });
   drafts.push(...freeMoneyDrafts);
 
-  const projections = buildMonthlyProjectionInsights({
-    movements: confirmed,
-    accounts: input.accounts ?? [],
-    boxes: input.boxes ?? [],
-    commitments: input.commitments ?? [],
-    activePendingCount: input.activePendingCount ?? 0,
-    today,
-    now,
-    timezone,
-  });
-  drafts.push(...projections);
-
   const boxProgress = buildBoxProgressInsight({
     accounts: input.accounts ?? [],
     boxes: input.boxes ?? [],
@@ -533,158 +521,6 @@ function buildFreeMoneyInsights(input: {
         action: { type: "view_money" as const, target_view: "money" as const },
         expiresAt: null,
         metadata: { signal_version: "insight-engine-v2", domain: "balance" },
-      },
-    ];
-  });
-}
-
-function buildMonthlyProjectionInsights(input: {
-  movements: Movement[];
-  accounts: Account[];
-  boxes: Box[];
-  commitments: InsightCommitment[];
-  activePendingCount: number;
-  today: string;
-  now: Date;
-  timezone: string;
-}): InsightDraft[] {
-  if (
-    input.activePendingCount > 0 ||
-    input.accounts.length === 0 ||
-    !hasMinimumSpan(input.movements, 55, input.timezone)
-  ) {
-    return [];
-  }
-
-  const monthStart = `${input.today.slice(0, 8)}01`;
-  const daysElapsed = daysBetweenIsoDates(monthStart, input.today) + 1;
-  const daysInCurrentMonth = daysInIsoMonth(input.today);
-  const daysRemaining = daysInCurrentMonth - daysElapsed;
-  if (daysElapsed < 7 || daysRemaining <= 0) return [];
-
-  const historyStart = shiftIsoDate(monthStart, -56);
-  const historyEnd = shiftIsoDate(monthStart, -1);
-  const activeAccounts = input.accounts.filter(
-    (account) => account.deleted_at == null && isInsightCurrency(account.currency),
-  );
-  const currencies = [
-    ...new Set(activeAccounts.map((account) => account.currency as InsightCurrency)),
-  ];
-
-  return currencies.flatMap((currency) => {
-    const accounts = activeAccounts.filter((account) => account.currency === currency);
-    const accountIds = new Set(accounts.map((account) => account.id));
-    const boxes = input.boxes.filter(
-      (box) => box.deleted_at == null && accountIds.has(box.account_id),
-    );
-    const commitments = input.commitments.filter(
-      (commitment) => commitment.currency === currency,
-    );
-    const currencySpend = input.movements.filter(
-      (movement) =>
-        spendTypes.has(movement.type) &&
-        movement.currency === currency &&
-        movement.deleted_at == null,
-    );
-    const currentSpend = filterByLocalDate(
-      currencySpend,
-      monthStart,
-      input.today,
-      input.timezone,
-    );
-    const historicalSpend = filterByLocalDate(
-      currencySpend,
-      historyStart,
-      historyEnd,
-      input.timezone,
-    );
-
-    if (currentSpend.length < 5 || historicalSpend.length < 10) return [];
-    if (
-      [...currentSpend, ...historicalSpend].some(
-        (movement) =>
-          !movement.account_origin_id ||
-          !accountIds.has(movement.account_origin_id),
-      )
-    ) {
-      return [];
-    }
-
-    const projectionLayers = calculateMoneyLayers({
-      accounts: accounts.map((account) => ({ current_balance: Number(account.current_balance) })),
-      boxes: boxes.map((box) => ({ id: box.id, current_balance: Number(box.current_balance) })),
-      commitments: commitments.map((commitment) => ({
-        id: commitment.id,
-        amount: Number(commitment.amount),
-        linked_box_id: commitment.linked_box_id,
-        due_at: commitment.due_at,
-      })),
-    });
-    const operationalFreeMoney = projectionLayers.operational_free_money;
-    const currentSpendTotal = sumAmounts(currentSpend);
-    const historicalSpendTotal = sumAmounts(historicalSpend);
-    const currentDailyPace = currentSpendTotal / daysElapsed;
-    const historicalDailyPace = historicalSpendTotal / 56;
-    const blendedDailyPace = currentDailyPace * 0.65 + historicalDailyPace * 0.35;
-    const projectedAdditionalSpend = roundMoney(blendedDailyPace * daysRemaining);
-    const projectedOperationalFreeMoney = roundMoney(
-      operationalFreeMoney - projectedAdditionalSpend,
-    );
-    const confidence = clamp(
-      0.62 + Math.min(daysElapsed, 20) * 0.008 + Math.min(currentSpend.length, 20) * 0.006,
-      0,
-      0.82,
-    );
-
-    return [
-      {
-        type: "projection" as const,
-        fingerprint: `projection:monthly:${monthStart}:${currency}`,
-        periodStart: monthStart,
-        periodEnd: input.today,
-        confidence,
-        qualityScore: 76,
-        rankScore: 72,
-        riskLevel: "sensitive" as const,
-        title: `A este ritmo, cerrarias el mes cerca de ${formatCurrency(projectedOperationalFreeMoney, currency)} libres`,
-        body:
-          "Es una proyeccion prudente, no una promesa. Usa tu ritmo reciente, tus saldos, cajas y compromisos ya conocidos.",
-        evidenceText: `${currentSpend.length} gastos este mes y ${historicalSpend.length} en los 56 dias anteriores`,
-        evidence: {
-          currency,
-          current_spend: roundMoney(currentSpendTotal),
-          historical_56_day_spend: roundMoney(historicalSpendTotal),
-          days_elapsed: daysElapsed,
-          days_remaining: daysRemaining,
-          operational_free_money: operationalFreeMoney,
-          projected_additional_spend: projectedAdditionalSpend,
-          projected_operational_free_money: projectedOperationalFreeMoney,
-          pending_count: input.activePendingCount,
-        },
-        sourceFacts: {
-          currency,
-          current_spend: roundMoney(currentSpendTotal),
-          historical_56_day_spend: roundMoney(historicalSpendTotal),
-          days_elapsed: daysElapsed,
-          days_remaining: daysRemaining,
-          operational_free_money: operationalFreeMoney,
-          projected_additional_spend: projectedAdditionalSpend,
-          projected_operational_free_money: projectedOperationalFreeMoney,
-        },
-        sourceEntityIds: [
-          ...accounts.map((account) => account.id),
-          ...boxes.map((box) => box.id),
-          ...commitments.map((commitment) => commitment.id),
-          ...currentSpend.map((movement) => movement.id),
-          ...historicalSpend.map((movement) => movement.id),
-        ],
-        action: { type: "view_money" as const, target_view: "money" as const },
-        expiresAt: addDays(input.now, 1).toISOString(),
-        metadata: {
-          signal_version: "insight-engine-v2",
-          domain: "projection",
-          methodology: "current_pace_65_historical_56d_35",
-        },
       },
     ];
   });
@@ -1477,11 +1313,6 @@ function daysBetweenIsoDates(from: string, to: string): number {
   return Math.round(
     (isoDateToUtc(to).getTime() - isoDateToUtc(from).getTime()) / 86_400_000,
   );
-}
-
-function daysInIsoMonth(value: string): number {
-  const [year, month] = value.split("-").map(Number);
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 function isoDateToUtc(value: string): Date {

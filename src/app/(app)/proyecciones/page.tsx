@@ -1,13 +1,13 @@
-import { PlaceholderSection } from "@/shared/placeholder-section";
+"use client";
 
-// Doc `33`, dueño `W-12`.
+import { ProjectionsScreen } from "@/features/projections/projections-screen";
+import {
+  useLegacyNavigate,
+  useLegacySignOut,
+} from "@/shared/legacy-nav/legacy-view-routes";
+
 export default function ProyeccionesPage() {
-  return (
-    <PlaceholderSection
-      title="Proyecciones"
-      description="Proyecciones y simulación llegan en un corte posterior."
-      backHref="/inicio"
-      backLabel="Volver al inicio"
-    />
-  );
+  const onNavigate = useLegacyNavigate();
+  const onSignOut = useLegacySignOut();
+  return <ProjectionsScreen onNavigate={onNavigate} onSignOut={onSignOut} />;
 }

@@ -11,6 +11,19 @@ export const queryKeys = {
   budgets: {
     all: ["presupuestos"] as const,
     period: (periodo: string) => ["presupuestos", periodo] as const,
+    detail: (id: string) => ["presupuestos", "detalle", id] as const,
+    suggestions: ["presupuestos", "sugerencias"] as const,
+    summary: ["presupuestos", "resumen"] as const,
+  },
+  goals: {
+    all: ["metas"] as const,
+    detail: (id: string) => ["metas", "detalle", id] as const,
+  },
+  projections: {
+    all: ["proyecciones"] as const,
+    period: ["proyecciones", "periodo"] as const,
+    situation: ["proyecciones", "situacion"] as const,
+    breakdown: ["proyecciones", "desglose"] as const,
   },
   debts: {
     all: ["deudas"] as const,

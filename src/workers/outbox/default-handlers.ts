@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/data/supabase/types";
 import type { OutboxHandler } from "@/workers/outbox/outbox-publisher";
+import { createBudgetRecalculationHandler } from "./handlers/budget-recalculation-handler";
 import { createDebtLifecycleHandler } from "./handlers/debt-lifecycle-handler";
 import { createEmailPendingWhatsAppHandler } from "./handlers/email-pending-whatsapp-handler";
 import { createGmailIngestionHandler } from "./handlers/gmail-ingestion-handler";
@@ -17,6 +18,7 @@ export function createDefaultOutboxHandlers(client: Client): OutboxHandler[] {
     createGmailIngestionHandler(client),
     createEmailPendingWhatsAppHandler(client),
     createDebtLifecycleHandler(client),
+    createBudgetRecalculationHandler(client),
     createInsightLifecycleHandler(client),
     createLearningEvidenceHandler(client),
     createOnboardingActivationHandler(client),

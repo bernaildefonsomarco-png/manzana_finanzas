@@ -252,8 +252,8 @@ Cada módulo detalla los suyos en su §10. Aquí queda el mapa y la forma.
 | Categorías | `/api/v1/categories`, `/subcategories`, `/tags` | Catálogo y personalización |
 | Deudas | `/api/v1/debts` | CRUD, pagos, cuotas, personas relacionadas |
 | Recurrentes | `/api/v1/recurring` | Reglas, ocurrencias, candidatos |
-| Presupuestos | `/api/v1/budgets`, `/api/v1/goals` | **Nuevo** |
-| Proyecciones | `/api/v1/projections`, `/api/v1/simulate` | **Nuevo**, solo lectura y cálculo |
+| Presupuestos | `/api/v1/budgets`, `/api/v1/goals` | Implementado en `W-12`, con acciones especializadas e idempotencia persistida |
+| Proyecciones | `/api/v1/projections`, `/api/v1/simulate` | Implementado en `W-12`, solo lectura y cálculo; sin comando financiero (`WEB-D226`) |
 | Reportes | `/api/v1/reports`, `/api/v1/exports` | **Nuevo** |
 | Descubrimientos | `/api/v1/insights` | Listado, detalle, evidencia, acciones |
 | Memoria | `/api/v1/memory` | Ver, corregir, olvidar |

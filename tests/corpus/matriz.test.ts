@@ -30,7 +30,7 @@ describe("generador de la matriz de trazabilidad", () => {
   });
 
   it("AC-HECHO-03: todo AC- con TEST y clase declara la clase, y ninguno declara clase sin TEST", () => {
-    // Las 545+ pendientes de asignar (51 §4.1) no son un error de forma: son
+    // Las 384 pendientes de asignar (51 §4.1) no son un error de forma: son
     // TEST sin clase todavia, y el generador las cuenta aparte
     // (`conTestSinClase`). Lo que SI es un error de forma es una clase
     // declarada sin exigir TEST, o un nivel invalido — eso es lo que este
@@ -43,7 +43,7 @@ describe("generador de la matriz de trazabilidad", () => {
     expect(matriz.censo.criterios.porPorton).toEqual({ G1: 558, G2: 11, G3: 139 });
   });
 
-  it("50 §3.1: 191 criterios tienen clase asignada, con el reparto declarado", () => {
+  it("50 §3.1: 248 criterios tienen clase asignada, con el reparto declarado", () => {
     // W-02 añadió tres: AC-SEG-02 y AC-SEG-03 (integracion, 51 §8) y
     // AC-SEG-04 (lint, agregado sobre las 58 rutas de /api/v1). W-04 añadió
     // seis `unidad`: AC-CANAL-01 (agregado, WEB-D173), AC-CANAL-03, 04, 05,
@@ -97,18 +97,23 @@ describe("generador de la matriz de trazabilidad", () => {
     // documentados en sus anotaciones de §20. No se presentan como
     // verificados los criterios que exigen sesión real de usuario/navegador
     // o un contrato aún no definido.
+    // W-12 añadió treinta y uno: `32` aporta siete `integracion`, cinco
+    // `unidad` y tres `lint`; `33` aporta dos `integracion`, once `unidad` y
+    // tres `lint`. Los cinco rótulos con sufijo minúsculo (`05b`–`05e` y
+    // `02b`) se anotan individualmente en el corpus, pero se pliegan en el
+    // identificador base de la matriz según `WEB-D231`; no inflan el censo.
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 16,
-      lint: 30,
+      lint: 36,
       e2e: 7,
       presupuesto: 2,
       contenido: 1,
-      integracion: 43,
-      unidad: 73,
+      integracion: 52,
+      unidad: 89,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(217);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(415);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(248);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(384);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {

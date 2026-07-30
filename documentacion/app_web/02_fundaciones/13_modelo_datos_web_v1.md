@@ -205,7 +205,10 @@ el estado "Eliminado → restaurable" de
 Requeridas por los módulos añadidos en `07_alcance_web_v1.md`. Se agrupan en
 migraciones a partir de la `047`.
 
-### 7.1 Presupuestos, metas y límites — migración `048`
+### 7.1 Presupuestos, metas y límites — migración `061`
+
+La numeración original `048` quedó ocupada antes de llegar este corte. El
+archivo ejecutable es `061_w12_budgets_goals.sql` (`WEB-D218`).
 
 **`budgets`** — un presupuesto de gasto para una categoría en un periodo.
 
@@ -213,10 +216,13 @@ migraciones a partir de la `047`.
 id            uuid pk
 user_id       uuid not null
 category_id   text null            -- null = presupuesto general
+currency      text not null default 'PEN'
 period_kind   budget_period not null   -- semanal | quincenal | mensual
 period_start  date not null
 period_end    date not null
-amount        numeric(14,2) not null
+base_amount   numeric(14,2) not null
+rollover_amount numeric(14,2) not null default 0
+amount        numeric(14,2) not null   -- base_amount + rollover_amount
 kind          budget_kind not null     -- presupuesto | limite_blando | limite_duro
 rollover      boolean not null default false
 auto_renew    boolean not null default true
@@ -236,9 +242,13 @@ compra posterior en una notificación, y `AC-PRES-05` no se puede escribir como
 test. Se guarda el umbral y no un contador porque la regla se enuncia por
 umbral, y el test debe poder leerse igual que la regla.
 
-Restricciones: `amount > 0`; `period_end > period_start`; `category_id`
-referencia `categories(id)`; único parcial por
-`(user_id, category_id, period_start, kind)` **entre los de `status = 'activo'`**.
+Restricciones: `base_amount > 0`; `rollover_amount >= 0`;
+`amount = base_amount + rollover_amount`; `currency = 'PEN'`;
+`period_end > period_start`; `category_id` referencia `categories(id)`; único
+parcial con semántica `NULLS NOT DISTINCT` por
+`(user_id, category_id, period_start, kind)` **entre los de
+`status = 'activo'`**. Así el presupuesto general (`category_id is null`)
+también es realmente único (`WEB-D219`, `WEB-D220`).
 
 El alcance del único es deliberado y no es "cuando no está borrado": archivar
 un presupuesto a mitad de periodo y crear otro para la misma categoría y
@@ -255,6 +265,7 @@ name           text not null
 target_amount  numeric(14,2) not null
 target_date    date null
 box_id         uuid null references boxes(id)
+currency       text not null default 'PEN'
 status         goal_status not null     -- activa | alcanzada | pausada | archivada
 created_at, updated_at, deleted_at, metadata
 ```
@@ -264,16 +275,26 @@ presupuesto no reserva dinero.** No existe ninguna columna que descuente de
 saldos ni de dinero libre. Una meta sí puede afectar el dinero libre, pero
 solo de forma indirecta, a través de la caja que la respalda.
 
+En V1-web las metas son PEN. Una meta vinculada consume saldo, objetivo y
+fecha canónicos de una caja PEN de tipo `objetivo`; el enlace y la
+sincronización ocurren en el RPC de dominio (`WEB-D219`, `WEB-D222`).
+
 **`budget_progress_snapshots`** — fotos del avance para historial y
 comparativas, sin recalcular todo el pasado en cada consulta.
 
 ```text
 id, user_id, budget_id, as_of date, spent numeric(14,2),
-remaining numeric(14,2), pct numeric(5,4), created_at
+remaining numeric(14,2), pct numeric check (pct >= 0), created_at
 ```
 
 Único por `(budget_id, as_of)`: el trabajo diario debe poder reejecutarse sin
 duplicar la foto del día.
+
+**`budget_suggestion_decisions`** — resolución persistida de una sugerencia
+derivada, identificada por su categoría, tipo de periodo y ventana exacta de
+evidencia. Guarda `accepted | dismissed`, la llave de idempotencia y el
+presupuesto creado cuando aplica. La sugerencia sigue siendo cálculo
+determinista; solo se persiste la decisión (`WEB-D221`).
 
 ### 7.2 Importación — migración `049` — **DIFERIDA A V1.1**
 
@@ -317,11 +338,14 @@ se bloquea entero.
 `file_hash` permite detectar la reimportación del mismo archivo y avisar
 antes de duplicar.
 
-### 7.3 Proyecciones y simulación — migración `050` — **DIFERIDA A V1.1**
+### 7.3 Proyecciones y simulación — migración futura sin número reservado — **DIFERIDA A V1.1**
 
 > **Los escenarios guardados son V1.1** (`07_alcance_web_v1.md` §3.10). Esta
-> tabla queda **diseñada y sin aplicar**: la migración `050` no se ejecuta
-> hasta activar la funcionalidad, mismo criterio que la `049` (`WEB-D026`).
+> tabla queda **diseñada y sin aplicar**: no se crea ningún archivo hasta
+> activar la funcionalidad, mismo criterio que la importación (`WEB-D026`).
+> El número preliminar `050` ya está ocupado por una migración ejecutada; la
+> futura tabla tomará el siguiente número libre de ese momento
+> (`WEB-D218`).
 > Una tabla vacía que ningún código lee ni escribe es esquema muerto; lo que
 > evita cerrarle la puerta al modelo es el diseño escrito, no el DDL aplicado.
 > Ver `33_modulo_proyecciones_y_simulacion.md` §4.2.
@@ -619,27 +643,33 @@ Ampliación de un enum existente:
 movement_source      + import_confirmed | assistant_confirmed
 ```
 
-## 9. Orden de migraciones nuevas
+## 9. Orden lógico de tablas nuevas
 
-| Nº | Contenido | Depende de |
+La tabla se escribió antes de ejecutar los cortes y sus números eran
+**etiquetas preliminares, no reservas de archivo**. El árbol ejecutable de
+`supabase/migrations/` es la autoridad (`WEB-D163`). En `W-12` ya llega a
+`060`; por eso Presupuestos usa `061` y las demás filas tomarán el siguiente
+número libre cuando llegue su corte (`WEB-D218`).
+
+| Etiqueta del plan original | Contenido | Depende de |
 |---|---|---|
-| `047` | Ampliación de `movement_source` con `import_confirmed` y `assistant_confirmed` | 006 |
-| `048` | Presupuestos, metas y snapshots de avance | 003, 004, 006 |
-| `049` | Lotes y filas de importación — **diferida a V1.1**, no se aplica | 006, 007 |
-| `050` | Escenarios de simulación — **diferida a V1.1**, no se aplica | 048 |
-| `051` | Reportes guardados y trabajos de exportación | 006 |
-| `052` | Hilos y mensajes del asistente | 006, 042 |
-| `053` | Canal in-app y bandeja de notificaciones | 017, 019, 028 |
-| `054` | Perfil del usuario: hechos, candidatos y auditoría | 001, 045 |
-| `055` | Panorama: patrones, resúmenes mensuales y de conversación | 006, 007, 052, 054 |
-| `056` | Registro de cálculos generados | — |
-| `057` | Confirmabilidad de pendientes | 008 |
-| `058` | Gestión de remitentes bancarios y sugerencias | 006, 028 |
-| `059` | Plantillas de movimientos | 006, 007 |
-| `060` | Tipos nuevos de descubrimiento y feedback del usuario | 027, 048 |
-| `061` | Preferencias observadas, lápidas de memoria y auditoría unificada | 002, 044, 054 |
-| `062` | Resolución automática de recordatorios | 017, 053 |
-| `063` | Búsquedas guardadas e índices de texto | 006 |
+| `plan-047` | Ampliación de `movement_source` con `import_confirmed` y `assistant_confirmed` | 006 |
+| `061` **real, W-12** | Presupuestos, metas, decisiones de sugerencia y snapshots de avance | 003, 004, 006 |
+| `plan-049` | Lotes y filas de importación — **diferida a V1.1**, no se aplica | 006, 007 |
+| `plan-050` | Escenarios de simulación — **diferida a V1.1**, no se aplica | Presupuestos |
+| `plan-051` | Reportes guardados y trabajos de exportación | 006 |
+| `plan-052` | Hilos y mensajes del asistente | 006, 042 |
+| `plan-053` | Canal in-app y bandeja de notificaciones | 017, 019, 028 |
+| `plan-054` | Perfil del usuario: hechos, candidatos y auditoría | 001, 045 |
+| `plan-055` | Panorama: patrones, resúmenes mensuales y de conversación | 006, 007, asistente, perfil |
+| `plan-056` | Registro de cálculos generados | — |
+| `plan-057` | Confirmabilidad de pendientes | 008 |
+| `plan-058` | Gestión de remitentes bancarios y sugerencias | 006, 028 |
+| `plan-059` | Plantillas de movimientos | 006, 007 |
+| `plan-060` | Tipos nuevos de descubrimiento y feedback del usuario | 027, Presupuestos |
+| `plan-061` | Preferencias observadas, lápidas de memoria y auditoría unificada | 002, 044, perfil |
+| `plan-062` | Resolución automática de recordatorios | 017, canal in-app |
+| `plan-063` | Búsquedas guardadas e índices de texto | 006 |
 | `064` | Auditoría de eventos de cuenta | 001 |
 | `065` | Registro de consentimientos | 001, 045 |
 

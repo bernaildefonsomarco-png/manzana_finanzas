@@ -46,6 +46,8 @@ src/
     finance/        # CommandDispatcher, Balance Engine, validadores de dinero
     debts/          # Debt Engine: creación, pagos, cuotas
     recurring/       # Recurring Engine: detección y ocurrencias
+    budgets/        # Presupuestos/metas: periodos, avance, umbrales, rollover y ritmo
+    projections/    # Proyección y simulación deterministas, mediana/IQR en Lima
     insights/       # Insight Engine
     nudges/         # Nudge Evaluator y Nudge Policy
     pending/        # Confirmación de pendientes (27) — computeConfirmability, RUL-PEND-01

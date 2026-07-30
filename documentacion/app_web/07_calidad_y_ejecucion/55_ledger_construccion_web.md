@@ -201,16 +201,16 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-11` cerraron `G1` y `G2`. Ninguno
-tiene criterios de `G3` propios. En `W-11`, “verificado” incluye la parte
+**La construcción avanza.** `W-01` a `W-12` cerraron `G1` y `G2`. Ninguno
+tiene criterios de `G3` propios. En `W-12`, “verificado” incluye la parte
 `TEST` que el criterio realmente cubre; las mitades `USER` sin sesión y los
 criterios explícitamente diferidos siguen marcados como abiertos en sus
 documentos.
 
 | | |
 |---|---|
-| Cortes cerrados | 11 de 20 |
-| Criterios `verificado` | 134 de 708 |
+| Cortes cerrados | 12 de 20 |
+| Criterios `verificado` | 165 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -1528,6 +1528,164 @@ de modo automático bloquea esa operación y no se intentó rodearlo.
   bajo el límite de tamaño sin justificar una excepción.
 - Migraciones `056` a `060`, repositorios, rutas, Core y pantallas de los
   dos módulos; seis pruebas RLS nuevas para los contratos de base.
+
+## W-12 — Presupuestos, Metas y Proyecciones sin asesoría ni dinero ficticio
+
+**Cerrado:** 2026-07-30
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-30, con `npm run matriz:generar`; hash del
+commit sustantivo: `PENDIENTE` (hash real registrado en el commit de
+seguimiento de este cierre).
+
+### Qué se entregó
+
+La migración `061_w12_budgets_goals.sql` incorpora presupuestos, metas,
+snapshots de avance, decisiones de sugerencias y recibos de idempotencia con
+RLS, constraints PEN y RPCs atómicos. El Budget Engine calcula los once tipos
+de movimiento sin tocar saldos, conserva referencias, implementa los cuatro
+tramos, los umbrales 70/90/100 una sola vez, renovación, traspaso sin
+propagación indefinida, metas vinculadas a cajas objetivo y sugerencias por
+mediana de hasta seis periodos completos. El job diario service-only produce
+snapshots, lifecycle y eventos de umbral; `vercel.json` lo programa a las
+13:12 UTC (08:12 Lima).
+
+Las APIs publican presupuestos, resumen, copia del periodo anterior,
+sugerencias y sus decisiones; metas y sus transiciones/vínculo; proyección de
+periodo, desglose, situación del mes y simulación de solo lectura. Son 27
+endpoints reales sometidos a los cinco casos de `51` §6.2: 135/135 pruebas
+contra Supabase local, mockeando únicamente la sesión. Las colecciones y
+cálculos prueban aislamiento con 200 y datos exclusivamente propios
+(`WEB-D230`); las rutas con ID devuelven 404 para recursos ajenos. La
+exportación de privacidad también incluye presupuestos, metas, snapshots y
+decisiones y tiene sus cinco casos reales propios.
+
+Projection Engine queda como único dueño de la cifra: usa PEN, dinero libre
+que ya descuenta compromisos, mediana de hasta 14 días civiles Lima incluidos
+los ceros, IQR lineal para decidir rango, cero ingresos futuros inventados y
+un reloj explícito. El candidato legado de Insights dejó de publicar una
+segunda fórmula y la respuesta conversacional existente dejó de emitir un
+veredicto financiero. Simular devuelve efecto inmediato, lo ya contado y
+cierre proyectado sin crear movimiento, tocar cuenta, caja, presupuesto ni
+outbox.
+
+Las superficies nuevas de Presupuestos/Metas y Proyecciones sustituyen el
+placeholder por flujos reales. Incluyen selector semanal/quincenal/mensual
+sincronizado con URL, creación, ajuste `PATCH`, copia confirmada del periodo
+anterior, sugerencias, detalle, metas sin barra ficticia, vínculo a caja,
+supuestos, aritmética con referencias conocidas, situación y simulador. Tras
+la revisión, las pantallas monolíticas se dividieron: los orquestadores
+principales quedaron en 281, 191 y 78 líneas. Los componentes compactos de
+presupuesto/proyección se entregan para Home, pero no se presentan como
+montados (`WEB-D223`).
+
+La suite RLS completa termina con 15 archivos y 238/238 pruebas. `npx tsc
+--noEmit`, `npx eslint .` y `npm run build` pasan; el build de Next 16.2.7
+compila y genera 40 páginas. `npm test` termina con 304/305 archivos y
+1.896/1.897 pruebas por el timeout frío conocido de
+`src/app/api/v1/movements/route.test.ts > AC-API-04`; aislado con
+`--testTimeout=20000` pasa 6/6. El lint SQL no reporta regresiones W-12 y
+conserva dos warnings anteriores: volatilidad de `next_recurring_date` y la
+variable no leída `v_debt_id`.
+
+### Qué sorprendió
+
+El diseño reservaba migraciones `048`/`050`, pero ambas ya existían en la
+rama ejecutable. `WEB-D218` asignó `061` sin reescribir historia. El corpus
+también dejaba sin cerrar moneda/estados de avance, fórmula de rollover,
+mediana par, sincronización meta-caja, cuartiles, saldo cero conocido,
+ingresos futuros, situación mensual, ownership entre cortes y aislamiento de
+colecciones; `WEB-D219` a `WEB-D230` resolvieron esos vacíos antes de elegir
+comportamiento.
+
+La prueba real de sobresfuerzo encontró que `numeric(5,4)` no soportaba un
+avance de 1.500 %: Postgres abortaba el lifecycle con `numeric field
+overflow`. La implementación se revirtió a esa precisión, la prueba falló y
+se restauró `numeric` sin tope arbitrario con `pct >= 0` (`WEB-D229`,
+`RUL-HECHO-02`). Otra prueba descubrió que la validación
+`Number.isInteger(value * 100)` rechazaba montos válidos como S/0.29 y
+S/654.32 por representación IEEE-754; ahora todos los esquemas reutilizan el
+validador monetario por tolerancia y el caso real conserva S/654.32.
+
+Los repositorios devolvían códigos SQL específicos —categoría inexistente,
+duplicado, estado inválido— que las rutas convertían en 500. Las pruebas
+negativas hicieron visible el error; el mapper ahora responde 404, 409 o 400
+según contrato. Los tests de acciones también tenían URLs falsas
+(`/accept`, `/link-box` omitidos): no era un bug de producto, sí evidencia de
+que una prueba podía pasar sin invocar la ruta que nombraba; se corrigieron.
+
+Privacidad exportaba el corpus anterior pero omitía las cuatro familias de
+datos nuevas y aceptaba query params desconocidos con 200. La prueba se
+escribió primero, falló 200→400 y luego quedó 5/5. Al correr toda RLS, ese
+test falló otra vez porque medía conteos globales mientras otras suites
+limpiaban filas concurrentemente; se corrigió para observar solo sus IDs. No
+se maquilló ninguno de los dos fallos como “flaky”.
+
+La auditoría de aceptación detectó cuatro comportamientos existentes sin
+aserción —rollover apagado por defecto, meta sin caja sin barra, rango visible
+y motivo visible con historia insuficiente— y una huella de simulación que
+contaba movimientos pero no saldos. Las cuatro pruebas fallaron 4/4 con
+mutaciones deliberadas y volvieron 16/16 al restaurar. Después, insertar una
+cuenta desde la simulación hizo fallar la idempotencia real; restaurada la
+implementación, el contrato volvió 5/5. También se mutaron constraints,
+efectos de saldo, bloqueo de límite duro, doble descuento, fecha, invalidación,
+privacidad, método `PATCH` y trigger del worker en sus pruebas respectivas:
+cada mutación produjo rojo antes de aceptar la evidencia (`RUL-HECHO-02`).
+
+La matriz expuso una contradicción histórica: cinco rótulos usan sufijo
+minúsculo (`05b`–`05e`, `02b`), pero el registro solo reconoce el ID base.
+`WEB-D231` los conserva como subcriterios anotados y evita inflar el censo de
+708; por eso W-12 agrega 31 filas con clase, no 36. Finalmente, el corpus no
+definía catch-up tras una pausa/caída ni un contrato consumible para
+“Registrar gasto” desde la simulación. `WEB-D232` deja el lifecycle en un
+periodo por invocación hasta `idempotent=true`; `WEB-D233` mueve la precarga
+compartida a W-13 en vez de publicar parámetros inertes.
+
+### Qué quedó abierto
+
+No hubo sesión real `USER`. En `32` siguen abiertas esas mitades de
+`AC-PRES-05c`, `06`, `07`, `08`, `11`, `12` y `13`; en `33`, las de
+`AC-PROY-01`, `05`, `06`, `12` y `17`. `AC-PRES-05` solo entrega el productor
+de umbral: la notificación visible pertenece a W-14. `AC-PRES-14` tiene
+componente de máximo tres, pero Home no lo consume hasta W-15. La consulta
+conversacional completa de “¿puedo permitirme?” queda en W-16/W-17.
+
+`AC-PROY-12` no cierra completo aunque su tabla sí existe: `free_money` y
+`free_in_accounts` no traen referencias, y los compromisos enlazan al módulo
+Pagos que vienen, no a una ocurrencia exacta. `ACT-PROY-04` no aparece:
+Movimientos no consume aún un prefill seguro de monto/categoría/fecha y
+`WEB-D233` lo asigna al contrato compartido de W-13. El selector de caja para
+metas recibe de `/api/v1/boxes` tipo e identidad, pero no moneda ni si ya
+respalda otra meta; filtra `objetivo` y deja que el Core valide PEN y
+exclusividad, por lo que puede mostrar una opción que después sea rechazada.
+
+La recuperación de varios periodos vencidos requiere repetir el job con el
+mismo `as_of` hasta `idempotent=true`; el endpoint no hace ese bucle
+automáticamente. Un presupuesto pausado tampoco cierra ni renueva hasta
+reanudarlo (`WEB-D232`). No se ejecutó un E2E real:
+`tests/e2e/recorridos/07-crear-presupuesto.spec.ts` continúa en `test.fixme`.
+Tampoco hubo staging, despliegue ni push de migraciones. Las dos advertencias
+SQL anteriores siguen abiertas y no se atribuyen a este corte.
+
+### Documentos corregidos
+
+- `32` §20 y `33` §20: las 39 obligaciones quedaron anotadas contra código y
+  pruebas reales; cierres parciales y `USER` ausente se declaran uno por uno.
+- `03_decisiones_producto_web.md`: `WEB-D218` a `WEB-D233` (migración,
+  moneda/estados, rollover, sugerencias, metas/cajas, ownership, estadística,
+  horizonte/ingresos, motor canónico, situación, saldo cero, porcentaje,
+  aislamiento, sufijos, lifecycle y precarga).
+- `13_modelo_datos_web_v1.md`, `14_contratos_api_web.md` y
+  `17_patrones_datos_formularios_y_listados.md`: esquema ejecutable `061`,
+  contratos W-12 e invalidaciones reales.
+- `50_matriz_de_trazabilidad_web.md`, `tests/corpus/matriz.test.ts` y
+  `scripts/matriz/matriz.generada.json`: 248 criterios con clase (`52`
+  integración, `89` unidad, `36` lint) y 384 con `TEST` sin clase.
+- `54_plan_de_implementacion_web.md`: el prefill compartido de Movimientos
+  queda explícitamente bajo W-13 por `WEB-D233`.
+- `README.md`, tipos Supabase, lista service-role, gate 404 y cron: árbol,
+  tablas, rutas internas y superficies nuevas declaradas.
+- Migración `061`, Core, repositorios, 27 contratos de API, privacidad,
+  invalidación, worker/outbox y pantallas modulares de ambos documentos.
 
 ---
 

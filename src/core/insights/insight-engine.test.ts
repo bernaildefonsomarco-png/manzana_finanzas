@@ -224,7 +224,7 @@ describe("buildAdvancedInsightDrafts", () => {
     });
   });
 
-  it("proyecta el cierre mensual solo con historia suficiente y origen confiable", () => {
+  it("WEB-D226: no publica la proyeccion mensual legada incompatible", () => {
     const historical = Array.from({ length: 20 }, (_, index) =>
       movement(1, 12, "alimentacion", {
         occurred_at: new Date(
@@ -247,61 +247,7 @@ describe("buildAdvancedInsightDrafts", () => {
       activePendingCount: 0,
       now,
     });
-    const projection = drafts.find((draft) => draft.type === "projection");
-
-    expect(projection).toBeDefined();
-    expect(projection?.sourceFacts).toMatchObject({
-      currency: "PEN",
-      current_spend: 100,
-      historical_56_day_spend: 240,
-      operational_free_money: 800,
-    });
-    expect(projection?.expiresAt).toBe("2026-07-19T17:00:00.000Z");
-  });
-
-  it("no proyecta si hay pendientes activos o gastos sin cuenta", () => {
-    const movements = [
-      movement(1, 20, "alimentacion", {
-        occurred_at: "2026-05-24T15:00:00.000Z",
-        account_origin_id: "account-1",
-        affects_account_balance: true,
-      }),
-      ...Array.from({ length: 18 }, (_, index) =>
-        movement(1, 10, "alimentacion", {
-          occurred_at: new Date(Date.UTC(2026, 4, 26 + index * 2, 15)).toISOString(),
-          account_origin_id: "account-1",
-          affects_account_balance: true,
-        }),
-      ),
-      ...Array.from({ length: 8 }, (_, index) =>
-        movement(2 + index, 10, "alimentacion", {
-          account_origin_id: "account-1",
-          affects_account_balance: true,
-        }),
-      ),
-    ];
-
-    expect(
-      buildAdvancedInsightDrafts({
-        movements,
-        accounts: [account()],
-        activePendingCount: 2,
-        now,
-      }).some((draft) => draft.type === "projection"),
-    ).toBe(false);
-
-    movements[movements.length - 1] = {
-      ...movements[movements.length - 1],
-      account_origin_id: null,
-    };
-    expect(
-      buildAdvancedInsightDrafts({
-        movements,
-        accounts: [account()],
-        activePendingCount: 0,
-        now,
-      }).some((draft) => draft.type === "projection"),
-    ).toBe(false);
+    expect(drafts.some((draft) => draft.type === "projection")).toBe(false);
   });
 
   it("encuentra contexto etiquetado sin convertirlo en diagnostico", () => {

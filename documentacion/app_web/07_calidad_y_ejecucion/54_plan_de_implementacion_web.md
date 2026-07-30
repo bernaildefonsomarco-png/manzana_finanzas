@@ -315,6 +315,10 @@ Inicio el último porque agrega a todos.
 | `W-14` | Se puede mirar atrás, buscar y recibir recordatorios | `35`, `37`, `38` | `W-13` |
 | `W-15` | El Inicio responde "¿dónde estoy?" en una pantalla | `39` | `W-14` |
 
+`W-13` incluye además el contrato compartido de precarga hacia Movimientos:
+lo consumen tanto las acciones de Descubrimientos (`34`) como
+`ACT-PROY-04`, diferida desde `W-12` por `WEB-D233`.
+
 ### 5.1 Lo que cada corte de módulo incluye sin decirlo
 
 Todo corte de módulo entrega, además de su §8 y su §9:

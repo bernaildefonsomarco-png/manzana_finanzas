@@ -67,10 +67,13 @@ Palabras prohibidas en este módulo, además de las del glosario general:
 id            uuid pk
 user_id       uuid not null
 category_id   text null references categories(id)   -- null = presupuesto general
+currency      text not null default 'PEN'
 period_kind   budget_period not null    -- semanal | quincenal | mensual
 period_start  date not null
 period_end    date not null
-amount        numeric(14,2) not null
+base_amount   numeric(14,2) not null
+rollover_amount numeric(14,2) not null default 0
+amount        numeric(14,2) not null    -- base_amount + rollover_amount
 kind          budget_kind not null      -- presupuesto | limite_blando | limite_duro
 rollover      boolean not null default false
 auto_renew    boolean not null default true
@@ -82,10 +85,13 @@ created_at, updated_at, deleted_at, metadata
 
 Restricciones:
 
-- `amount > 0`.
+- `base_amount > 0`, `rollover_amount >= 0` y
+  `amount = base_amount + rollover_amount` (`WEB-D220`).
+- `currency = 'PEN'` en V1-web (`WEB-D219`).
 - `period_end > period_start`.
 - `category_id` referencia `categories(id)`.
-- Único parcial `(user_id, category_id, period_start, kind)` **entre los de
+- Único parcial con `NULLS NOT DISTINCT` por
+  `(user_id, category_id, period_start, kind)` **entre los de
   `status = 'activo'`**: no puede haber dos presupuestos activos de la misma
   categoría, periodo y tipo. Archivados y pausados no bloquean, porque
   archivar y recrear dentro del mismo periodo es un caso legítimo
@@ -114,12 +120,16 @@ name           text not null
 target_amount  numeric(14,2) not null
 target_date    date null
 box_id         uuid null references boxes(id)
+currency       text not null default 'PEN'
 status         goal_status not null   -- activa | alcanzada | pausada | archivada
 created_at, updated_at, deleted_at, metadata
 ```
 
 `box_id` es lo que conecta una meta con dinero real. Sin caja, una meta es
-una intención sin respaldo — válida, pero se muestra distinto (§12).
+una intención sin respaldo — válida, pero se muestra distinto (§12). Al
+vincularla, la caja PEN de tipo `objetivo` pasa a ser la fuente canónica de
+saldo, objetivo y fecha; el RPC sincroniza esos campos y el borrado lógico de
+la caja desvincula la meta (`WEB-D222`).
 
 ### 4.3 `budget_progress_snapshots`
 
@@ -130,7 +140,7 @@ budget_id  uuid not null references budgets(id)
 as_of      date not null
 spent      numeric(14,2) not null
 remaining  numeric(14,2) not null
-pct        numeric(5,4) not null
+pct        numeric not null check (pct >= 0) -- cuatro decimales, sin tope implícito (`WEB-D229`)
 created_at
 ```
 
@@ -139,19 +149,24 @@ recalcular todo el pasado en cada consulta. Único por `(budget_id, as_of)`.
 
 ### 4.4 Migración requerida
 
-`048`, documentada en `13_modelo_datos_web_v1.md` §7.1. Este módulo añade a lo
+`061_w12_budgets_goals.sql`, documentada en
+`13_modelo_datos_web_v1.md` §7.1. El número preliminar `048` ya estaba
+ocupado y no se reutiliza (`WEB-D218`). Este módulo añade a lo
 que allí figuraba:
 
 | Cambio | Por qué |
 |---|---|
 | `budgets.auto_renew` | `RUL-PRES-10` |
 | `budgets.alerted_thresholds` | `RUL-PRES-06` |
+| `budgets.base_amount`, `rollover_amount`, `currency` | `WEB-D219`, `WEB-D220` |
+| `goals.currency` y sincronización con caja objetivo | `WEB-D219`, `WEB-D222` |
+| `budget_suggestion_decisions` | `WEB-D221` |
 | FK `budgets.category_id → categories(id)` | Un presupuesto de una categoría inexistente no es representable |
 | Alcance del único: entre `activo`, no "no borrado" | Archivar y recrear en el mismo periodo es legítimo |
 | Único `(budget_id, as_of)` en snapshots | El trabajo diario debe poder reejecutarse sin duplicar |
 | Índices `budgets (user_id, status)` y `budget_progress_snapshots (budget_id, as_of desc)` | §17 |
 
-Los seis están ya reflejados en `13` §7.1 y §11.
+Estos cambios están ya reflejados en `13` §7.1 y §11.
 
 ## 5. Máquina de estados
 
@@ -366,8 +381,10 @@ la pantalla muestra "cerca, 86%" aunque no se haya emitido ningún aviso, y el
 **`RUL-PRES-07` — Presupuesto sugerido a partir del historial propio**
 
 Se sugiere un presupuesto para una categoría cuando hay **al menos 2
-periodos completos** con gasto en ella. El valor propuesto es la **mediana**
-de esos periodos, no el promedio.
+periodos completos** con gasto en ella. Se usan como máximo los seis más
+recientes y el valor propuesto es la **mediana exacta en céntimos** de esos
+periodos, no el promedio. Con una cantidad par, se promedian los dos valores
+centrales y se redondea al céntimo (`WEB-D221`).
 
 Razón de la mediana: un mes atípico (una mudanza, un viaje) desplaza el
 promedio y produce un presupuesto que no representa el hábito real.
@@ -377,7 +394,7 @@ La sugerencia muestra su evidencia:
 ```text
 En comida sueles gastar cerca de S/380 al mes.
 Lo veo en tus últimos 3 meses: S/360, S/385 y S/378.
-¿Quieres poner un presupuesto de S/400?
+¿Quieres poner un presupuesto de S/378?
 [Sí]  [Otro monto]  [No, gracias]
 ```
 
@@ -398,8 +415,11 @@ Agosto sin traspaso: S/400.00
 referencia del periodo y se convierte en un acumulado, que es una herramienta
 distinta y menos legible. Quien la quiera la activa.
 
-El traspaso **no acumula indefinidamente**: solo del periodo inmediatamente
-anterior.
+El traspaso **no acumula indefinidamente**: `base_amount` y
+`rollover_amount` se conservan separados, el gasto consume primero el
+acarreo recibido y el siguiente periodo solo puede recibir la parte no
+consumida de la base actual. El acarreo viejo caduca al cierre
+(`WEB-D220`).
 
 **`RUL-PRES-09` — Periodos**
 
@@ -473,6 +493,7 @@ actual, no los archivados. Los snapshots ya tomados se conservan.
 | Meta `target_amount` | Mayor que 0 |
 | Meta `target_date` | Futura al crear, si se indica |
 | Meta `box_id` | La caja debe existir, estar activa y ser del usuario |
+| Moneda | Presupuestos, metas, cajas vinculadas y movimientos agregados son PEN en V1-web (`WEB-D219`) |
 
 ## 8. Superficies
 
@@ -588,11 +609,13 @@ caja vinculada, vía el módulo 24.
 | `PATCH /budgets/[id]` | Edita monto, tipo, traspaso o renovación. No toca `alerted_thresholds` |
 | `DELETE /budgets/[id]` | Archiva |
 | `POST /budgets/[id]/pause` · `/resume` | Transiciones |
+| `POST /budgets/[id]/restore` | Restaura uno archivado si no crea duplicado |
 | `POST /budgets/copy-previous` | Copia el periodo anterior completo. `Idempotency-Key` |
 | `GET /budgets/suggestions` | Sugerencias con su evidencia |
 | `POST /budgets/suggestions/[id]/accept` · `/dismiss` | Resolución |
 | `GET /goals` · `POST` · `PATCH` · `DELETE` | Metas |
-| `POST /goals/[id]/link-box` | Vincula caja |
+| `POST /goals/[id]/pause` · `/resume` · `/restore` | Transiciones |
+| `POST /goals/[id]/link-box` · `/unlink-box` | Vincula o desvincula caja |
 | `GET /budgets/summary` | Avance agregado del periodo, para el Inicio |
 
 `GET /budgets` devuelve el avance **con las referencias de los movimientos
@@ -630,7 +653,7 @@ relativo sigue siendo útil y no es sensible**; el monto sí.
 |---|---|---|---|
 | `ERR-PRES-01` | Presupuesto duplicado | "Ya tienes un presupuesto de Alimentación para julio." | Ver el existente |
 | `ERR-PRES-02` | Monto cero o negativo | "El monto tiene que ser mayor que cero." | Corregir |
-| `ERR-PRES-03` | Categoría que no admite gasto | "Las transferencias no llevan presupuesto: no son un gasto." | Elegir otra |
+| `ERR-PRES-03` | Categoría inexistente | "No encontré esa categoría." | Elegir otra |
 | `ERR-PRES-04` | Presupuesto no encontrado | "No encontré ese presupuesto." | Volver |
 | `ERR-PRES-05` | Editar uno de periodo cerrado | "Ese periodo ya terminó. Puedes ajustar el de este mes." | Ir al actual |
 | `ERR-PRES-06` | Copiar sin periodo anterior | "Todavía no hay un periodo anterior que copiar." | Crear a mano |
@@ -773,8 +796,9 @@ cumpla todas las reglas de §6.
 3. **Movimiento eliminado y restaurado.** El avance baja y vuelve a subir.
 4. **Presupuesto de una categoría sin ningún gasto.** Se muestra en 0% sin
    sugerir que "va bien"; simplemente no hay datos.
-5. **Categoría archivada con presupuesto activo.** El presupuesto sigue; se
-   avisa que esa categoría ya no se usa.
+5. **Subcategoría archivada con presupuesto activo.** El presupuesto sigue
+   ligado a su categoría global; archivar una subcategoría no altera el
+   avance (`WEB-D219`).
 6. **Traspaso con sobrante negativo.** No se traspasa deuda: si se superó, el
    periodo siguiente empieza con el monto base.
 7. **Dos periodos solapados por cambio de tipo.** Al cambiar de mensual a
@@ -790,54 +814,107 @@ cumpla todas las reglas de §6.
     observado.
 12. **Presupuesto general y por categoría a la vez.** Conviven: el general
     cuenta todo lo que cuenta, incluidos los movimientos sin categoría.
+13. **Pausa o caída que atraviesa más de un cierre.** Pausar suspende también
+    snapshots y renovación. Al reanudar, cada ejecución del job avanza un
+    solo periodo; operación lo repite hasta `idempotent=true` y no inventa
+    periodos intermedios en una única llamada (`WEB-D232`).
 
 ## 20. Criterios de aceptación
 
+**Nota de trazabilidad (`WEB-D231`):** los rótulos `05b` a `05e` son
+subcriterios documentales de `AC-PRES-05`; se verifican por separado aquí,
+pero la matriz los pliega en la única fila del identificador base.
+
 - `AC-PRES-01` — Un presupuesto no modifica el dinero libre ni ningún saldo.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-12`:
+  `budget-progress.test.ts` prueba efecto monetario cero y
+  `tests/rls/w12-budgets-goals.test.ts` conserva una cuenta en S/1,000 y su
+  caja en S/200 al crear y reintentar el presupuesto.
 - `AC-PRES-02` — De los once tipos de movimiento, solo `gasto`,
   `pago_recurrente` y `pago_deuda` (este último solo en categoría `deudas`)
   cuentan en un presupuesto. Los otros ocho, incluido `ingreso`, no.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-12`: la clasificación
+  exhaustiva vive en `budget-progress.test.ts` y se repite contra SQL/RPC,
+  incluidos estados no activos, en `w12-budgets-goals.test.ts`.
 - `AC-PRES-03` — Un pago de deuda cuenta solo en presupuestos de la categoría
-  `deudas`. Evidencia: `TEST`.
+  `deudas`. Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-12`: las
+  pruebas Core y RLS cubren presupuesto general, categoría `deudas` y una
+  categoría ajena.
 - `AC-PRES-04` — Ningún tipo de presupuesto bloquea un gasto.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-12`:
+  `budget-progress.test.ts` cubre los tres tipos y la prueba RLS
+  `AC-PRES-04` registra un gasto real bajo un `limite_duro`.
 - `AC-PRES-05` — Cruzar un umbral avisa **una sola vez** por periodo. El
   ejemplo de siete pasos de `RUL-PRES-06` produce exactamente tres avisos, y
-  `alerted_thresholds` termina en `{70,90,100}`. Evidencia: `TEST`.
+  `alerted_thresholds` termina en `{70,90,100}`. Evidencia: `TEST`. Clase:
+  `integracion`. Cierra la parte `TEST` del productor en `W-12`:
+  `budget-thresholds.test.ts` y `w12-budgets-goals.test.ts` producen
+  exactamente los eventos 70/90/100 y el estado `{70,90,100}`. No cierra la
+  entrega visible del aviso: `WEB-D223` la asigna a `W-14`.
 - `AC-PRES-05b` — Bajar del umbral y volver a cruzarlo **no** vuelve a avisar,
   y editar el monto tampoco vacía `alerted_thresholds`. Evidencia: `TEST`.
+  Clase: `integracion`. Cierra en `W-12`: las pruebas de umbrales y RLS
+  comprueban el nuevo cruce y la edición sin reaviso ni borrado del estado.
 - `AC-PRES-05c` — El tramo se muestra siempre según el avance actual, aunque no
-  se haya emitido ningún aviso. Evidencia: `TEST` + `USER`.
+  se haya emitido ningún aviso. Evidencia: `TEST` + `USER`. Clase: `unidad`.
+  Cierra la parte `TEST` en `W-12`: `budget-progress.test.ts` calcula el tramo
+  actual y `budget-meter.test.tsx` lo presenta junto al porcentaje. `USER` no
+  cierra: no hubo sesión real de navegador.
 - `AC-PRES-05d` — Renovar un periodo vacía `alerted_thresholds`.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-12`: la renovación
+  Core reinicia a `[]` y la prueba RLS lee el nuevo presupuesto con ese
+  estado vacío.
 - `AC-PRES-05e` — Con `auto_renew` apagado, el presupuesto se archiva al cerrar
-  el periodo y **no** se crea uno nuevo. Evidencia: `TEST`.
+  el periodo y **no** se crea uno nuevo. Evidencia: `TEST`. Clase:
+  `integracion`. Cierra en `W-12`: Core devuelve `null` y Postgres archiva el
+  periodo sin materializar el siguiente.
 - `AC-PRES-06` — Ningún copy usa las palabras prohibidas de §3 ni presenta el
-  superado como fracaso. Evidencia: `TEST` + `USER`.
+  superado como fracaso. Evidencia: `TEST` + `USER`. Clase: `lint`. Cierra la
+  parte `TEST` en `W-12`: `budgets-surface-language.test.ts` recorre todos los
+  `.tsx` productivos del módulo. `USER` no cierra sin sesión real.
 - `AC-PRES-07` — "Ajustar el presupuesto" aparece con la misma jerarquía que
-  las demás salidas al superar. Evidencia: `USER`.
+  las demás salidas al superar. Evidencia: `USER`. No cierra: el control está
+  implementado con la misma clase visual que las otras salidas, pero no hubo
+  la sesión `USER` que exige el criterio.
 - `AC-PRES-08` — La sugerencia usa la **mediana** de al menos 2 periodos y
-  muestra su evidencia. Evidencia: `TEST` + `USER`.
+  muestra su evidencia. Evidencia: `TEST` + `USER`. Clase: `integracion`.
+  Cierra la parte `TEST` en `W-12`: `budget-suggestions.test.ts`, la prueba
+  RLS y `budget-suggestions.tsx` cubren mediana, ventana y evidencia visible.
+  `USER` no cierra sin sesión real.
 - `AC-PRES-09` — El traspaso está apagado por defecto y solo acumula del
-  periodo inmediatamente anterior. Evidencia: `TEST`.
+  periodo inmediatamente anterior. Evidencia: `TEST`. Clase: `integracion`.
+  Cierra en `W-12`: `schemas.test.ts` exige `rollover=false` por defecto, y
+  `budget-rollover.test.ts` más RLS prueban la caducidad del acarreo viejo.
 - `AC-PRES-10` — El avance devuelve las referencias de los movimientos que lo
-  componen. Evidencia: `TEST`.
+  componen. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-12`:
+  `budgets.repository.test.ts` conserva `movement_ids` en el avance.
 - `AC-PRES-11` — Una meta sin caja no muestra barra de progreso.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la parte `TEST` en
+  `W-12`: `budget-detail-screen.test.tsx` exige “Sin caja”, ausencia de
+  `progressbar` y la salida para vincular. `USER` no cierra sin sesión real.
 - `AC-PRES-12` — El ritmo necesario de una meta se presenta como dato, nunca
-  como exigencia. Evidencia: `USER`.
+  como exigencia. Evidencia: `USER`. No cierra: el cálculo y el copy “Es un
+  dato, no un aporte obligatorio” existen, pero no hubo validación `USER`.
 - `AC-PRES-13` — El motor no recomienda reducir gastos.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `lint`. Cierra la parte `TEST` en
+  `W-12`: el barrido completo de superficie rechaza recomendar reducir o
+  recortar gasto. `USER` no cierra sin sesión real.
 - `AC-PRES-14` — El Inicio muestra como máximo tres presupuestos.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. No cierra completo en `W-12`:
+  `budget-summary.test.ts` y `budget-summary-card.test.tsx` preparan y limitan
+  el componente a tres, pero todavía no está montado en `HomeScreen`;
+  `WEB-D223` asigna esa integración a `W-15`.
 - `AC-PRES-15` — El avance de todos los presupuestos del periodo se calcula
-  en una sola consulta. Evidencia: `CODE` + `TEST`.
+  en una sola consulta. Evidencia: `CODE` + `TEST`. Clase: `unidad`. Cierra
+  en `W-12`: `budgets.repository.test.ts` exige una sola lectura de
+  `movements` para el conjunto y preserva las referencias.
 - `AC-PRES-16` — El tramo no se comunica solo por color.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-12`:
+  `budget-meter.test.tsx` exige texto de tramo, porcentaje y nombre accesible.
 - `AC-PRES-17` — No existe ninguna comparación con otros usuarios ni con
-  promedios de mercado. Evidencia: `TEST`.
+  promedios de mercado. Evidencia: `TEST`. Clase: `lint`. Cierra en `W-12`:
+  el barrido de todos los `.tsx` productivos descarta ambos tipos de
+  comparación.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

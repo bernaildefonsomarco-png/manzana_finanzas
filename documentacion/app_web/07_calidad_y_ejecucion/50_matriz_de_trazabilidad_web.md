@@ -203,22 +203,26 @@ test las distingue por familia.
 |---|---|
 | `corpus` | 45 |
 | `build` | 16 |
-| `lint` | 30 |
+| `lint` | 36 |
 | `e2e` | 7 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
-| `integracion` | 43 |
-| `unidad` | 73 |
-| **Con clase** | **217** |
-| **Con `TEST` y sin clase** | **415** |
+| `integracion` | 52 |
+| `unidad` | 89 |
+| **Con clase** | **248** |
+| **Con `TEST` y sin clase** | **384** |
 | **Total con `TEST`** | **632** |
 
 `lint` sube de 13 a 14 en `W-01`: `AC-INV-10` recibe su clase al escribir su
 prueba (`51` §4.1), como manda el árbol de decisión — es una comparación
 leída sin ejecutar la aplicación.
 
+`W-12` añade 31 filas con clase. Los cinco rótulos con sufijo minúsculo de
+`32`/`33` conservan su evidencia individual, pero se pliegan en el
+identificador base y no alteran el censo (`WEB-D231`).
+
 Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
-posible. De los 491 criterios que todavía no tienen clase, 415 ya declaran
+posible. De los 460 criterios que todavía no tienen clase, 384 ya declaran
 `TEST` y quedan pendientes de asignación explícita; los otros 76 aún no tienen
 evidencia de prueba. `AC-HECHO-03` impide que cualquiera llegue a `verificado`
 sin clase.

@@ -13,6 +13,8 @@ function setUpQueryClient(): QueryClient {
     [queryKeys.movements.all, []],
     [queryKeys.summary, {}],
     [queryKeys.budgets.all, []],
+    [queryKeys.goals.all, []],
+    [queryKeys.projections.all, {}],
     [queryKeys.discoveries.all, []],
     [queryKeys.pending.all, []],
     [queryKeys.accounts, []],
@@ -39,13 +41,15 @@ describe("invalidateForMutation (17 §2.3, caso difícil de WEB-D165)", () => {
     queryClient = setUpQueryClient();
   });
 
-  it("crear un movimiento invalida movimientos/resumen/presupuestos/descubrimientos, pero NO deudas ni preferencias", async () => {
+  it("crear un movimiento invalida movimientos/resumen/presupuestos/metas/descubrimientos, pero NO deudas ni preferencias", async () => {
     await invalidateForMutation(queryClient, "movement.create");
 
     expect(isStale(queryClient, queryKeys.movements.all)).toBe(true);
     expect(isStale(queryClient, queryKeys.summary)).toBe(true);
     expect(isStale(queryClient, queryKeys.budgets.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.goals.all)).toBe(true);
     expect(isStale(queryClient, queryKeys.discoveries.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.projections.all)).toBe(true);
 
     // La regla explícita que rompe con el patrón actual (`17` §1, `17` §2.3):
     // crear un movimiento no toca deudas, cuentas, cajas ni preferencias.
@@ -56,7 +60,7 @@ describe("invalidateForMutation (17 §2.3, caso difícil de WEB-D165)", () => {
     expect(isStale(queryClient, queryKeys.preferences)).toBe(false);
   });
 
-  it("pagar una deuda invalida la deuda concreta, el listado de deudas, movimientos y resumen, pero no presupuestos ni preferencias", async () => {
+  it("pagar una deuda invalida deuda, movimientos, resumen y presupuestos, pero no metas", async () => {
     await invalidateForMutation(queryClient, "debt.pay", { debtId: "deuda-1" });
 
     expect(isStale(queryClient, queryKeys.debts.all)).toBe(true);
@@ -64,7 +68,9 @@ describe("invalidateForMutation (17 §2.3, caso difícil de WEB-D165)", () => {
     expect(isStale(queryClient, queryKeys.movements.all)).toBe(true);
     expect(isStale(queryClient, queryKeys.summary)).toBe(true);
 
-    expect(isStale(queryClient, queryKeys.budgets.all)).toBe(false);
+    expect(isStale(queryClient, queryKeys.budgets.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.projections.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.goals.all)).toBe(false);
     expect(isStale(queryClient, queryKeys.preferences)).toBe(false);
   });
 
@@ -84,7 +90,22 @@ describe("invalidateForMutation (17 §2.3, caso difícil de WEB-D165)", () => {
     expect(isStale(queryClient, queryKeys.movements.all)).toBe(true);
     expect(isStale(queryClient, queryKeys.summary)).toBe(true);
     expect(isStale(queryClient, queryKeys.budgets.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.goals.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.projections.all)).toBe(true);
 
     expect(isStale(queryClient, queryKeys.debts.all)).toBe(false);
+  });
+
+  it("editar una caja invalida metas y editar una meta no toca presupuestos", async () => {
+    await invalidateForMutation(queryClient, "box.upsert");
+    expect(isStale(queryClient, queryKeys.boxes)).toBe(true);
+    expect(isStale(queryClient, queryKeys.goals.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.budgets.all)).toBe(false);
+
+    queryClient = setUpQueryClient();
+    await invalidateForMutation(queryClient, "goal.edit");
+    expect(isStale(queryClient, queryKeys.goals.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.budgets.all)).toBe(false);
+    expect(isStale(queryClient, queryKeys.movements.all)).toBe(false);
   });
 });

@@ -29,6 +29,8 @@ describe("AC-SEG-01: service-role solo con justificación registrada", () => {
     // W-11 suma cinco rutas de lifecycle de Deudas y tres de Recurrentes;
     // siguen siendo excepciones temporales hasta la migración autenticada
     // de sus contratos, no una autorización permanente del service-role.
+    // W-12 añade `internal/jobs/budgets-daily`, cubierto por la lista blanca
+    // permanente de jobs: no incrementa estas excepciones de `/api/v1`.
     expect(EXCEPCIONES_TEMPORALES.length).toBe(62);
   });
 

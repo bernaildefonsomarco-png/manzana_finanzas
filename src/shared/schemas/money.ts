@@ -71,7 +71,7 @@ export type CategoryId = z.infer<typeof CategoryIdSchema>;
 
 const NullableUuidSchema = z.string().uuid().nullable();
 
-function hasAtMostTwoDecimals(value: number): boolean {
+export function hasAtMostTwoDecimals(value: number): boolean {
   return Math.abs(value * 100 - Math.round(value * 100)) < 1e-8;
 }
 

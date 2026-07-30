@@ -253,9 +253,7 @@ function composeBalanceAnswer(
   const decision =
     requestedAmount === null
       ? `Tienes ${formatMoney(operationalFreeMoney)} de dinero libre.`
-      : operationalFreeMoney >= requestedAmount
-        ? `Con los datos actuales, si puedes cubrir ${formatMoney(requestedAmount)} de tus ${formatMoney(operationalFreeMoney)} de dinero libre. Te quedarian aprox. ${formatMoney(operationalFreeMoney - requestedAmount)}.`
-        : `Con los datos actuales, no te lo recomendaria: ${formatMoney(requestedAmount)} supera tu dinero libre de ${formatMoney(operationalFreeMoney)}.`;
+      : `Si registraras un gasto de ${formatMoney(requestedAmount)} ahora, tu dinero libre pasaria de ${formatMoney(operationalFreeMoney)} a ${formatMoney(operationalFreeMoney - requestedAmount)}. Ese dinero libre ya descuenta ${formatMoney(commitments)} de compromisos proximos sin caja. Para calcular como quedaria el cierre del mes necesito tambien tu ritmo de gasto; ese cierre no se obtiene solo de este saldo.`;
   const opening = softOpening(context);
 
   return {

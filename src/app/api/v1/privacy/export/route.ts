@@ -13,6 +13,15 @@ export async function GET(request: Request) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
 
+    if ([...new URL(request.url).searchParams].length > 0) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "No se reconocen parametros en esta descarga.",
+        meta,
+        400,
+      );
+    }
+
     const data = await exportUserData(createServiceClient(), auth.userId);
     const date = data.generated_at.slice(0, 10);
     return new Response(JSON.stringify(data, null, 2), {

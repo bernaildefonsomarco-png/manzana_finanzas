@@ -182,6 +182,234 @@ export type Database = {
           },
         ]
       }
+      budget_operation_receipts: {
+        Row: {
+          budget_id: string | null
+          created_at: string
+          id: string
+          idempotency_key: string
+          operation: string
+          request_hash: string
+          result: Json
+          user_id: string
+        }
+        Insert: {
+          budget_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          operation: string
+          request_hash: string
+          result: Json
+          user_id: string
+        }
+        Update: {
+          budget_id?: string | null
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          operation?: string
+          request_hash?: string
+          result?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_operation_receipts_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "budgets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_progress_snapshots: {
+        Row: {
+          as_of: string
+          budget_id: string
+          created_at: string
+          id: string
+          pct: number
+          remaining: number
+          spent: number
+          user_id: string
+        }
+        Insert: {
+          as_of: string
+          budget_id: string
+          created_at?: string
+          id?: string
+          pct: number
+          remaining: number
+          spent: number
+          user_id: string
+        }
+        Update: {
+          as_of?: string
+          budget_id?: string
+          created_at?: string
+          id?: string
+          pct?: number
+          remaining?: number
+          spent?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_progress_snapshots_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "budgets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budget_suggestion_decisions: {
+        Row: {
+          budget_id: string | null
+          category_id: string
+          created_at: string
+          evidence: Json
+          evidence_end: string
+          evidence_start: string
+          id: string
+          idempotency_key: string
+          period_kind: Database["public"]["Enums"]["budget_period"]
+          proposed_amount: number
+          request_hash: string
+          resolution: string
+          result: Json
+          suggestion_key: string
+          user_id: string
+        }
+        Insert: {
+          budget_id?: string | null
+          category_id: string
+          created_at?: string
+          evidence: Json
+          evidence_end: string
+          evidence_start: string
+          id?: string
+          idempotency_key: string
+          period_kind: Database["public"]["Enums"]["budget_period"]
+          proposed_amount: number
+          request_hash: string
+          resolution: string
+          result: Json
+          suggestion_key: string
+          user_id: string
+        }
+        Update: {
+          budget_id?: string | null
+          category_id?: string
+          created_at?: string
+          evidence?: Json
+          evidence_end?: string
+          evidence_start?: string
+          id?: string
+          idempotency_key?: string
+          period_kind?: Database["public"]["Enums"]["budget_period"]
+          proposed_amount?: number
+          request_hash?: string
+          resolution?: string
+          result?: Json
+          suggestion_key?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budget_suggestion_decisions_budget_id_fkey"
+            columns: ["budget_id"]
+            isOneToOne: false
+            referencedRelation: "budgets"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "budget_suggestion_decisions_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      budgets: {
+        Row: {
+          alerted_thresholds: number[]
+          amount: number
+          auto_renew: boolean
+          base_amount: number
+          category_id: string | null
+          created_at: string
+          currency: string
+          deleted_at: string | null
+          id: string
+          kind: Database["public"]["Enums"]["budget_kind"]
+          metadata: Json
+          period_end: string
+          period_kind: Database["public"]["Enums"]["budget_period"]
+          period_start: string
+          rollover: boolean
+          rollover_amount: number
+          source: Database["public"]["Enums"]["budget_source"]
+          status: Database["public"]["Enums"]["budget_status"]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          alerted_thresholds?: number[]
+          amount: number
+          auto_renew?: boolean
+          base_amount: number
+          category_id?: string | null
+          created_at?: string
+          currency?: string
+          deleted_at?: string | null
+          id?: string
+          kind: Database["public"]["Enums"]["budget_kind"]
+          metadata?: Json
+          period_end: string
+          period_kind: Database["public"]["Enums"]["budget_period"]
+          period_start: string
+          rollover?: boolean
+          rollover_amount?: number
+          source?: Database["public"]["Enums"]["budget_source"]
+          status?: Database["public"]["Enums"]["budget_status"]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          alerted_thresholds?: number[]
+          amount?: number
+          auto_renew?: boolean
+          base_amount?: number
+          category_id?: string | null
+          created_at?: string
+          currency?: string
+          deleted_at?: string | null
+          id?: string
+          kind?: Database["public"]["Enums"]["budget_kind"]
+          metadata?: Json
+          period_end?: string
+          period_kind?: Database["public"]["Enums"]["budget_period"]
+          period_start?: string
+          rollover?: boolean
+          rollover_amount?: number
+          source?: Database["public"]["Enums"]["budget_source"]
+          status?: Database["public"]["Enums"]["budget_status"]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "budgets_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       categories: {
         Row: {
           description: string | null
@@ -1035,6 +1263,100 @@ export type Database = {
             columns: ["supersedes_memory_id"]
             isOneToOne: false
             referencedRelation: "financial_memory_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      goal_operation_receipts: {
+        Row: {
+          created_at: string
+          goal_id: string | null
+          id: string
+          idempotency_key: string
+          operation: string
+          request_hash: string
+          result: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          goal_id?: string | null
+          id?: string
+          idempotency_key: string
+          operation: string
+          request_hash: string
+          result: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          goal_id?: string | null
+          id?: string
+          idempotency_key?: string
+          operation?: string
+          request_hash?: string
+          result?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goal_operation_receipts_goal_id_fkey"
+            columns: ["goal_id"]
+            isOneToOne: false
+            referencedRelation: "goals"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      goals: {
+        Row: {
+          box_id: string | null
+          created_at: string
+          currency: string
+          deleted_at: string | null
+          id: string
+          metadata: Json
+          name: string
+          status: Database["public"]["Enums"]["goal_status"]
+          target_amount: number
+          target_date: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          box_id?: string | null
+          created_at?: string
+          currency?: string
+          deleted_at?: string | null
+          id?: string
+          metadata?: Json
+          name: string
+          status?: Database["public"]["Enums"]["goal_status"]
+          target_amount: number
+          target_date?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          box_id?: string | null
+          created_at?: string
+          currency?: string
+          deleted_at?: string | null
+          id?: string
+          metadata?: Json
+          name?: string
+          status?: Database["public"]["Enums"]["goal_status"]
+          target_amount?: number
+          target_date?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "goals_box_id_fkey"
+            columns: ["box_id"]
+            isOneToOne: false
+            referencedRelation: "boxes"
             referencedColumns: ["id"]
           },
         ]
@@ -2906,6 +3228,15 @@ export type Database = {
           isSetofReturn: true
         }
       }
+      commit_budget_operation: {
+        Args: {
+          p_budget_id: string | null
+          p_idempotency_key: string
+          p_operation: string
+          p_payload: Json
+        }
+        Returns: Json
+      }
       commit_debt_creation: {
         Args: {
           p_account_deltas: Json
@@ -2995,6 +3326,15 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      commit_goal_operation: {
+        Args: {
+          p_goal_id: string | null
+          p_idempotency_key: string
+          p_operation: string
+          p_payload: Json
+        }
+        Returns: Json
       }
       commit_pending_debt_payment: {
         Args: {
@@ -3336,6 +3676,13 @@ export type Database = {
         Returns: Json
       }
       expire_financial_learning: { Args: { p_now?: string }; Returns: Json }
+      get_budget_suggestions: {
+        Args: {
+          p_as_of?: string
+          p_period_kind?: Database["public"]["Enums"]["budget_period"]
+        }
+        Returns: Json
+      }
       get_email_capture_health: { Args: { p_days?: number }; Returns: Json }
       get_email_extraction_agent_health: {
         Args: { p_days?: number }
@@ -3632,6 +3979,15 @@ export type Database = {
         }
         Returns: Json
       }
+      resolve_budget_suggestion: {
+        Args: {
+          p_idempotency_key: string
+          p_payload: Json
+          p_resolution: string
+          p_suggestion_key: string
+        }
+        Returns: Json
+      }
       reverse_debt_payment: {
         Args: {
           p_mode: string
@@ -3685,6 +4041,13 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      run_budget_daily_lifecycle: {
+        Args: {
+          p_as_of?: string | null
+          p_user_id?: string | null
+        }
+        Returns: Json
       }
       set_dashboard_nudge_preference: {
         Args: {
@@ -3797,6 +4160,10 @@ export type Database = {
     Enums: {
       account_type: "digital" | "banco" | "fisico" | "tarjeta"
       box_type: "compromiso" | "objetivo" | "emergencia"
+      budget_kind: "presupuesto" | "limite_blando" | "limite_duro"
+      budget_period: "semanal" | "quincenal" | "mensual"
+      budget_source: "manual" | "sugerido"
+      budget_status: "activo" | "pausado" | "archivado"
       debt_direction: "i_owe" | "they_owe_me"
       debt_kind:
         | "personal"
@@ -3813,6 +4180,7 @@ export type Database = {
         | "paid"
         | "cancelled"
         | "archived"
+      goal_status: "activa" | "alcanzada" | "pausada" | "archivada"
       insight_status:
         | "candidate"
         | "validated"
@@ -4083,6 +4451,10 @@ export const Constants = {
     Enums: {
       account_type: ["digital", "banco", "fisico", "tarjeta"],
       box_type: ["compromiso", "objetivo", "emergencia"],
+      budget_kind: ["presupuesto", "limite_blando", "limite_duro"],
+      budget_period: ["semanal", "quincenal", "mensual"],
+      budget_source: ["manual", "sugerido"],
+      budget_status: ["activo", "pausado", "archivado"],
       debt_direction: ["i_owe", "they_owe_me"],
       debt_kind: [
         "personal",
@@ -4101,6 +4473,7 @@ export const Constants = {
         "cancelled",
         "archived",
       ],
+      goal_status: ["activa", "alcanzada", "pausada", "archivada"],
       insight_status: [
         "candidate",
         "validated",

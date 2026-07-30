@@ -1,13 +1,13 @@
-import { PlaceholderSection } from "@/shared/placeholder-section";
+"use client";
 
-// Doc `32`/`33`, dueño `W-12` (`54` bloque B). Aquí solo la URL (`AC-NAV-01`).
+import { BudgetsScreen } from "@/features/budgets/budgets-screen";
+import {
+  useLegacyNavigate,
+  useLegacySignOut,
+} from "@/shared/legacy-nav/legacy-view-routes";
+
 export default function PresupuestosPage() {
-  return (
-    <PlaceholderSection
-      title="Presupuestos"
-      description="Presupuestos, metas y límites llegan en un corte posterior."
-      backHref="/inicio"
-      backLabel="Volver al inicio"
-    />
-  );
+  const onNavigate = useLegacyNavigate();
+  const onSignOut = useLegacySignOut();
+  return <BudgetsScreen onNavigate={onNavigate} onSignOut={onSignOut} />;
 }

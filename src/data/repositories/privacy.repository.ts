@@ -11,6 +11,10 @@ export type UserDataExport = {
   accounts: Array<Record<string, unknown>>;
   boxes: Array<Record<string, unknown>>;
   movements: Array<Record<string, unknown>>;
+  budgets: Array<Record<string, unknown>>;
+  goals: Array<Record<string, unknown>>;
+  budget_progress_snapshots: Array<Record<string, unknown>>;
+  budget_suggestion_decisions: Array<Record<string, unknown>>;
   debts: Array<Record<string, unknown>>;
   debt_payments: Array<Record<string, unknown>>;
   recurring_rules: Array<Record<string, unknown>>;
@@ -48,6 +52,10 @@ export async function exportUserData(
     accounts,
     boxes,
     movements,
+    budgets,
+    goals,
+    budgetProgressSnapshots,
+    budgetSuggestionDecisions,
     debts,
     debtPayments,
     recurringRules,
@@ -99,6 +107,32 @@ export async function exportUserData(
       )
       .eq("user_id", userId)
       .order("occurred_at"),
+    client
+      .from("budgets")
+      .select(
+        "id,category_id,currency,period_kind,period_start,period_end,base_amount,rollover_amount,amount,kind,rollover,auto_renew,alerted_thresholds,source,status,created_at,updated_at,deleted_at",
+      )
+      .eq("user_id", userId)
+      .order("created_at"),
+    client
+      .from("goals")
+      .select(
+        "id,name,target_amount,target_date,box_id,currency,status,created_at,updated_at,deleted_at",
+      )
+      .eq("user_id", userId)
+      .order("created_at"),
+    client
+      .from("budget_progress_snapshots")
+      .select("id,budget_id,as_of,spent,remaining,pct,created_at")
+      .eq("user_id", userId)
+      .order("as_of"),
+    client
+      .from("budget_suggestion_decisions")
+      .select(
+        "id,suggestion_key,category_id,period_kind,evidence_start,evidence_end,evidence,proposed_amount,resolution,budget_id,result,created_at",
+      )
+      .eq("user_id", userId)
+      .order("created_at"),
     client
       .from("debts")
       .select(
@@ -212,6 +246,10 @@ export async function exportUserData(
     accounts,
     boxes,
     movements,
+    budgets,
+    goals,
+    budgetProgressSnapshots,
+    budgetSuggestionDecisions,
     debts,
     debtPayments,
     recurringRules,
@@ -244,6 +282,10 @@ export async function exportUserData(
     accounts: asRecords(accounts.data),
     boxes: asRecords(boxes.data),
     movements: asRecords(movements.data),
+    budgets: asRecords(budgets.data),
+    goals: asRecords(goals.data),
+    budget_progress_snapshots: asRecords(budgetProgressSnapshots.data),
+    budget_suggestion_decisions: asRecords(budgetSuggestionDecisions.data),
     debts: asRecords(debts.data),
     debt_payments: asRecords(debtPayments.data),
     recurring_rules: asRecords(recurringRules.data),

@@ -94,8 +94,9 @@ guardados no se puede reinterpretar después, y mostrar su resultado sería
 mostrar un número sin significado.
 
 La funcionalidad de guardar escenarios es **V1.1**; la tabla está diseñada en
-`13_modelo_datos_web_v1.md` §7.3 y su migración `050` queda **diferida**: se
-documenta pero no se aplica en V1-web. Mismo criterio que la `049` de
+`13_modelo_datos_web_v1.md` §7.3 y su migración queda **diferida, sin número
+reservado**: el número preliminar `050` ya pertenece a una migración ejecutada
+(`WEB-D218`). Se documenta pero no se aplica en V1-web. Mismo criterio que la
 importación (`WEB-D026`): una tabla vacía que nada lee ni escribe es esquema
 muerto, y el diseño ya está conservado por escrito, que es lo que evita
 cerrarle la puerta al modelo.
@@ -156,7 +157,7 @@ Donde:
 | Componente | Cómo se calcula |
 |---|---|
 | `dinero_libre_actual` | `RUL-CUENTAS-03` |
-| `ritmo_diario` | **Mediana** del gasto diario de los últimos 14 días con actividad, **excluyendo los movimientos ligados a compromisos** |
+| `ritmo_diario` | **Mediana** de hasta los últimos 14 días civiles observables del periodo, incluidos los días con gasto cero, **excluyendo los movimientos ligados a compromisos** (`WEB-D224`) |
 | `dias_restantes` | Hasta el fin del periodo, en `America/Lima` |
 
 **Los compromisos no se restan aquí.** Ya están descontados dentro de
@@ -208,8 +209,10 @@ Tu gasto diario varía bastante estas semanas.
 ```
 
 Umbral: si el rango intercuartílico del gasto diario supera el 50% de la
-mediana, se muestra rango. Un número único sobre datos muy dispersos es
-falsa precisión.
+mediana, se muestra rango. Los días son civiles Lima e incluyen cero cuando
+no hubo gasto; mediana y cuartiles usan interpolación lineal en céntimos. El
+rango proyecta Q3 como extremo inferior y Q1 como superior, según
+`WEB-D224`. Un número único sobre datos muy dispersos es falsa precisión.
 
 **`RUL-PROY-04` — Datos insuficientes: se dice, no se estima**
 
@@ -295,12 +298,12 @@ del usuario**.
 
 **`RUL-PROY-09` — El horizonte por defecto es el periodo actual**
 
-Coherente con `RUL-CUENTAS-05` (30 días) y con los periodos de presupuesto.
-Proyecciones a más largo plazo son V1.1.
+En V1-web es el **mes civil actual en America/Lima** y no se expone parámetro
+`horizon`. Proyecciones a más largo plazo son V1.1 (`WEB-D225`).
 
 **`RUL-PROY-10` — Los ingresos futuros solo se cuentan si son conocidos**
 
-Un ingreso se cuenta en la proyección solo si:
+Un ingreso se podrá contar en la proyección solo si:
 
 - es un recurrente activo de tipo ingreso, o
 - el usuario declaró en su perfil cuándo cobra y con qué regularidad
@@ -312,6 +315,11 @@ contarlo (`WEB-D023`).
 
 Esta regla evita el fallo más peligroso del módulo: proyectar que a alguien
 le va a entrar dinero que quizá no entre.
+
+Recorte ejecutable de `W-12`: las fuentes descritas todavía no existen con
+un contrato que distinga ingresos confirmados. Por eso el motor suma **cero
+ingresos futuros** y nunca infiere uno; `W-16` deberá añadir la rama positiva
+y su término explícito a la fórmula (`WEB-D225`).
 
 **`RUL-PROY-11` — Toda proyección es reproducible**
 
@@ -325,9 +333,9 @@ El modelo puede explicar una proyección y ponerla en palabras; no la calcula.
 | Elemento | Regla |
 |---|---|
 | Monto a simular | Mayor que 0, máximo 14 dígitos con 2 decimales |
-| Horizonte | Entre 1 y 90 días en V1 |
+| Horizonte | No se recibe en V1-web; siempre termina el último día del mes Lima |
 | Categoría de la simulación | Opcional; si se indica, afecta también al presupuesto de esa categoría |
-| Fecha de la simulación | Entre hoy y el fin del horizonte |
+| Fecha de la simulación | Entre hoy y el fin del mes civil actual |
 
 ## 8. Superficies
 
@@ -400,8 +408,9 @@ la defensa contra `RUL-CUENTAS-04`.
 ### `SCR-PROY-03` — Simulador
 
 Modal o sección. Pide monto y opcionalmente en qué y cuándo. Devuelve la
-respuesta de tres partes de `RUL-PROY-05`, con las acciones de registrar el
-gasto o cerrar.
+respuesta de tres partes de `RUL-PROY-05`. En `W-12` permite recalcular o
+cerrar; registrar el gasto queda diferido hasta que `W-13` defina el contrato
+compartido de precarga de Movimientos (`WEB-D233`).
 
 ### `SCR-PROY-04` — Cómo vas, en el Inicio
 
@@ -415,12 +424,13 @@ Solo aparece si hay datos suficientes (`RUL-PROY-04`).
 | `ACT-PROY-01` | Ver proyección de cierre | No | — | `proyeccion.vista` |
 | `ACT-PROY-02` | Ver el detalle de la aritmética | No | — | `proyeccion.detalle_consultado` |
 | `ACT-PROY-03` | Simular un gasto | No | — | `simulacion.ejecutada` |
-| `ACT-PROY-04` | Registrar el gasto simulado | Sí | Eliminando el movimiento | `movimiento.creado` |
+| `ACT-PROY-04` | Registrar el gasto simulado — diferido a `W-13` (`WEB-D233`) | Sí | Eliminando el movimiento | `movimiento.creado` |
 | `ACT-PROY-05` | Ver situación del mes | No | — | `situacion.consultada` |
 | `ACT-PROY-06` | Ver de dónde sale un componente | No | — | `evidencia.consultada` |
 
-Solo `ACT-PROY-04` escribe, y lo hace por el módulo 26 con sus reglas
-normales. Las demás son de lectura.
+Solo `ACT-PROY-04` escribirá, y lo hará por el módulo 26 con sus reglas
+normales cuando exista el contrato de precarga. Las acciones entregadas en
+`W-12` son de lectura.
 
 ## 10. API
 
@@ -432,8 +442,9 @@ normales. Las demás son de lectura.
 | `GET /projections/period/breakdown` | La aritmética línea por línea con referencias |
 
 Los cuatro son **endpoints de solo lectura sin excepción** (`14` §13). Si una
-consulta natural expresa intención de gastar, se devuelve el enlace al flujo
-de registro, no se ejecuta.
+consulta natural expresa intención de gastar, nunca se ejecuta. El enlace al
+flujo de registro se habilitará con la precarga validada de `WEB-D233`; `W-12`
+no emite parámetros que el formulario actual no consume.
 
 Respuesta de `GET /projections/period`:
 
@@ -466,7 +477,7 @@ defecto que el verificador rechaza (`22` §2).
 
 | Estado | Qué se muestra |
 |---|---|
-| **Sin cuentas con saldo** | "Para decirte cómo vendría el cierre del mes necesito saber cuánto tienes." + agregar saldo |
+| **Sin cuenta PEN activa** | "Para decirte cómo vendría el cierre del mes necesito saber cuánto tienes." + agregar saldo. Una cuenta conocida con saldo S/0 sí es dato (`WEB-D228`) |
 | **Menos de 7 días con movimientos** | "Con unos días más de movimientos puedo decirte cómo vendría el cierre." Sin estimar |
 | **Con datos, sin compromisos** | Proyección solo por ritmo, declarando que no hay compromisos contados |
 | **Alta dispersión del gasto** | Rango en vez de número (`RUL-PROY-03`) |
@@ -485,7 +496,7 @@ degradada**. Se dice que no se pudo calcular.
 | `ERR-PROY-01` | Datos insuficientes | "Todavía no tengo suficientes movimientos para proyectar el mes." | Registrar movimientos |
 | `ERR-PROY-02` | Sin saldos | "Necesito saber cuánto tienes para poder proyectar." | Agregar cuenta o saldo |
 | `ERR-PROY-03` | Monto de simulación inválido | "El monto tiene que ser mayor que cero." | Corregir |
-| `ERR-PROY-04` | Horizonte fuera de rango | "Puedo proyectar hasta 90 días." | Corregir |
+| `ERR-PROY-04` | Horizonte fuera de rango | **Diferido a V1.1**: W-12 no recibe horizonte (`WEB-D225`) |
 | `ERR-PROY-05` | Fallo de cálculo | "No pude calcular la proyección ahora." | Reintentar |
 | `ERR-PROY-06` | Fecha de simulación pasada | "Esa fecha ya pasó. ¿Quieres registrarlo como movimiento?" | Ir a registrar |
 
@@ -582,13 +593,15 @@ o si hay que ajustarlo.
 
 ## 17. Rendimiento
 
-- La proyección se calcula en el servidor con **una sola consulta agregada**
-  sobre movimientos, más los compromisos ya resueltos por `GET /upcoming`.
+- La proyección se calcula en el servidor con un número fijo de consultas,
+  sin N+1: una lectura agregada de movimientos y los compromisos canónicos
+  que también alimentan `GET /upcoming` (`WEB-D193`, `WEB-D227`).
 - El ritmo diario usa el índice `movements (user_id, occurred_at desc)`.
 - Se cachea por usuario durante 5 minutos y se invalida ante cualquier
   escritura financiera.
-- La simulación es aritmética sobre datos ya cargados: **no consulta nada
-  nuevo**.
+- Dentro de una carga compartida la simulación es aritmética sobre el mismo
+  estado. Como endpoint independiente carga ese estado canónico una vez; no
+  presume una caché de otro request.
 - Presupuesto: `/projections/period` bajo 300 ms porque lo consume el Inicio;
   `/simulate` bajo 150 ms.
 
@@ -631,47 +644,91 @@ o si hay que ajustarlo.
     también el efecto sobre ese presupuesto, como dato adicional.
 12. **Fallo del cálculo.** No se muestra una proyección aproximada de
     respaldo: se dice que no se pudo calcular.
+13. **Convertir la simulación en gasto.** No se ofrece un enlace inerte ni se
+    traduce una fecha futura a “hoy”. La acción espera el contrato de precarga
+    compartido de `W-13` (`WEB-D233`).
 
 ## 20. Criterios de aceptación
 
+**Nota de trazabilidad (`WEB-D231`):** `AC-PROY-02b` se conserva como
+subcriterio documental y se verifica por separado, pero la matriz lo pliega
+en la fila del identificador base `AC-PROY-02`.
+
 - `AC-PROY-01` — Ninguna proyección se emite sin declarar sus supuestos en el
-  mismo bloque visual. Evidencia: `TEST` + `USER`.
+  mismo bloque visual. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la
+  parte `TEST` en `W-12`: `projections-screen.test.tsx` exige los supuestos
+  debajo de la cifra y oculta esta si llegan vacíos. `USER` no cierra: no
+  hubo sesión real.
 - `AC-PROY-02` — El ejemplo de `RUL-PROY-02` produce exactamente S/250.00.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-12`:
+  `projection-engine.test.ts` y `projections.repository.test.ts` prueban
+  `560 − 62 × 5 = 250`.
 - `AC-PROY-02b` — **Los compromisos se descuentan una sola vez.** Dado un
   usuario con compromisos no cubiertos, la proyección de cierre es igual a
   `dinero_libre − ritmo × dias`, y **no** a `dinero_libre − compromisos −
-  ritmo × dias`. Evidencia: `TEST`.
+  ritmo × dias`. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-12`: las
+  mismas pruebas confirman que los S/89 de compromisos ya contenidos en
+  dinero libre no vuelven a restarse.
 - `AC-PROY-03` — El ritmo diario usa mediana, no promedio, y **excluye los
-  movimientos ligados a compromisos**. Evidencia: `TEST`.
+  movimientos ligados a compromisos**. Evidencia: `TEST`. Clase: `unidad`.
+  Cierra en `W-12`: el Projection Engine prueba la mediana de 14 días civiles
+  Lima, incluidos ceros, y excluye movimientos ligados.
 - `AC-PROY-04` — Con alta dispersión se muestra rango en vez de número único.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-12`: el Engine produce el
+  rango IQR y `ProjectionHero` muestra S/180–S/320 con “Rango por variación”.
 - `AC-PROY-05` — Con menos de 7 días de movimientos no se proyecta y se dice
-  por qué. Evidencia: `TEST` + `USER`.
+  por qué. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la parte
+  `TEST` en `W-12`: Engine y UI prueban menos de siete días, motivo visible y
+  ausencia de cifra futura. `USER` no cierra sin sesión real.
 - `AC-PROY-06` — La respuesta a "¿puedo permitirme X?" **no contiene
-  veredicto**. Evidencia: `TEST` + `USER`.
+  veredicto**. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la parte
+  `TEST` en `W-12`: Engine, barrido de copy y `conversation-agent.test.ts`
+  eliminan veredictos. `USER` no cierra y el routing conversacional completo
+  sigue asignado a `W-16`/`W-17` por `WEB-D223`.
 - `AC-PROY-07` — Simular no crea ningún movimiento ni modifica ningún saldo.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-12`:
+  `w12-api-routes.test.ts` ejecuta `/simulate` real y compara movimientos,
+  cuentas y cajas, incluidos `current_balance` y `updated_at`, antes y después.
 - `AC-PROY-08` — No existe puntuación ni letra de salud financiera en ninguna
-  superficie. Evidencia: `TEST`.
+  superficie. Evidencia: `TEST`. Clase: `lint`. Cierra en `W-12`: el barrido
+  completo de la superficie y la prueba de situación mensual descartan score,
+  letra y puntuación global.
 - `AC-PROY-09` — No se cuenta ningún ingreso futuro que el usuario no haya
-  declarado o confirmado. Evidencia: `TEST`.
+  declarado o confirmado. Evidencia: `TEST`. Clase: `unidad`. Cierra en
+  `W-12`: el Engine declara S/0 con `basis=not_available_v1` y no incorpora
+  fuente inventada.
 - `AC-PROY-10` — La proyección es reproducible: el mismo estado de datos da
-  el mismo resultado. Evidencia: `TEST`.
+  el mismo resultado. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-12`:
+  el mismo estado y reloj explícito producen una estructura idéntica.
 - `AC-PROY-11` — La proyección la calculan reglas determinísticas, nunca el
-  modelo. Evidencia: `CODE` + `TEST`.
+  modelo. Evidencia: `CODE` + `TEST`. Clase: `unidad`. Cierra en `W-12`: las
+  rutas delegan en Projection Engine determinístico y
+  `insight-engine.test.ts` exige que la proyección legada incompatible no se
+  publique.
 - `AC-PROY-12` — El detalle desglosa la aritmética línea por línea con
-  referencias navegables. Evidencia: `TEST` + `USER`.
+  referencias navegables. Evidencia: `TEST` + `USER`. Clase: `unidad`.
+  Cierra solo la parte de aritmética y referencias conocidas en `W-12`:
+  `projections-screen.test.tsx` prueba líneas y enlaces de movimientos. No
+  cierra `USER` ni la procedencia completa: `free_money`/`free_in_accounts`
+  no traen referencias y los compromisos enlazan al módulo, no al ítem exacto.
 - `AC-PROY-13` — Ningún copy de este módulo usa las palabras prohibidas de
-  §3. Evidencia: `TEST`.
+  §3. Evidencia: `TEST`. Clase: `lint`. Cierra en `W-12`: el barrido
+  automático recorre todos los archivos productivos de
+  `src/features/projections`.
 - `AC-PROY-14` — Este módulo no expone ningún comando de escritura.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-12`: la prueba de
+  arquitectura limita la superficie a tres GET y el POST de simulación, y
+  RLS prueba que ese POST no altera movimientos, cuentas, cajas ni otro
+  estado.
 - `AC-PROY-15` — Ante fallo de cálculo no se muestra una proyección
-  aproximada de respaldo. Evidencia: `TEST`.
+  aproximada de respaldo. Evidencia: `TEST`. Clase: `unidad`. Cierra en
+  `W-12`: la prueba de error exige ausencia de cifra y de respaldo aproximado.
 - `AC-PROY-16` — No existe comparación con otros usuarios ni con promedios
-  externos. Evidencia: `TEST`.
+  externos. Evidencia: `TEST`. Clase: `lint`. Cierra en `W-12`: el barrido
+  completo descarta usuarios, mercado y promedios externos.
 - `AC-PROY-17` — Un dinero libre negativo se proyecta sin dramatizar.
-  Evidencia: `USER`.
+  Evidencia: `USER`. No cierra: el motor acepta valores negativos y el copy es
+  neutral, pero no hubo la sesión `USER` exigida.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

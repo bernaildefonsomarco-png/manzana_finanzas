@@ -165,12 +165,19 @@ describe("ConversationAgent", () => {
     expect(issues).toEqual([]);
   });
 
-  it("responde sobre dinero libre usando solo tool_results", () => {
+  it("responde sobre dinero libre sin convertir el saldo actual en un veredicto de cierre", () => {
     const answer = composeConversationAnswer(contextPack());
 
     expect(answer.answer_kind).toBe("balance_snapshot");
     expect(answer.response_text).toContain("S/220.00");
     expect(answer.response_text).toContain("S/50.00");
+    expect(answer.response_text).toContain("S/170.00");
+    expect(answer.response_text).toContain(
+      "Para calcular como quedaria el cierre del mes necesito tambien tu ritmo de gasto",
+    );
+    expect(answer.response_text).not.toMatch(
+      /si puedes|no te lo recomendaria|no te alcanza|deberias/i,
+    );
     expect(answer.used_tools).toEqual(["get_balance_snapshot"]);
     expect(answer.safety_flags).toContain("read_only");
     expect(answer.safety_flags).toContain("no_financial_write");

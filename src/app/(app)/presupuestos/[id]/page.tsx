@@ -1,12 +1,28 @@
-import { PlaceholderSection } from "@/shared/placeholder-section";
+"use client";
 
-export default function PresupuestoDetallePage() {
+import { use } from "react";
+import { useSearchParams } from "next/navigation";
+import { BudgetDetailScreen } from "@/features/budgets/budget-detail-screen";
+import {
+  useLegacyNavigate,
+  useLegacySignOut,
+} from "@/shared/legacy-nav/legacy-view-routes";
+
+export default function PresupuestoDetallePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
+  const searchParams = useSearchParams();
+  const onNavigate = useLegacyNavigate();
+  const onSignOut = useLegacySignOut();
   return (
-    <PlaceholderSection
-      title="Detalle de presupuesto"
-      description="Presupuestos, metas y límites llegan en un corte posterior."
-      backHref="/presupuestos"
-      backLabel="Volver a presupuestos"
+    <BudgetDetailScreen
+      id={id}
+      entity={searchParams.get("tipo") === "meta" ? "goal" : "budget"}
+      onNavigate={onNavigate}
+      onSignOut={onSignOut}
     />
   );
 }
