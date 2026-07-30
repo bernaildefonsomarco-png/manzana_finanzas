@@ -1534,7 +1534,7 @@ de modo automático bloquea esa operación y no se intentó rodearlo.
 **Cerrado:** 2026-07-30
 **Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
 **Matriz regenerada:** 2026-07-30, con `npm run matriz:generar`; hash del
-commit sustantivo: `PENDIENTE` (hash real registrado en el commit de
+commit sustantivo: `a8c11c3` (hash real registrado en el commit de
 seguimiento de este cierre).
 
 ### Qué se entregó
