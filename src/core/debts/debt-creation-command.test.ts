@@ -70,6 +70,18 @@ describe("CreateDebtCommand", () => {
     );
   });
 
+  it("permite crear una deuda sin persona relacionada", async () => {
+    const port = fakePort();
+    const result = await dispatcher(port).dispatch(
+      command({ related_person_name: null }),
+    );
+
+    expect(result.type).toBe("debt_created");
+    expect(port.commit).toHaveBeenCalledWith(
+      expect.objectContaining({ normalizedRelatedPersonName: null }),
+    );
+  });
+
   it("rechaza deuda_adquirida con cuenta: no hay movimiento de efectivo que registrar", async () => {
     const port = fakePort({ account: accountFixture() });
     await expect(

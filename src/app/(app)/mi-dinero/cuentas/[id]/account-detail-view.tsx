@@ -56,7 +56,11 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
           </Button>
         </div>
 
-        <MoneyText value={account.current_balance} className="mt-4 block text-3xl font-heading font-semibold" />
+        <MoneyText
+          value={account.current_balance}
+          currency={account.currency === "USD" ? "USD" : "PEN"}
+          className="mt-4 block text-3xl font-heading font-semibold"
+        />
 
         {isNegative ? (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-error-subtle bg-error-subtle/40 px-3 py-2 text-sm text-error-on-subtle">
@@ -69,13 +73,19 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
           <div>
             <dt className="text-xs font-medium text-text-muted">Saldo inicial</dt>
             <dd className="mt-1 text-sm text-text">
-              <MoneyText value={account.initial_balance} />
+              <MoneyText
+                value={account.initial_balance}
+                currency={account.currency === "USD" ? "USD" : "PEN"}
+              />
             </dd>
           </div>
           <div>
             <dt className="text-xs font-medium text-text-muted">Libre en esta cuenta</dt>
             <dd className="mt-1 text-sm text-text">
-              <MoneyText value={free_balance} />
+              <MoneyText
+                value={free_balance}
+                currency={account.currency === "USD" ? "USD" : "PEN"}
+              />
             </dd>
           </div>
         </dl>
@@ -92,7 +102,11 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
                 <Link href={`/mi-dinero/cajas/${box.id}`} className="text-sm font-medium text-text hover:text-brand">
                   {box.name}
                 </Link>
-                <MoneyText value={box.current_balance} className="text-sm" />
+                <MoneyText
+                  value={box.current_balance}
+                  currency={account.currency === "USD" ? "USD" : "PEN"}
+                  className="text-sm"
+                />
               </li>
             ))}
           </ul>

@@ -1,4 +1,9 @@
-import type { DebtStatus, InstallmentStatus } from "@/shared/types/domain";
+import type {
+  DebtDirection,
+  DebtKind,
+  DebtStatus,
+  InstallmentStatus,
+} from "@/shared/types/domain";
 import type {
   DebtDetailViewModel,
   DebtDetailWithPayments,
@@ -6,64 +11,126 @@ import type {
   DebtSummary,
   DebtViewItem,
   DebtWithPerson,
+  InstallmentSchedulePreview,
 } from "./debts-types";
 
-export const debtDirectionLabels = {
-  i_owe: "Yo debo",
-  they_owe_me: "Me deben",
-} as const;
+const LIMA_TIMEZONE = "America/Lima";
+const OPEN_DEBT_STATUSES = new Set<DebtStatus>([
+  "active",
+  "due_soon",
+  "overdue",
+]);
+const OPEN_INSTALLMENT_STATUSES = new Set<InstallmentStatus>([
+  "pending",
+  "due_soon",
+  "overdue",
+]);
 
-export const debtKindLabels = {
+export const debtDirectionLabels: Record<DebtDirection, string> = {
+  i_owe: "Debo",
+  they_owe_me: "Me deben",
+};
+
+export const debtKindLabels: Record<DebtKind, string> = {
   personal: "Personal",
-  bank_loan: "Prestamo",
-  credit_card: "Tarjeta",
+  bank_loan: "Préstamo bancario",
+  credit_card: "Tarjeta como deuda simple",
   installment_purchase: "Compra en cuotas",
   service_or_bill: "Servicio o recibo",
-  other: "Otro",
-} as const;
+  other: "Otra",
+};
 
 export const debtStatusLabels: Record<DebtStatus, string> = {
   draft: "Borrador",
   active: "Activa",
-  due_soon: "Pronto",
+  due_soon: "Por vencer",
   overdue: "Vencida",
   paid: "Pagada",
-  cancelled: "Cancelada",
+  cancelled: "Condonada",
   archived: "Archivada",
 };
 
 export function summarizeDebts(debts: DebtWithPerson[]): DebtSummary {
   return debts.reduce<DebtSummary>(
     (summary, debt) => {
-      if (debt.direction === "i_owe") {
-        summary.total_i_owe += debt.current_balance;
-      } else {
-        summary.total_they_owe_me += debt.current_balance;
+      const open = OPEN_DEBT_STATUSES.has(debt.status);
+      if (open && debt.direction === "i_owe") {
+        const key =
+          debt.currency === "USD" ? "total_i_owe_usd" : "total_i_owe";
+        summary[key] = roundMoney(
+          summary[key] + Number(debt.current_balance)
+        );
+        summary.active_i_owe += 1;
       }
-
-      if (debt.status === "due_soon") summary.due_soon_count += 1;
-      if (debt.status === "overdue") summary.overdue_count += 1;
-      summary.active_count += 1;
-      summary.net_position = summary.total_they_owe_me - summary.total_i_owe;
+      if (open && debt.direction === "they_owe_me") {
+        const key =
+          debt.currency === "USD"
+            ? "total_they_owe_me_usd"
+            : "total_they_owe_me";
+        summary[key] = roundMoney(
+          summary[key] + Number(debt.current_balance)
+        );
+        summary.active_they_owe_me += 1;
+      }
+      if (!open) summary.closed_count += 1;
       return summary;
     },
     {
       total_i_owe: 0,
       total_they_owe_me: 0,
-      net_position: 0,
-      active_count: 0,
-      due_soon_count: 0,
-      overdue_count: 0,
+      total_i_owe_usd: 0,
+      total_they_owe_me_usd: 0,
+      active_i_owe: 0,
+      active_they_owe_me: 0,
+      closed_count: 0,
     }
   );
 }
 
+export function splitDebtsByState(
+  debts: DebtWithPerson[],
+  direction: DebtDirection
+): { open: DebtViewItem[]; closed: DebtViewItem[] } {
+  const matching = debts.filter((debt) => debt.direction === direction);
+  return {
+    open: matching
+      .filter((debt) => OPEN_DEBT_STATUSES.has(debt.status))
+      .sort((left, right) => {
+        const leftDate =
+          left.next_payment_date ?? left.due_date ?? "9999-12-31";
+        const rightDate =
+          right.next_payment_date ?? right.due_date ?? "9999-12-31";
+        const byDate = leftDate.localeCompare(rightDate);
+        return byDate !== 0 ? byDate : left.id.localeCompare(right.id);
+      })
+      .map(toDebtViewItem),
+    closed: matching
+      .filter((debt) => !OPEN_DEBT_STATUSES.has(debt.status))
+      .map(toDebtViewItem),
+  };
+}
+
 export function toDebtViewItem(debt: DebtWithPerson): DebtViewItem {
-  const paidAmount = Math.max(0, debt.principal_amount - debt.current_balance);
-  const progress =
-    debt.principal_amount > 0
-      ? Math.min(100, Math.round((paidAmount / debt.principal_amount) * 100))
+  const forgivenBalance =
+    debt.status === "cancelled" &&
+    typeof debt.metadata?.forgiven_balance === "number"
+      ? Number(debt.metadata.forgiven_balance)
       : 0;
+  const paidAmount =
+    debt.status === "cancelled"
+      ? Math.max(0, Number(debt.principal_amount) - forgivenBalance)
+      : Math.max(
+          0,
+          Number(debt.principal_amount) - Number(debt.current_balance)
+        );
+  const progress =
+    Number(debt.principal_amount) > 0
+      ? Math.min(
+          100,
+          Math.round((paidAmount / Number(debt.principal_amount)) * 100)
+        )
+      : 0;
+  const linkedBox = debt.linked_box ?? null;
 
   return {
     id: debt.id,
@@ -74,139 +141,121 @@ export function toDebtViewItem(debt: DebtWithPerson): DebtViewItem {
     kind_label: debtKindLabels[debt.kind],
     status: debt.status,
     status_label: debtStatusLabels[debt.status],
-    status_tone: getDebtStatusTone(debt.status),
-    principal_amount: debt.principal_amount,
-    current_balance: debt.current_balance,
+    status_tone: debtStatusTone(debt.status),
+    principal_amount: Number(debt.principal_amount),
+    current_balance: Number(debt.current_balance),
     paid_amount: paidAmount,
     currency: debt.currency,
     progress,
-    next_date_label: getNextDateLabel(debt.next_payment_date ?? debt.due_date),
+    next_date_label: formatRelativeDate(
+      debt.next_payment_date ?? debt.due_date
+    ),
+    linked_box_name: linkedBox?.name ?? null,
+    linked_box_balance:
+      linkedBox === null ? null : Number(linkedBox.current_balance),
+    is_closed: !OPEN_DEBT_STATUSES.has(debt.status),
   };
 }
 
 export function toDebtDetailViewModel(
   debt: DebtDetailWithPayments,
-  today = new Date()
+  now = new Date()
 ): DebtDetailViewModel {
-  const item = toDebtViewItem(debt);
-  const installmentNumberById = new Map(
-    debt.installments.map((installment) => [installment.id, installment.number])
+  const base = toDebtViewItem(debt);
+  const numberById = new Map(
+    debt.installments.map((installment) => [
+      installment.id,
+      installment.number,
+    ])
   );
-  const history = debt.payments
-    .slice()
-    .sort((left, right) => right.paid_at.localeCompare(left.paid_at))
-    .map((payment) => {
-      const movement = payment.movement;
-      const linkedAccountId =
-        movement?.account_origin_id ?? movement?.account_destination_id ?? null;
-      const allocatedNumbers = payment.allocations
-        .map((allocation) =>
-          installmentNumberById.get(allocation.debt_installment_id)
-        )
-        .filter((number): number is number => number !== undefined);
-
-      return {
-        id: payment.id,
-        movement_id: payment.movement_id,
-        amount_label: formatDebtMoney(payment.amount, payment.currency),
-        paid_at: payment.paid_at,
-        paid_label: formatPaymentDate(payment.paid_at, today),
-        type_label:
-          debt.direction === "i_owe" ? "Pago de deuda" : "Devolucion recibida",
-        source_label:
-          payment.source === "dashboard_manual" ? "Dashboard" : payment.source,
-        movement_label: movement
-          ? linkedAccountId
-            ? "Movimiento Core con cuenta"
-            : "Movimiento Core sin cuenta"
-          : "Sin movimiento vinculado",
-        allocation_label: formatPaymentAllocationLabel(allocatedNumbers),
-      };
-    });
-  const installments = debt.installments
-    .slice()
+  const installments = [...debt.installments]
     .sort((left, right) => left.number - right.number)
     .map((installment) => {
-      const pendingAmount = Math.max(
-        0,
-        Number(installment.expected_amount) - Number(installment.paid_amount)
-      );
-      const status = getEffectiveInstallmentStatus(
-        installment.status,
-        installment.due_date,
-        today
-      );
-
+      const expected = Number(installment.expected_amount);
+      const paid = Number(installment.paid_amount);
+      const pending = Math.max(0, roundMoney(expected - paid));
       return {
         id: installment.id,
         number: installment.number,
         due_date: installment.due_date,
-        due_label: formatDueDate(installment.due_date, today),
-        expected_amount_label: formatDebtMoney(
-          installment.expected_amount,
-          debt.currency
-        ),
-        paid_amount_label: formatDebtMoney(installment.paid_amount, debt.currency),
-        pending_amount_label: formatDebtMoney(pendingAmount, debt.currency),
-        status_label: installmentStatusLabels[status],
-        status_tone: getInstallmentStatusTone(status),
-        movement_label:
-          installment.allocations.length > 0
-          ? installment.allocations.length === 1
-            ? "1 abono vinculado"
-            : `${installment.allocations.length} abonos vinculados`
-          : installment.movement_id
-          ? "Pago vinculado"
-          : "Sin pago vinculado",
+        due_label:
+          formatRelativeDate(installment.due_date, now) ?? "Fecha por revisar",
+        expected_amount: expected,
+        paid_amount: paid,
+        pending_amount: pending,
+        expected_amount_label: formatDebtMoney(expected, debt.currency),
+        paid_amount_label: formatDebtMoney(paid, debt.currency),
+        pending_amount_label: formatDebtMoney(pending, debt.currency),
+        status: installment.status,
+        status_label: installmentStatusLabels[installment.status],
+        status_tone: installmentStatusTone(installment.status),
         allocation_count: installment.allocations.length,
+        is_open:
+          OPEN_INSTALLMENT_STATUSES.has(installment.status) && pending > 0,
       };
     });
-  const scheduleExpectedAmount = roundMoney(
-    debt.installments.reduce(
-      (sum, installment) => sum + Number(installment.expected_amount),
-      0
-    )
+  const schedulePending = roundMoney(
+    installments
+      .filter((installment) => installment.is_open)
+      .reduce((sum, installment) => sum + installment.pending_amount, 0)
   );
-  const schedulePaidAmount = roundMoney(
-    debt.installments.reduce(
-      (sum, installment) => sum + Number(installment.paid_amount),
-      0
-    )
+  const scheduleGap = roundMoney(
+    Number(debt.current_balance) - schedulePending
   );
-  const schedulePendingAmount = roundMoney(
-    debt.installments.reduce(
-      (sum, installment) =>
-        sum +
-        Math.max(
-          0,
-          Number(installment.expected_amount) - Number(installment.paid_amount)
-        ),
-      0
-    )
-  );
-  const scheduleBalanceGap = roundMoney(
-    Number(debt.current_balance) - schedulePendingAmount
-  );
+  const history = [...debt.payments]
+    .sort((left, right) => right.paid_at.localeCompare(left.paid_at))
+    .map((payment) => {
+      const isReversed = Boolean(payment.reversed_at);
+      return {
+        id: payment.id,
+        movement_id: payment.movement_id,
+        amount_label: formatDebtMoney(payment.amount, payment.currency),
+        paid_label: formatDateTime(payment.paid_at, now),
+        type_label: isReversed
+          ? "Pago revertido"
+          : debt.direction === "i_owe"
+            ? "Pago de deuda"
+            : "Devolución recibida",
+        source_label:
+          payment.source === "dashboard_manual" ? "Dashboard" : payment.source,
+        movement_label: payment.movement
+          ? payment.movement.account_origin_id ||
+            payment.movement.account_destination_id
+            ? "Movimiento Core con cuenta"
+            : "Movimiento Core sin cuenta"
+          : "Sin movimiento vinculado",
+        allocation_lines: [...payment.allocations]
+          .sort((left, right) => left.allocation_order - right.allocation_order)
+          .map((allocation) => {
+            const number = numberById.get(allocation.debt_installment_id);
+            return `${formatDebtMoney(
+              Number(allocation.allocated_amount),
+              debt.currency
+            )} a ${number ? `cuota ${number}` : "cuota registrada"}`;
+          }),
+        is_reversed: isReversed,
+        reversal_reason: payment.reversal_reason ?? null,
+      };
+    });
 
   return {
-    ...item,
+    ...base,
     opened_label: formatDate(debt.opened_at),
     due_label: debt.due_date ? formatDate(debt.due_date) : null,
-    installment_label: buildInstallmentLabel(debt),
-    schedule_expected_amount: scheduleExpectedAmount,
-    schedule_paid_amount: schedulePaidAmount,
-    schedule_pending_amount: schedulePendingAmount,
-    schedule_balance_gap: scheduleBalanceGap,
+    schedule_pending_amount: schedulePending,
+    schedule_balance_gap: scheduleGap,
     schedule_warning:
-      debt.installments.length > 0 && Math.abs(scheduleBalanceGap) > 0.01
-        ? "El saldo pendiente actual es " +
-          formatDebtMoney(debt.current_balance, debt.currency) +
-          ", pero el calendario registra " +
-          formatDebtMoney(schedulePendingAmount, debt.currency) +
-          " pendiente. Los mostramos por separado para no asumir que son equivalentes."
+      installments.length > 0 && Math.abs(scheduleGap) > 0.01
+        ? `El saldo actual es ${formatDebtMoney(
+            debt.current_balance,
+            debt.currency
+          )}, mientras las cuotas abiertas suman ${formatDebtMoney(
+            schedulePending,
+            debt.currency
+          )}. Los mostramos separados y no asumimos que son equivalentes.`
         : null,
     last_payment_label: debt.last_payment_at
-      ? formatPaymentDate(debt.last_payment_at, today)
+      ? formatDateTime(debt.last_payment_at, now)
       : null,
     history,
     installments,
@@ -217,75 +266,94 @@ export function resolveDebtInstallmentPaymentTarget(
   debt: DebtDetailWithPayments,
   requestedInstallmentId?: string | null
 ): DebtInstallmentPaymentTarget | null {
-  const nextOpen = debt.installments
+  const next = [...debt.installments]
     .filter(
       (installment) =>
-        ["pending", "due_soon", "overdue"].includes(installment.status) &&
+        OPEN_INSTALLMENT_STATUSES.has(installment.status) &&
         Number(installment.paid_amount) < Number(installment.expected_amount)
     )
     .sort((left, right) => {
-      const dueComparison = left.due_date.localeCompare(right.due_date);
-      return dueComparison !== 0 ? dueComparison : left.number - right.number;
+      const byDate = left.due_date.localeCompare(right.due_date);
+      return byDate !== 0 ? byDate : left.number - right.number;
     })[0];
-
-  if (!nextOpen) return null;
-  if (requestedInstallmentId && nextOpen.id !== requestedInstallmentId) {
+  if (!next || (requestedInstallmentId && requestedInstallmentId !== next.id)) {
     return null;
   }
-
   return {
-    installment_id: nextOpen.id,
-    installment_number: nextOpen.number,
-    amount: Math.max(
-      0,
-      roundMoney(
-        Number(nextOpen.expected_amount) - Number(nextOpen.paid_amount)
-      )
+    installment_id: next.id,
+    installment_number: next.number,
+    amount: roundMoney(
+      Number(next.expected_amount) - Number(next.paid_amount)
     ),
   };
 }
 
-function formatPaymentAllocationLabel(installmentNumbers: number[]): string {
-  if (installmentNumbers.length === 0) return "Sin asignacion de cuota";
-  if (installmentNumbers.length === 1) {
-    return `Aplicado a cuota ${installmentNumbers[0]}`;
+export function buildInstallmentSchedulePreview(input: {
+  principalAmount: number;
+  installmentCount: number;
+  installmentAmount: number | null;
+  firstDueDate: string;
+}): InstallmentSchedulePreview[] {
+  const count = Math.trunc(input.installmentCount);
+  if (
+    count < 1 ||
+    count > 360 ||
+    input.principalAmount <= 0 ||
+    !isIsoDate(input.firstDueDate)
+  ) {
+    return [];
   }
-
-  return `Aplicado a cuotas ${installmentNumbers.join(", ")}`;
+  const base =
+    input.installmentAmount && input.installmentAmount > 0
+      ? roundMoney(input.installmentAmount)
+      : roundMoney(input.principalAmount / count);
+  return Array.from({ length: count }, (_, index) => {
+    const number = index + 1;
+    return {
+      number,
+      due_date: addMonthsIsoDate(input.firstDueDate, index),
+      amount:
+        number === count && !input.installmentAmount
+          ? roundMoney(input.principalAmount - base * (count - 1))
+          : base,
+    };
+  });
 }
 
-function roundMoney(value: number): number {
-  return Math.round(value * 100) / 100;
-}
-
-export function formatDebtMoney(value: number, currency: "PEN" | "USD" = "PEN") {
-  const formatter = new Intl.NumberFormat("es-PE", {
+export function formatDebtMoney(
+  value: number,
+  currency: "PEN" | "USD" = "PEN"
+): string {
+  return new Intl.NumberFormat("es-PE", {
     style: "currency",
     currency,
     minimumFractionDigits: 2,
-  });
-
-  return formatter.format(value).replace("PEN", "S/");
+  })
+    .format(value)
+    .replace(/^S\/\s*/, "S/")
+    .replace(/^PEN\s*/, "S/");
 }
 
-function buildInstallmentLabel(debt: DebtWithPerson): string | null {
-  if (!debt.installment_count && !debt.installment_amount) return null;
-
-  const parts: string[] = [];
-  if (debt.installment_count) parts.push(`${debt.installment_count} cuotas`);
-  if (debt.installment_amount) {
-    parts.push(formatDebtMoney(debt.installment_amount, debt.currency));
-  }
-  return parts.join(" de ");
+export function limaTodayIso(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: LIMA_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const value = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
 }
 
-function getDebtStatusTone(
+function debtStatusTone(
   status: DebtStatus
-): "neutral" | "success" | "warning" | "error" | "info" | "debt" {
+): DebtViewItem["status_tone"] {
   if (status === "paid") return "success";
   if (status === "due_soon") return "warning";
   if (status === "overdue") return "error";
-  if (status === "draft") return "info";
+  if (status === "cancelled") return "info";
+  if (status === "draft") return "neutral";
   return "debt";
 }
 
@@ -295,12 +363,12 @@ const installmentStatusLabels: Record<InstallmentStatus, string> = {
   overdue: "Vencida",
   paid: "Pagada",
   rescheduled: "Reprogramada",
-  skipped: "Saltada",
+  skipped: "Omitida",
 };
 
-function getInstallmentStatusTone(
+function installmentStatusTone(
   status: InstallmentStatus
-): "neutral" | "success" | "warning" | "error" | "info" | "debt" {
+): DebtViewItem["status_tone"] {
   if (status === "paid") return "success";
   if (status === "due_soon") return "warning";
   if (status === "overdue") return "error";
@@ -308,85 +376,62 @@ function getInstallmentStatusTone(
   return "neutral";
 }
 
-function getEffectiveInstallmentStatus(
-  status: InstallmentStatus,
-  dueDate: string,
-  today: Date
-): InstallmentStatus {
-  if (status !== "pending") return status;
-
-  const date = new Date(`${dueDate}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return status;
-
-  const current = new Date(today);
-  current.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((date.getTime() - current.getTime()) / 86_400_000);
-
-  if (diffDays < 0) return "overdue";
-  if (diffDays <= 3) return "due_soon";
-  return status;
-}
-
-function getNextDateLabel(value: string | null): string | null {
-  if (!value) return null;
-
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return null;
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((date.getTime() - today.getTime()) / 86_400_000);
-
-  if (diffDays === 0) return "Vence hoy";
-  if (diffDays === 1) return "Vence manana";
-  if (diffDays > 1 && diffDays <= 7) return `Vence en ${diffDays} dias`;
-  if (diffDays < 0) return `Hace ${Math.abs(diffDays)} dias`;
-
-  return date.toLocaleDateString("es-PE", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function formatPaymentDate(value: string, today: Date): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Fecha registrada";
-
-  const current = new Date(today);
-  current.setHours(0, 0, 0, 0);
-  const paidDay = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const diffDays = Math.round((current.getTime() - paidDay.getTime()) / 86_400_000);
-
-  if (diffDays === 0) return "Hoy";
-  if (diffDays === 1) return "Ayer";
-
+function formatRelativeDate(value: string | null, now = new Date()): string | null {
+  if (!value || !isIsoDate(value)) return null;
+  const today = limaTodayIso(now);
+  const diff = daysBetween(today, value);
+  if (diff === 0) return "Vence hoy";
+  if (diff === 1) return "Vence mañana";
+  if (diff > 1 && diff <= 7) return `Vence en ${diff} días`;
+  if (diff < 0) return `Venció hace ${Math.abs(diff)} días`;
   return formatDate(value);
 }
 
 function formatDate(value: string): string {
-  const date = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
+  const date = value.includes("T")
+    ? new Date(value)
+    : new Date(`${value}T12:00:00-05:00`);
   if (Number.isNaN(date.getTime())) return "Fecha por revisar";
-
-  return date.toLocaleDateString("es-PE", {
+  return new Intl.DateTimeFormat("es-PE", {
+    timeZone: LIMA_TIMEZONE,
     day: "2-digit",
     month: "short",
     year: "numeric",
-  });
+  }).format(date);
 }
 
-function formatDueDate(value: string, today: Date): string {
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return "Fecha por revisar";
-
-  const current = new Date(today);
-  current.setHours(0, 0, 0, 0);
-  const diffDays = Math.round((date.getTime() - current.getTime()) / 86_400_000);
-
-  if (diffDays === 0) return "Vence hoy";
-  if (diffDays === 1) return "Vence manana";
-  if (diffDays > 1 && diffDays <= 7) return `Vence en ${diffDays} dias`;
-  if (diffDays < 0) return `Hace ${Math.abs(diffDays)} dias`;
-
+function formatDateTime(value: string, now: Date): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Fecha registrada";
+  const paidDate = limaTodayIso(date);
+  const today = limaTodayIso(now);
+  const diff = daysBetween(paidDate, today);
+  if (diff === 0) return "Hoy";
+  if (diff === 1) return "Ayer";
   return formatDate(value);
+}
+
+function addMonthsIsoDate(value: string, monthsToAdd: number): string {
+  const [year, month, day] = value.split("-").map(Number);
+  const target = new Date(Date.UTC(year!, month! - 1 + monthsToAdd, 1));
+  const lastDay = new Date(
+    Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)
+  ).getUTCDate();
+  return `${target.getUTCFullYear()}-${String(
+    target.getUTCMonth() + 1
+  ).padStart(2, "0")}-${String(Math.min(day!, lastDay)).padStart(2, "0")}`;
+}
+
+function daysBetween(from: string, to: string): number {
+  const fromMs = Date.parse(`${from}T00:00:00.000Z`);
+  const toMs = Date.parse(`${to}T00:00:00.000Z`);
+  return Math.round((toMs - fromMs) / 86_400_000);
+}
+
+function isIsoDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function roundMoney(value: number): number {
+  return Math.round(value * 100) / 100;
 }

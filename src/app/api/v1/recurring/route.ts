@@ -14,6 +14,7 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
+import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
 import {
   buildCursorOrFilter,
   clampLimit,
@@ -85,6 +86,15 @@ export async function POST(request: Request) {
 
     const body = await readJsonBody(request);
     const parsed = CreateRecurringRuleRequestSchema.parse(body);
+    const idempotencyKey = readIdempotencyKey(request);
+    if (!idempotencyKey) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "Falta Idempotency-Key para crear el pago recurrente.",
+        meta,
+        400
+      );
+    }
 
     if (parsed.default_account_id) {
       const account = await getAccountById(
@@ -111,13 +121,14 @@ export async function POST(request: Request) {
     const recurring_rule = await createRecurringRule(serviceClient, {
       userId: auth.userId,
       name: parsed.name,
-      expectedAmount: parsed.expected_amount,
+      expectedAmount: parsed.expected_amount ?? null,
       amountVariability: parsed.amount_variability,
       currency: parsed.currency,
       frequency: parsed.frequency,
       nextExpectedDate: parsed.next_expected_date,
       categoryId: parsed.category_id ?? null,
       defaultAccountId: parsed.default_account_id ?? null,
+      idempotencyKey,
       source: "dashboard_manual",
       metadata: {
         created_from: "dashboard_upcoming",
@@ -129,6 +140,40 @@ export async function POST(request: Request) {
     return okJson({ recurring_rule }, meta, { status: 201 });
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
+    if (
+      error instanceof Error &&
+      error.message.includes("RECURRING_RULE_IDEMPOTENCY_CONFLICT")
+    ) {
+      return errorJson(
+        "CONFLICT",
+        "Esa Idempotency-Key ya se uso con otros datos.",
+        meta,
+        409
+      );
+    }
+    if (
+      error instanceof Error &&
+      error.message.includes("RECURRING_RULE_NAME_CONFLICT")
+    ) {
+      return errorJson(
+        "CONFLICT",
+        "Ya tienes un pago que viene con ese nombre.",
+        meta,
+        409
+      );
+    }
+    if (
+      error instanceof Error &&
+      error.message.includes("RECURRING_RULE_NEXT_DATE_IN_PAST")
+    ) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "La proxima fecha no puede ser anterior a hoy.",
+        meta,
+        400,
+        { field: "next_expected_date" }
+      );
+    }
     return unexpectedError(error, meta);
   }
 }

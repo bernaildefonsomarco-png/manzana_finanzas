@@ -24,6 +24,19 @@ export function todayInLima(): LimaDateParts {
   return { year: get("year"), month: get("month") - 1, day: get("day") };
 }
 
+/** Fecha ISO de un instante vista desde `America/Lima`. */
+export function isoDateInLima(reference = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: LIMA_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(reference);
+  const get = (type: Intl.DateTimeFormatPartTypes) =>
+    Number(parts.find((part) => part.type === type)?.value);
+  return toIsoDate(get("year"), get("month") - 1, get("day"));
+}
+
 export function toIsoDate(year: number, month: number, day: number): string {
   const mm = String(month + 1).padStart(2, "0");
   const dd = String(day).padStart(2, "0");
@@ -34,6 +47,20 @@ export function parseIsoDate(value: string): LimaDateParts | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!match) return null;
   return { year: Number(match[1]), month: Number(match[2]) - 1, day: Number(match[3]) };
+}
+
+/** Suma días de calendario a un ISO date sin depender de la zona del proceso. */
+export function addCalendarDays(isoDate: string, days: number): string {
+  const parts = parseIsoDate(isoDate);
+  if (!parts) throw new Error(`Fecha ISO inválida: ${isoDate}`);
+  const result = new Date(
+    Date.UTC(parts.year, parts.month, parts.day + days)
+  );
+  return toIsoDate(
+    result.getUTCFullYear(),
+    result.getUTCMonth(),
+    result.getUTCDate()
+  );
 }
 
 export function daysInMonth(year: number, month: number): number {

@@ -412,6 +412,8 @@ export type DebtPayment = {
   amount: number;
   currency: "PEN" | "USD";
   paid_at: string;
+  reversed_at?: string | null;
+  reversal_reason?: string | null;
   source: string;
   metadata: Record<string, unknown>;
   created_at: string;
@@ -427,6 +429,7 @@ export type DebtPaymentAllocation = {
   allocated_amount: number;
   allocation_order: number;
   policy: string;
+  reversed_at?: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
 };
@@ -467,6 +470,8 @@ export type RecurringRule = {
   linked_debt_id: string | null;
   source: string;
   confidence: number | null;
+  creation_idempotency_key?: string | null;
+  creation_request_hash?: string | null;
   requires_confirmation_for_payment: boolean;
   last_paid_at: string | null;
   last_paid_amount: number | null;

@@ -170,6 +170,8 @@ export async function sembrarReglaRecurrente(userId: string) {
     user_id: userId,
     name: `Recurrente ${RUN_ID}`,
     category_id: "servicios_suscripciones",
+    amount_variability: "variable",
+    expected_amount: null,
   });
 }
 

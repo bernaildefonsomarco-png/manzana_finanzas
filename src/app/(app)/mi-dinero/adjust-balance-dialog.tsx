@@ -1,5 +1,4 @@
 "use client";
-
 import { useState } from "react";
 import { Dialog, DialogContent } from "@/ui/primitivas/dialog";
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/primitivas/dialog-parts";
@@ -10,7 +9,6 @@ import { useOptimisticMutation } from "@/shared/data/optimistic-mutation";
 import { executeMoneyAction, type MoneyActionPayload } from "@/shared/api/money";
 import { ApiClientError } from "@/shared/api/http-client";
 import type { AccountMoneySummary } from "@/shared/api/money-types";
-
 /**
  * SCR-CUENTAS-07 (RUL-CUENTAS-08): el saldo no se edita, se ajusta — esto
  * crea un movimiento `ajuste` auditado por la diferencia, nunca un
@@ -30,7 +28,6 @@ export function AdjustBalanceDialog({
   const [targetRaw, setTargetRaw] = useState("");
   const [reason, setReason] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
-
   // Reajusta los campos al abrir, calculado durante el render (no en un
   // efecto, para no encadenar renders — react.dev "You Might Not Need an
   // Effect"): compara contra el `open` del render anterior.
@@ -43,14 +40,11 @@ export function AdjustBalanceDialog({
       setValidationError(null);
     }
   }
-
   const mutation = useOptimisticMutation<MoneyActionPayload, { movement: unknown }>({
     mutation: "movement.create",
     mutationFn: (payload) => executeMoneyAction(payload),
   });
-
   if (!account) return null;
-
   const parsedTarget = (() => {
     const raw = targetRaw.trim().replace(",", ".");
     if (!raw) return null;
@@ -58,7 +52,6 @@ export function AdjustBalanceDialog({
     return Number.isFinite(value) ? Math.round(value * 100) / 100 : null;
   })();
   const delta = parsedTarget != null ? Math.round((parsedTarget - account.current_balance) * 100) / 100 : null;
-
   async function handleSubmit() {
     setValidationError(null);
     if (parsedTarget == null) {
@@ -82,7 +75,6 @@ export function AdjustBalanceDialog({
       // El error se muestra via mutation.error mas abajo.
     }
   }
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
@@ -95,7 +87,10 @@ export function AdjustBalanceDialog({
         <div className="space-y-4">
           <div className="flex items-baseline justify-between rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm">
             <span className="text-text-secondary">Saldo actual</span>
-            <MoneyText value={account.current_balance} />
+            <MoneyText
+              value={account.current_balance}
+              currency={account.currency === "USD" ? "USD" : "PEN"}
+            />
           </div>
           <FieldShell label="Saldo correcto" htmlFor="adjust-target" hint="Manzana crea un ajuste por la diferencia.">
             <Input
@@ -108,7 +103,12 @@ export function AdjustBalanceDialog({
           </FieldShell>
           {delta != null && Math.abs(delta) >= 0.01 ? (
             <p className="text-sm text-text-secondary">
-              Diferencia: <MoneyText value={delta} sign="auto" />
+              Diferencia:{" "}
+              <MoneyText
+                value={delta}
+                currency={account.currency === "USD" ? "USD" : "PEN"}
+                sign="auto"
+              />
             </p>
           ) : null}
           <FieldShell label="Motivo" htmlFor="adjust-reason" hint="Opcional. Visible en auditoria interna.">

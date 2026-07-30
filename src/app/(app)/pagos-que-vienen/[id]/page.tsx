@@ -1,12 +1,29 @@
-import { PlaceholderSection } from "@/shared/placeholder-section";
+"use client";
 
-export default function PagoQueVieneDetallePage() {
+import { use } from "react";
+import { useRouter } from "next/navigation";
+import { UpcomingDetailScreen } from "@/features/upcoming/upcoming-detail-screen";
+import {
+  useLegacyNavigate,
+  useLegacySignOut,
+} from "@/shared/legacy-nav/legacy-view-routes";
+
+export default function PagoQueVieneDetallePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
+  const router = useRouter();
+  const onNavigate = useLegacyNavigate();
+  const onSignOut = useLegacySignOut();
+
   return (
-    <PlaceholderSection
-      title="Detalle del pago que viene"
-      description="El detalle con URL propia llega junto a la reconstrucción de esta pantalla."
-      backHref="/pagos-que-vienen"
-      backLabel="Volver a pagos que vienen"
+    <UpcomingDetailScreen
+      ruleId={id}
+      onBack={() => router.push("/pagos-que-vienen")}
+      onNavigate={onNavigate}
+      onSignOut={onSignOut}
     />
   );
 }

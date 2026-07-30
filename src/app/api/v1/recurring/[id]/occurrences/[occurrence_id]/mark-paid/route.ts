@@ -23,7 +23,7 @@ import {
   validationError,
 } from "@/app/api/_lib/http";
 import { readIdempotencyKey } from "@/app/api/_lib/idempotency";
-import type { Account, RecurringOccurrence, RecurringRule } from "@/shared/types/domain";
+import type { RecurringOccurrence, RecurringRule } from "@/shared/types/domain";
 import type { MovementInput } from "@/shared/schemas/money";
 import { MarkRecurringPaidRequestSchema } from "./schemas";
 
@@ -61,6 +61,18 @@ export async function POST(request: Request, context: RouteContext) {
     const params = ParamsSchema.parse(await context.params);
     const body = await readJsonBody(request);
     const parsed = MarkRecurringPaidRequestSchema.parse(body);
+    if (
+      parsed.paid_at &&
+      Date.parse(parsed.paid_at) > Date.now()
+    ) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "La fecha de pago no puede estar en el futuro.",
+        meta,
+        400,
+        { field: "paid_at", rule: "ERR-REC-07" }
+      );
+    }
     const recurringRule = await getRecurringRuleById(
       auth.client,
       auth.userId,
@@ -69,26 +81,6 @@ export async function POST(request: Request, context: RouteContext) {
 
     if (!recurringRule) {
       return errorJson("NOT_FOUND", "No encontre ese pago recurrente.", meta, 404);
-    }
-
-    if (recurringRule.status !== "active") {
-      return errorJson(
-        "CONFLICT",
-        "Ese pago recurrente no esta activo.",
-        meta,
-        409,
-        { recurring_rule_id: recurringRule.id, status: recurringRule.status }
-      );
-    }
-
-    if (recurringRule.linked_debt_id) {
-      return errorJson(
-        "CORE_REJECTED",
-        "Este pago esta vinculado a una deuda. Registralo desde Deudas para actualizar el saldo de la deuda.",
-        meta,
-        422,
-        { linked_debt_id: recurringRule.linked_debt_id }
-      );
     }
 
     const occurrence = await getRecurringOccurrenceById(
@@ -101,16 +93,28 @@ export async function POST(request: Request, context: RouteContext) {
       return errorJson("NOT_FOUND", "No encontre esa ocurrencia.", meta, 404);
     }
 
-    if (occurrence.status === "paid") {
+    const isSequentialRetry = occurrence.status === "paid";
+    if (!isSequentialRetry && recurringRule.status !== "active") {
       return errorJson(
         "CONFLICT",
-        "Ese pago ya fue marcado como pagado.",
+        "Ese pago recurrente no esta activo.",
         meta,
-        409
+        409,
+        { recurring_rule_id: recurringRule.id, status: recurringRule.status }
       );
     }
 
-    if (["skipped", "rejected"].includes(occurrence.status)) {
+    if (!isSequentialRetry && recurringRule.linked_debt_id) {
+      return errorJson(
+        "CORE_REJECTED",
+        "Este pago esta vinculado a una deuda. Registralo desde Deudas para actualizar el saldo de la deuda.",
+        meta,
+        422,
+        { linked_debt_id: recurringRule.linked_debt_id }
+      );
+    }
+
+    if (!isSequentialRetry && ["skipped", "rejected"].includes(occurrence.status)) {
       return errorJson(
         "CONFLICT",
         "Esa ocurrencia ya no puede marcarse como pagada.",
@@ -119,11 +123,11 @@ export async function POST(request: Request, context: RouteContext) {
       );
     }
 
-    const account = parsed.account_id
+    const account = !isSequentialRetry && parsed.account_id
       ? await getAccountById(auth.client, auth.userId, parsed.account_id)
       : null;
 
-    if (parsed.account_id && !account) {
+    if (!isSequentialRetry && parsed.account_id && !account) {
       return errorJson("NOT_FOUND", "No encontre esa cuenta.", meta, 404);
     }
 
@@ -148,9 +152,10 @@ export async function POST(request: Request, context: RouteContext) {
       idempotencyKey,
       recurringRule,
       occurrence,
-      account,
+      accountId: parsed.account_id ?? null,
       amount: parsed.amount,
       paidAt,
+      requestedPaidAt: parsed.paid_at ?? null,
       note: parsed.note ?? null,
     });
     const movementCommit = buildCreateMovementCommitPayload(movementCommand);
@@ -194,9 +199,10 @@ function buildRecurringPaymentMovementCommand(params: {
   idempotencyKey: string;
   recurringRule: RecurringRule;
   occurrence: RecurringOccurrence;
-  account: Account | null;
+  accountId: string | null;
   amount: number;
   paidAt: string;
+  requestedPaidAt: string | null;
   note: string | null;
 }): CreateMovementCommand {
   const description =
@@ -211,7 +217,7 @@ function buildRecurringPaymentMovementCommand(params: {
     merchant: params.recurringRule.merchant_pattern,
     category_id: params.recurringRule.category_id,
     subcategory_id: params.recurringRule.subcategory_id,
-    account_origin_id: params.account?.id ?? null,
+    account_origin_id: params.accountId,
     account_destination_id: null,
     box_origin_id: null,
     box_destination_id: null,
@@ -227,9 +233,18 @@ function buildRecurringPaymentMovementCommand(params: {
       reason: "dashboard_recurring_payment",
       recurring_rule_id: params.recurringRule.id,
       recurring_occurrence_id: params.occurrence.id,
-      account_id: params.account?.id ?? null,
+      account_id: params.accountId,
       expected_amount: params.occurrence.expected_amount ?? params.recurringRule.expected_amount,
       trace_id: params.traceId,
+      idempotency_payload: {
+        recurring_rule_id: params.recurringRule.id,
+        recurring_occurrence_id: params.occurrence.id,
+        amount: params.amount,
+        currency: params.recurringRule.currency,
+        account_id: params.accountId,
+        paid_at: params.requestedPaidAt,
+        note: params.note,
+      },
     },
   };
 

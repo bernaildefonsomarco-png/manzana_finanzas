@@ -15,6 +15,21 @@ export const CreateDebtPaymentRequestSchema = z
     paid_at: z.string().datetime({ offset: true }).optional(),
     note: z.string().trim().min(1).max(180).nullable().optional(),
   })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.paid_at && new Date(value.paid_at).getTime() > Date.now()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["paid_at"],
+        message: "La fecha del pago no puede estar en el futuro.",
+      });
+    }
+  });
+
+export const DebtPaymentPreviewRequestSchema = z
+  .object({
+    amount: PositiveMoneySchema,
+  })
   .strict();
 
 export type CreateDebtPaymentRequest = z.infer<

@@ -35,7 +35,12 @@ export function BoxDetailView({ boxId }: { boxId: string }) {
   }
 
   const { box, account } = query.data;
-  const boxSummary: BoxMoneySummary = { ...box, account_name: account?.name ?? "Cuenta" };
+  const currency = account?.currency === "USD" ? "USD" : "PEN";
+  const boxSummary: BoxMoneySummary = {
+    ...box,
+    account_name: account?.name ?? "Cuenta",
+    currency,
+  };
   const progress = box.target_amount ? Math.min(100, (box.current_balance / box.target_amount) * 100) : null;
 
   return (
@@ -50,18 +55,22 @@ export function BoxDetailView({ boxId }: { boxId: string }) {
           onDelete={() => setDialog("delete")}
         />
 
-        <MoneyText value={box.current_balance} className="mt-4 block text-3xl font-heading font-semibold" />
+        <MoneyText
+          value={box.current_balance}
+          currency={currency}
+          className="mt-4 block text-3xl font-heading font-semibold"
+        />
 
         {box.target_amount ? (
           <div className="mt-4">
             <div className="flex items-baseline justify-between text-sm text-text-secondary">
               <span>Meta</span>
-              <MoneyText value={box.target_amount} />
+              <MoneyText value={box.target_amount} currency={currency} />
             </div>
             <Progress
               value={box.current_balance}
               max={box.target_amount}
-              aria-label={`${box.name}, ${box.current_balance.toFixed(0)} de ${box.target_amount.toFixed(0)} soles, ${progress?.toFixed(0)} por ciento`}
+              aria-label={`${box.name}, ${box.current_balance.toFixed(0)} de ${box.target_amount.toFixed(0)} ${currency === "USD" ? "dolares" : "soles"}, ${progress?.toFixed(0)} por ciento`}
               className="mt-2"
             />
             {box.target_date ? (

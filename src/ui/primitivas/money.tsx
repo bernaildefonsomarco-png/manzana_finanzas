@@ -3,11 +3,18 @@ import { EyeOff } from "lucide-react";
 import { useDiscreetMode } from "@/shared/privacy/discreet-mode-context";
 import { cn } from "./cn";
 
-const PEN_FORMATTER = new Intl.NumberFormat("es-PE", {
-  style: "currency",
-  currency: "PEN",
-  minimumFractionDigits: 2,
-});
+const MONEY_FORMATTERS = {
+  PEN: new Intl.NumberFormat("es-PE", {
+    style: "currency",
+    currency: "PEN",
+    minimumFractionDigits: 2,
+  }),
+  USD: new Intl.NumberFormat("es-PE", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+  }),
+};
 
 type MoneyTextProps = {
   /** `null` es "no tiene ese dato", distinto de `0` ("tiene cero") — se
@@ -17,6 +24,7 @@ type MoneyTextProps = {
   sign?: "auto" | "negative" | "positive" | "none";
   /** Sin decimales cuando son `.00` (`16` §4.1). */
   compact?: boolean;
+  currency?: "PEN" | "USD";
   className?: string;
 };
 
@@ -25,6 +33,7 @@ export function MoneyText({
   discrete,
   sign = "auto",
   compact = false,
+  currency = "PEN",
   className,
 }: MoneyTextProps) {
   const { discreet } = useDiscreetMode();
@@ -65,10 +74,13 @@ export function MoneyText({
   // Intl ya usa "S/" como símbolo de PEN en es-PE, pero separa el símbolo
   // de la cifra con un espacio de no separación (U+00A0); `18` §9.1 exige
   // "S/1,250.50" pegado, sin espacio.
-  let formatted = PEN_FORMATTER.format(Math.abs(normalized)).replace(
+  let formatted = MONEY_FORMATTERS[currency].format(Math.abs(normalized)).replace(
     /^(\D+)\s+/,
     "$1"
   );
+  if (currency === "USD" && formatted.startsWith("USD")) {
+    formatted = `US$${formatted.slice(3)}`;
+  }
   if (compact && formatted.endsWith(".00")) {
     formatted = formatted.slice(0, -3);
   }

@@ -70,7 +70,10 @@ export function ArchiveAccountDialog({
         </AlertDialogHeader>
         <div className="flex items-baseline justify-between rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm">
           <span className="text-text-secondary">Saldo actual</span>
-          <MoneyText value={account.current_balance} />
+          <MoneyText
+            value={account.current_balance}
+            currency={account.currency === "USD" ? "USD" : "PEN"}
+          />
         </div>
         {mutation.error ? (
           <p role="alert" className="mt-3 text-sm text-error">

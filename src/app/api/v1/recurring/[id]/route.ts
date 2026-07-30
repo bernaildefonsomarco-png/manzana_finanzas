@@ -81,6 +81,20 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     const body = await readJsonBody(request);
     const parsed = UpdateRecurringRuleRequestSchema.parse(body);
+    const mergedVariability =
+      parsed.amount_variability ?? existing.amount_variability;
+    const mergedAmount =
+      parsed.expected_amount === undefined
+        ? existing.expected_amount
+        : parsed.expected_amount;
+    if (mergedVariability === "fixed" && mergedAmount == null) {
+      return errorJson(
+        "VALIDATION_ERROR",
+        "El monto es obligatorio para un pago fijo.",
+        meta,
+        400
+      );
+    }
 
     if (parsed.default_account_id) {
       const account = await getAccountById(
@@ -129,6 +143,17 @@ export async function PATCH(request: Request, context: RouteContext) {
     return okJson({ recurring_rule }, meta);
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
+    if (
+      error instanceof Error &&
+      error.message.includes("RECURRING_RULE_NAME_CONFLICT")
+    ) {
+      return errorJson(
+        "CONFLICT",
+        "Ya tienes un pago que viene con ese nombre.",
+        meta,
+        409
+      );
+    }
     return unexpectedError(error, meta);
   }
 }

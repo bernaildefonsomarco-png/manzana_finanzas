@@ -309,7 +309,12 @@ begin
      where user_id = v_user_id
        and paid_movement_id = v_movement.id;
 
-    if not found then
+    if not found
+       or v_existing_occurrence.id <> v_occurrence.id
+       or v_existing_occurrence.recurring_rule_id <> v_rule.id
+       or (v_movement.metadata->'idempotency_payload')
+            is distinct from
+          (p_movement->'metadata'->'idempotency_payload') then
       raise exception 'RECURRING_PAYMENT_IDEMPOTENCY_CONFLICT';
     end if;
 
@@ -401,24 +406,6 @@ begin
    where id = v_rule.id
      and user_id = v_user_id
    returning * into v_rule;
-
-  insert into public.recurring_occurrences (
-    user_id,
-    recurring_rule_id,
-    expected_date,
-    expected_amount,
-    status,
-    metadata
-  )
-  values (
-    v_user_id,
-    v_rule.id,
-    v_next_date,
-    coalesce(v_rule.expected_amount, v_amount),
-    'expected',
-    jsonb_build_object('created_from', 'commit_recurring_payment')
-  )
-  on conflict (recurring_rule_id, expected_date) do nothing;
 
   perform manzana.insert_transactional_outbox_events(p_recurring_outbox_events);
 

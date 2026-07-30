@@ -4,7 +4,7 @@
 //
 // - `LISTA_BLANCA_PERMANENTE` — rutas que de verdad no tienen sesión de
 //   usuario que usar (trabajadores, webhooks, salud). No caducan.
-// - `EXCEPCIONES_TEMPORALES` — las 48 rutas de `/api/v1` que hoy usan
+// - `EXCEPCIONES_TEMPORALES` — las rutas de `/api/v1` que hoy usan
 //   service-role porque `15` §9 decidió no migrarlas dos veces: se migran
 //   junto con el rediseño de paginación y filtros de `14`, en `W-05` y en
 //   cada corte de módulo (`WEB-D168`). `AC-SEG-07` exige que esta lista
@@ -65,7 +65,7 @@ const MIGRA_CON_CONTRATOS_DE_API =
   "toca dos veces: se migra cuando la familia recibe su contrato nuevo.";
 
 /**
- * `15` §9 paso 1: las 48 rutas de `/api/v1` que hoy esquivan RLS, declaradas
+ * `15` §9 paso 1: las rutas de `/api/v1` que hoy esquivan RLS, declaradas
  * como excepción temporal —no permanente— con la misma justificación de
  * fondo. Agrupadas por familia para que quede legible quién es cada una,
  * aunque el motivo de todas es el mismo.
@@ -113,12 +113,20 @@ export const EXCEPCIONES_TEMPORALES: EntradaLista[] = [
   "v1/recurring/*",
   "v1/recurring/*/cancel",
   "v1/recurring/*/occurrences/*/mark-paid",
+  "v1/recurring/*/occurrences/*/skip",
+  "v1/recurring/*/pause",
+  "v1/recurring/*/resume",
   "v1/recurring/candidates/*/confirm",
   "v1/recurring/candidates/*/discard",
   "v1/recurring/detect",
   // Deudas (31)
   "v1/debts",
+  "v1/debts/*",
   "v1/debts/*/payments",
+  "v1/debts/*/close",
+  "v1/debts/*/reopen",
+  "v1/debts/*/installments/*/reschedule",
+  "v1/debts/*/installments/*/skip",
   "v1/related-persons",
   "v1/related-persons/*",
   // Descubrimientos (34)

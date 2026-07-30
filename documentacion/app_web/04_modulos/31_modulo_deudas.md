@@ -37,16 +37,16 @@ El principio que gobierna el tono:
 
 | Nivel | Funcionalidad |
 |---|---|
-| **IN V1-web** | Deuda informal, deuda a favor, préstamo bancario, **tarjeta de crédito como deuda simple**, cuota fija, préstamo dado y recibido. Creación atómica (RPC `commit_debt_creation`). Pagos parciales y totales con conciliación determinista de cuotas. Devoluciones. Interés y mora como notas. Renegociación. Cierre con o sin saldo. Personas relacionadas ligeras. Progreso y calendario de vencimientos. Vinculación con cajas y con pagos que vienen. |
-| **V1.1** | Tabla de amortización con intereses calculados. Simulación de pago anticipado. **Ciclo de facturación de tarjeta de crédito.** Deudas compartidas. |
+| **IN V1-web** | Deuda informal, deuda a favor, préstamo bancario, **tarjeta de crédito como deuda simple**, cuota fija, préstamo dado y recibido. Creación atómica (RPC `commit_debt_creation`). Pagos parciales y totales con conciliación determinista de cuotas. Devoluciones. Interés y mora como notas descriptivas. Cierre pagado con saldo cero o condonación explícita. Reapertura solo de condonadas. Reprogramación conservadora de fechas. Personas relacionadas ligeras. Progreso y calendario de vencimientos. Lectura de cajas vinculadas y unión con Pagos que vienen. |
+| **V1.1** | Ajuste monetario por interés/mora y renegociación de principal/calendario (`WEB-D205`). Tabla de amortización con intereses calculados. Simulación de pago anticipado. **Ciclo de facturación de tarjeta de crédito.** Deudas compartidas. |
 | **FUERA** | Contactar a terceros por cualquier medio. Cobranza. Reporte a centrales de riesgo. Recomendación de refinanciamiento o de orden de pago. Cálculo de intereses compuestos con fórmula bancaria. |
 
 ## 3. Vocabulario
 
 | Interno | Visible |
 |---|---|
-| `Debt` con `direction: owed_by_user` | Deuda / Lo que debes |
-| `Debt` con `direction: owed_to_user` | Deuda a favor / Te deben |
+| `Debt` con `direction: i_owe` | Deuda / Lo que debes |
+| `Debt` con `direction: they_owe_me` | Deuda a favor / Te deben |
 | `DebtInstallment` | Cuota |
 | `RelatedPerson` | Persona — se muestra su nombre, nunca "entidad relacionada" |
 | `principal_amount` | Monto original |
@@ -83,9 +83,9 @@ consentido nada, y el producto no los necesita para su función
 ```sql
 id                  uuid pk
 user_id             uuid not null
-direction           debt_direction not null   -- owed_by_user | owed_to_user
-kind                debt_kind not null        -- informal | bank_loan | credit_card | installment | personal_loan
-status              debt_status not null      -- active | due_soon | overdue | closed | forgiven
+direction           debt_direction not null   -- i_owe | they_owe_me
+kind                debt_kind not null        -- personal | bank_loan | credit_card | installment_purchase | service_or_bill | other
+status              debt_status not null      -- draft | active | due_soon | overdue | paid | cancelled | archived
 related_person_id   uuid null references related_persons(id)
 name                text not null
 principal_amount    numeric(14,2) not null
@@ -110,8 +110,9 @@ Restricciones:
   condonada.
 - Único parcial `(user_id, idempotency_key)` donde no es nulo.
 
-`interest_notes` es texto libre, no un cálculo. En V1 el interés se registra
-como un movimiento de ajuste sobre la deuda, no se calcula con fórmula.
+`interest_notes` es texto libre descriptivo, no un cálculo. `W-11` no
+aumenta saldos por interés/mora ni publica una renegociación monetaria hasta
+que exista un contrato de ajuste especializado (`WEB-D205`).
 
 ### 4.3 `debt_installments`
 
@@ -135,7 +136,12 @@ Ciclo de vencimiento, ya implementado y vigente:
 | `pending` | Falta más de 3 días para vencer |
 | `due_soon` | Desde 3 días antes, incluido el día de vencimiento |
 | `overdue` | `due_date` anterior a la fecha local del usuario |
-| `paid`, `rescheduled`, `skipped` | **Terminales.** Nunca se reabren automáticamente |
+| `paid`, `skipped` | **Terminales.** Nunca se reabren automáticamente |
+
+`rescheduled` queda reservado para una futura sustitución de calendario. En
+V1, reprogramar una cuota abierta cambia su fecha en la misma fila, guarda
+el historial anterior y vuelve a `pending` mediante el RPC atómico de
+`WEB-D211`.
 
 El estado de la deuda padre se deriva: `overdue` si alguna cuota abierta está
 vencida; si no, `due_soon` si alguna vence pronto; si no, `active`.
@@ -164,10 +170,16 @@ varias.
 
 ### 4.5 Migraciones requeridas
 
-Ninguna nueva. La `043` ya aportó `idempotency_key` y la función
+La `043` aporta `idempotency_key` y la función
 `commit_debt_creation`, que crea de forma atómica la deuda, su persona
 relacionada, sus cuotas, su movimiento asociado, la auditoría, los deltas de
 cuentas y cajas, y los eventos de outbox.
+
+`W-11` corrige la `043` para admitir deudas sin persona y comparar el
+vencimiento en reintentos; añade la `056` para reversión especializada de
+pagos y la `057` para cierre, reapertura, reprogramación y omisión atómicos,
+idempotentes y con outbox. Como `043`/`015` ya existían, el esquema se
+reaplica completo según `WEB-D163`.
 
 Esa función es lo que hace posible `RUL-PEND-01` para deudas: sin un camino
 atómico de alta, un pendiente de deuda no podía ser confirmable.
@@ -186,17 +198,18 @@ atómico de alta, un pendiente de deuda no podía ser confirmable.
         │            se paga                                      │
         │                                                         │
         ├──── saldo llega a 0 ──────────────────────────────────►┌──────────┐
-        │                                                        │ cerrada  │
-        ├──── el usuario cierra con saldo (confirmación) ───────►└──────────┘
+        │                                                        │ pagada   │
+        ├──── el usuario condona saldo (confirmación) ──────────►└──────────┘
         │
         └──── se condona ──────────────────────────────────────►┌───────────┐
                                                                  │ condonada │
                                                                  └───────────┘
 ```
 
-`condonada` es distinto de `cerrada`: significa que el saldo se perdonó, no
-que se pagó. Importa para el historial y para no contar como pagado algo que
-no lo fue.
+La base persiste `paid` y `cancelled`; la interfaz muestra “pagada” y
+“condonada”. Una condonación significa que el saldo se perdonó, no que se
+pagó. Solo esa transición puede reabrirse restaurando el saldo auditable
+(`WEB-D204`).
 
 ### 5.2 Cuota
 
@@ -204,12 +217,12 @@ no lo fue.
    pendiente ──► vence pronto ──► vencida
         │              │              │
         └──────────────┴──────────────┴──► pagada       (terminal)
-                                       ──► reprogramada (terminal)
                                        ──► saltada      (terminal)
 ```
 
-Los tres estados terminales **nunca se reabren automáticamente**. Solo una
-acción explícita del usuario puede revertirlos.
+Los dos estados terminales **nunca se reabren automáticamente**. En V1 una
+reprogramación conservadora mantiene la misma cuota abierta y registra cada
+fecha anterior en su historial (`WEB-D211`).
 
 ## 6. Reglas de negocio
 
@@ -306,7 +319,7 @@ de dinero disponible.** No suma al dinero total ni al dinero libre.
 
 **`RUL-DEUDAS-10` — Deuda a favor**
 
-`direction: owed_to_user` invierte el sentido: un `prestamo_dado` la crea, y
+`direction: they_owe_me` invierte el sentido: un `prestamo_dado` la crea, y
 una `devolucion_recibida` la reduce. El dinero prestado **salió** de la
 cuenta, así que reduce el saldo — pero no es un gasto de consumo.
 
@@ -315,18 +328,21 @@ Nunca genera lenguaje de cobranza. Se dice *"Te deben S/200"*, nunca
 
 **`RUL-DEUDAS-11` — Interés y mora**
 
-En V1 no se calculan con fórmula. Se registran como un ajuste explícito sobre
-la deuda, con motivo. `interest_notes` guarda el texto de las condiciones
-para que el usuario lo recuerde.
+En V1 no se calculan con fórmula. `interest_notes` guarda únicamente el texto
+de las condiciones para que el usuario lo recuerde. Aumentar el saldo por
+interés o mora queda fuera de V1 hasta definir un ajuste especializado,
+auditable y reversible (`WEB-D205`).
 
 Es una limitación deliberada: calcular intereses mal es peor que no
 calcularlos.
 
 **`RUL-DEUDAS-12` — Renegociación**
 
-Cambiar monto, cuotas o fechas de una deuda activa es una operación de
-riesgo: regenera el calendario, conserva los pagos ya hechos y sus
-asignaciones, y queda registrada.
+La renegociación que cambia monto, principal o reconstruye cuotas queda
+fuera de V1 por `WEB-D205`: el corpus no define su algoritmo. `W-11` sí
+permite reprogramar la fecha de una cuota abierta sin tocar importes ni
+asignaciones, mediante `commit_debt_operation`; conserva un
+`reschedule_history` y outbox (`WEB-D211`).
 
 **`RUL-DEUDAS-13` — Cierre con saldo**
 
@@ -334,11 +350,12 @@ Cerrar una deuda con saldo pendiente exige elegir explícitamente entre:
 
 | Opción | Qué significa |
 |---|---|
-| **Ya está pagada** | Hubo pagos que no se registraron. Se crea un ajuste por la diferencia |
-| **Me la perdonaron** | Estado `condonada`. El saldo no se pagó y no se cuenta como pago |
+| **Ya está pagada** | Solo cuando el saldo ya es cero. Si faltan pagos, primero se registran o se crea un ajuste explícito |
+| **Me la perdonaron** | Persiste `cancelled`, visible como “condonada”. El saldo no se pagó y no se cuenta como pago |
 
-Nunca se cierra sin resolver esa distinción: son hechos financieros
-distintos.
+Nunca se cierra con una etiqueta que oculte saldo: `paid` exige cero y
+`cancelled` conserva `forgiven_balance` antes de llevar el saldo a cero
+(`WEB-D204`).
 
 **`RUL-DEUDAS-14` — Vinculación con cajas y pagos que vienen**
 
@@ -346,8 +363,10 @@ distintos.
   cuotas próximas y evita el doble descuento (`RUL-CUENTAS-04`).
 - Una cuota puede aparecer en Pagos que vienen, y **cuenta una sola vez** en
   los compromisos (`RUL-REC-09`).
-- Marcar pagada la cuota desde Pagos que vienen ejecuta el pago de deuda de
-  este módulo, no un `pago_recurrente` genérico.
+- Marcar pagada la cuota desde Pagos que vienen usa el pago especializado de
+  deuda. Una regla recurrente ligada a esa deuda permanece bloqueada hasta
+  que exista el commit compuesto único de `WEB-D208`; nunca se encadenan dos
+  motores.
 
 **`RUL-DEUDAS-15` — Personas privadas y ligeras**
 
@@ -386,7 +405,7 @@ deuda ya creada, no.
 | `SCR-DEUDAS-03` | Sí — `DEBT_CREATE` (96) y `DEBT_EDIT` (97) |
 | `SCR-DEUDAS-04` | **No existe frame propio.** El Hi-Fi solo define el CTA "Registrar pago" en la card (§9.2) y en el detalle (§21.5); la previsualización de la aplicación del pago no está dibujada en ningún frame. |
 | `SCR-DEUDAS-05` | **No existe frame previo.** §21.5 deja el botón "Cerrar o eliminar", pero el diálogo con las dos opciones de `RUL-DEUDAS-13` no está en el inventario; `MODAL_RISK` solo tiene frames para borrar movimiento (140) y ajuste de saldo (141). |
-| `SCR-DEUDAS-06` | **No existe frame previo.** La renegociación no aparece en el Hi-Fi. |
+| `SCR-DEUDAS-06` | **Fuera de V1 por `WEB-D205`.** La renegociación monetaria no tiene contrato ejecutable ni frame previo. |
 | `SCR-DEUDAS-07` | **No existe frame previo.** El Hi-Fi trata a la persona como campo de la deuda (§21.5, §21.11), nunca como pantalla de gestión. |
 
 Donde dice que no hay frame, el bloque de abajo es la especificación de
@@ -464,8 +483,9 @@ comprensible sin explicarla.
 
 ### `SCR-DEUDAS-06` — Renegociar
 
-Modal de riesgo. Muestra el calendario actual y el nuevo lado a lado antes de
-confirmar.
+Fuera de V1 por `WEB-D205`. No se muestra una acción ni un modal que prometa
+regenerar montos o calendario. La reprogramación de una fecha vive en la
+cuota y sigue `WEB-D211`.
 
 ### `SCR-DEUDAS-07` — Personas
 
@@ -483,8 +503,8 @@ teléfono ni datos de contacto."*
 | `ACT-DEUDAS-02` | Editar datos básicos | No | Editando | `deuda.editada` |
 | `ACT-DEUDAS-03` | Registrar pago | **Sí, con la aplicación visible** | Eliminando el movimiento | `deuda.pago_registrado` |
 | `ACT-DEUDAS-04` | Registrar devolución recibida | Sí | Eliminando | `deuda.devolucion_registrada` |
-| `ACT-DEUDAS-05` | Registrar interés o mora | Sí, riesgo | Ajuste inverso | `deuda.interes_registrado` |
-| `ACT-DEUDAS-06` | Renegociar | **Sí, riesgo** | Renegociando de nuevo | `deuda.renegociada` |
+| `ACT-DEUDAS-05` | Registrar interés o mora monetario | **No disponible en V1 (`WEB-D205`)** | — | — |
+| `ACT-DEUDAS-06` | Renegociar monto/calendario | **No disponible en V1 (`WEB-D205`)** | — | — |
 | `ACT-DEUDAS-07` | Cerrar deuda | **Sí, riesgo con dos opciones** | Reabriendo | `deuda.cerrada` |
 | `ACT-DEUDAS-08` | Reabrir deuda cerrada | Sí | Cerrando | `deuda.reabierta` |
 | `ACT-DEUDAS-09` | Vincular caja | No | Desvinculando | `deuda.vinculada_caja` |
@@ -508,11 +528,14 @@ Base `/api/v1/debts`.
 | `GET /debts/[id]/payments` | Historial con asignaciones |
 | `POST /debts/[id]/close` | Cierra. Body exige `reason: 'paid' \| 'forgiven'` |
 | `POST /debts/[id]/reopen` | Reabre |
-| `POST /debts/[id]/renegotiate` | Regenera calendario. `Idempotency-Key` |
 | `GET /debts/[id]/installments` | Cuotas con su estado |
 | `POST /debts/[id]/installments/[iid]/reschedule` · `/skip` | Transiciones de cuota |
 | `GET /related-persons` · `POST` · `PATCH` · `DELETE` | Personas |
 | `POST /debts/[id]/payments/preview` | **Previsualiza la aplicación sin escribir** |
+
+`close`, `reopen`, `reschedule` y `skip` pasan por
+`commit_debt_operation`: bloqueo deuda→cuota, recibo idempotente y outbox en
+la misma transacción (`WEB-D211`). `/renegotiate` no se publica.
 
 El último endpoint es el que alimenta `SCR-DEUDAS-04`: devuelve cómo se
 repartiría el pago sin ejecutarlo.
@@ -595,7 +618,7 @@ distinta.
 | `registrar_pago_deuda` | **Tarjeta con la aplicación visible** |
 | `registrar_devolucion` | Tarjeta |
 | `registrar_interes` | **Riesgo** |
-| `renegociar_deuda` | **Riesgo**, con calendarios lado a lado |
+| `renegociar_deuda` | **No disponible en V1** (`WEB-D205`) |
 | `cerrar_deuda` | **Riesgo**, con las dos opciones |
 | `reabrir_deuda` | Tarjeta |
 | `vincular_caja_a_deuda` | Tarjeta |
@@ -611,7 +634,7 @@ distinta.
 "¿cuánto me falta de la laptop?"            → saldo y progreso con evidencia
 "¿a quién le debo?"                         → consulta agrupada por persona
 "me devolvieron los 200"                    → registrar_devolucion
-"ya está pagada la de Luis"                 → cerrar_deuda (riesgo, dos opciones)
+"ya está pagada la de Luis"                 → comprobar saldo; registrar lo faltante o condonar explícitamente
 "¿cómo se aplicaron mis 500?"               → asignaciones del pago
 ```
 
@@ -625,6 +648,8 @@ pueda ofrecer como confirmable sin mentir.
   por `22` §8. Puede mostrar el panorama y las fechas.
 - Cerrar una deuda sin resolver si fue pagada o condonada.
 - Registrar un sobrepago.
+- Aplicar interés, mora o renegociar montos sin el comando especializado
+  diferido por `WEB-D205`.
 - Generar cualquier mensaje dirigido a un tercero.
 
 ## 15. Memoria y aprendizaje
@@ -644,13 +669,17 @@ relacionadas, solo sobre el comportamiento del propio usuario.
 
 ## 16. Eventos y telemetría
 
-Eventos: `deuda.creada`, `.editada`, `.pago_registrado`,
-`.devolucion_registrada`, `.interes_registrado`, `.renegociada`, `.cerrada`,
-`.reabierta`, `.vinculada_caja`, `cuota.pagada`, `.reprogramada`,
+Eventos activos en V1: `deuda.creada`, `.editada`, `.pago_registrado`,
+`.devolucion_registrada`, `.cerrada`, `.reabierta`, `.vinculada_caja`,
+`cuota.pagada`, `.reprogramada`,
 `.saltada`, `.vencida`, `persona.creada`, `asignacion.consultada`.
+`.interes_registrado` y `.renegociada` quedan reservados, no se emiten
+(`WEB-D205`).
 
-**Nunca llevan montos ni nombres de personas.** Sí dirección, tipo, estado y
-`trace_id`.
+La telemetría, logs y métricas **nunca llevan montos ni nombres de
+personas**. Sí dirección, tipo, estado y `trace_id`. El outbox transaccional
+de dominio puede conservar los datos financieros imprescindibles para
+auditoría/replay y no se trata como analítica (`WEB-D210`).
 
 Métricas: usuarios con deudas registradas, pagos por semana en usuarios con
 deudas, proporción de deudas con calendario, tasa de pago puntual,
@@ -665,7 +694,10 @@ proporción cubierta por caja, uso de la consulta de asignaciones.
   `debt_payment_allocations (debt_payment_id)`.
 - El refresco de estados corre como trabajo diario con bloqueo de filas, no
   en cada lectura.
-- El detalle carga cuotas y pagos con límite; el historial largo se pagina.
+- El detalle carga cuotas y pagos completos en `W-11` para no ocultar filas:
+  la paginación del historial largo queda pendiente de un contrato de cursor
+  y una superficie que lo consuma (`WEB-D217`). No se aplica un límite
+  silencioso.
 - La conciliación ocurre dentro de la transacción del Core, sin viajes extra.
 - Presupuesto: listado bajo 400 ms; detalle bajo 350 ms.
 
@@ -683,7 +715,7 @@ proporción cubierta por caja, uso de la consulta de asignaciones.
 ## 19. Casos borde
 
 1. **Pago exactamente igual al saldo.** Cierra la deuda automáticamente con
-   estado `cerrada` y motivo "pagada".
+   estado persistido `paid`, visible como “pagada”.
 2. **Pago que cubre varias cuotas y sobra dentro del saldo.** Se aplica en
    orden hasta agotar (`RUL-DEUDAS-03`).
 3. **Saldo cero con cuotas abiertas.** Las restantes se marcan `skipped` con
@@ -692,8 +724,8 @@ proporción cubierta por caja, uso de la consulta de asignaciones.
 5. **Eliminar el movimiento de un pago de deuda.** El pago se revierte, las
    asignaciones se deshacen, las cuotas vuelven a su estado anterior y el
    saldo se restaura. Se avisa el efecto.
-6. **Renegociar con pagos ya aplicados.** El calendario nuevo respeta lo
-   pagado; las asignaciones anteriores se conservan como historial.
+6. **Intentar renegociar monto con pagos ya aplicados.** Se rechaza en V1;
+   no existe algoritmo seguro hasta el corte definido por `WEB-D205`.
 7. **Persona con deudas en ambas direcciones.** Válido: le debes a tu hermano
    y él te debe. **No se compensan automáticamente.**
 8. **Cuota que vence en fin de semana.** No se mueve. La regla de
@@ -710,39 +742,90 @@ proporción cubierta por caja, uso de la consulta de asignaciones.
 ## 20. Criterios de aceptación
 
 - `AC-DEUDAS-01` — Una deuda con cuotas y movimiento se crea en una sola
-  transacción atómica. Evidencia: `TEST`.
+  transacción atómica. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-11`: `src/core/debts/debt-creation-command.test.ts` cubre calendario y
+  movimiento opcional, y `tests/rls/w11-debt-creation-core.test.ts` ejecuta
+  el commit atómico real con retry/conflicto de idempotencia.
 - `AC-DEUDAS-02` — El ejemplo de conciliación de `RUL-DEUDAS-03` produce
-  exactamente el reparto descrito y saldo S/600.00. Evidencia: `TEST`.
+  exactamente el reparto descrito y saldo S/600.00. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-11`: `debts.repository.test.ts` y
+  `payments/preview/route.test.ts` prueban el reparto S/200 + S/300 y saldo
+  S/600, además de la política oldest-first.
 - `AC-DEUDAS-03` — Un sobrepago se rechaza ofreciendo las dos salidas.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `integracion`. Cierra la parte `TEST`
+  en `W-11`: la ruta y `DebtsScreen` rechazan el sobrepago antes del RPC y
+  ofrecen saldo exacto o movimiento aparte (`payments/route.test.ts`,
+  `payments/preview/route.test.ts`, `debts-screen.test.tsx`). `USER` no
+  cierra sin sesión de navegador.
 - `AC-DEUDAS-04` — `current_balance` nunca queda negativo.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-11`: la prueba de
+  migraciones verifica `debts_current_balance_non_negative` y el comando de
+  pago rechaza cualquier monto superior al saldo antes del commit.
 - `AC-DEUDAS-05` — Cerrar con saldo exige elegir entre pagada y condonada.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `integracion`. Cierra la parte `TEST`
+  en `W-11`: `w11-debt-operations-core.test.ts` prueba condonación/reapertura
+  atómicas e idempotentes, y la ruta/UI bloquean `paid` con saldo. `USER` no
+  cierra sin navegador.
 - `AC-DEUDAS-06` — El usuario ve cómo se aplicará el pago **antes** de
-  confirmar. Evidencia: `TEST` + `USER`.
+  confirmar. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la parte
+  `TEST` en `W-11`: el preview de ruta y `DebtsScreen` muestran asignaciones,
+  saldo proyectado y cuota antes de habilitar el registro. `USER` no cierra
+  sin sesión de navegador.
 - `AC-DEUDAS-07` — Una cuota cubierta por caja no descuenta dos veces del
-  dinero libre. Evidencia: `TEST`.
+  dinero libre. Evidencia: `TEST`. Clase: `unidad`. No cierra completo:
+  `money-layers.test.ts` prueba cobertura completa/parcial y consumo único de
+  una caja genérica, pero el pago compuesto caja+deuda está bloqueado por
+  `WEB-D208` hasta tener un único RPC integrado; la UI declara que no consume
+  la caja automáticamente.
 - `AC-DEUDAS-08` — Una cuota que también aparece en Pagos que vienen cuenta
-  una sola vez en los compromisos. Evidencia: `TEST`.
+  una sola vez en los compromisos. Evidencia: `TEST`. Clase: `unidad`. Cierra
+  en `W-11`: `upcoming-commitments.test.ts` y `GET /api/v1/upcoming` prueban
+  la unión deuda/recurrente sin duplicar la cuota.
 - `AC-DEUDAS-09` — Eliminar el movimiento de un pago revierte pago,
-  asignaciones, cuotas y saldo. Evidencia: `TEST`.
+  asignaciones, cuotas y saldo. Evidencia: `TEST`. Clase: `integracion`.
+  Cierra en `W-11`: `tests/rls/w11-specialized-payment-reversal.test.ts` y
+  `movements/[id]/route.test.ts` verifican movimiento, cuenta, pago,
+  asignaciones, cuotas, deuda, auditoría/outbox e idempotencia en Postgres.
 - `AC-DEUDAS-10` — Las personas relacionadas no admiten teléfono, correo ni
-  datos bancarios en ningún campo. Evidencia: `TEST`.
+  datos bancarios en ningún campo. Evidencia: `TEST`. No cierra: el esquema y
+  la migración solo declaran nombre/alias/relación, pero falta una prueba
+  negativa dedicada que intente introducir teléfono, correo o datos bancarios
+  y compruebe el rechazo en la superficie de creación.
 - `AC-DEUDAS-11` — El motor no recomienda qué deuda pagar primero.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. No cierra: el código solo ordena por próximo
+  vencimiento (`sortDebtsByNextPaymentDate`) y no hay prueba dedicada que
+  demuestre la ausencia de una recomendación; tampoco hay validación `USER`.
 - `AC-DEUDAS-12` — No se genera ningún mensaje dirigido a un tercero.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra: no existe una prueba de trazabilidad que
+  recorra eventos/outbox y demuestre que ninguna ruta emite un mensaje a una
+  persona relacionada; la prohibición está documentada, pero no verificada
+  como criterio ejecutable.
 - `AC-DEUDAS-13` — En modo discreto los nombres de personas se ocultan
-  también para lectores de pantalla. Evidencia: `TEST`.
+  también para lectores de pantalla. Evidencia: `TEST`. Clase: `unidad`.
+  Cierra en `W-11`: `debts-screen.test.tsx` comprueba que nombre y persona
+  desaparecen también del árbol accesible bajo modo discreto.
 - `AC-DEUDAS-14` — Una tarjeta de crédito no suma al dinero total ni al
-  dinero libre. Evidencia: `TEST`.
+  dinero libre. Evidencia: `TEST`. No cierra: la deuda `credit_card` no se
+  modela como cuenta disponible y la UI lo explica, pero no hay una prueba
+  que combine una tarjeta como deuda con `/money` y verifique explícitamente
+  las dos capas.
 - `AC-DEUDAS-15` — Los estados terminales de cuota no se reabren
-  automáticamente. Evidencia: `TEST`.
+  automáticamente. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-11`: `w11-debt-operations-core.test.ts` prueba `skipped` como terminal,
+  y las pruebas de reversión/lifecycle cubren que `paid`/`cancelled` no se
+  reabren por lectura o retry.
 - `AC-DEUDAS-16` — El saldo debido y el saldo a favor no se presentan restados
-  sin decirlo. Evidencia: `TEST` + `USER`.
+  sin decirlo. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la parte
+  `TEST` en `debts-view-model.test.ts` y `debts-screen.test.tsx`, que separan
+  `Debes`/`Me deben` y también las capas PEN/USD. `USER` no cierra sin
+  navegador.
 - `AC-DEUDAS-17` — Ningún evento ni registro contiene nombres de personas ni
-  montos. Evidencia: `TEST`.
+  montos. Evidencia: `TEST`. No cierra como estaba redactado: `WEB-D210`
+  aclara que el outbox financiero puede conservar importes/moneda para
+  auditoría y replay; la prohibición verificable aplica a logs, métricas y
+  analítica, pero este corte no tiene una prueba global de higiene de esos
+  emisores. Queda pendiente esa prueba, no se afirma que todo registro esté
+  libre de montos.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

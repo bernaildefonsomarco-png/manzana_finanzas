@@ -58,7 +58,7 @@ export class DebtPaymentCommandHandler {
       command.payload.idempotency_key
     );
     if (existing) {
-      if (existing.debt.id !== command.payload.debt_id) {
+      if (!isSameDebtPaymentRequest(existing, command)) {
         throw new CoreError(
           "DEBT_PAYMENT_IDEMPOTENCY_CONFLICT",
           "La llave de idempotencia ya pertenece a otro pago de deuda."
@@ -146,24 +146,24 @@ export class DebtPaymentCommandHandler {
       result = await this.port.commit({
         debtId: debt.id,
         payment: {
-        id: paymentId,
-        user_id: command.user_id,
-        debt_id: debt.id,
-        movement_id: movementCommit.movement.id,
-        amount: command.payload.amount,
-        currency: debt.currency,
-        paid_at: command.payload.paid_at,
-        source: command.payload.payment_source,
-        metadata: {
-          note: command.payload.note,
-          idempotency_key: command.payload.idempotency_key,
-          previous_balance: debt.current_balance,
-          projected_balance: roundMoney(
-            debt.current_balance - command.payload.amount
-          ),
-          installment_id: command.payload.installment_id,
-          installment_number: command.payload.installment_number,
-        },
+          id: paymentId,
+          user_id: command.user_id,
+          debt_id: debt.id,
+          movement_id: movementCommit.movement.id,
+          amount: command.payload.amount,
+          currency: debt.currency,
+          paid_at: command.payload.paid_at,
+          source: command.payload.payment_source,
+          metadata: {
+            note: command.payload.note,
+            idempotency_key: command.payload.idempotency_key,
+            previous_balance: debt.current_balance,
+            projected_balance: roundMoney(
+              debt.current_balance - command.payload.amount
+            ),
+            installment_id: command.payload.installment_id,
+            installment_number: command.payload.installment_number,
+          },
         },
         movementCommit,
         debtOutboxEvents,
@@ -353,6 +353,62 @@ export function isActiveDebt(debt: Debt): boolean {
 
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function isSameDebtPaymentRequest(
+  existing: DebtPaymentCommitResult,
+  command: RecordDebtPaymentCommand
+): boolean {
+  const metadata =
+    existing.payment.metadata &&
+    typeof existing.payment.metadata === "object" &&
+    !Array.isArray(existing.payment.metadata)
+      ? (existing.payment.metadata as Record<string, unknown>)
+      : {};
+  const expectedAccountId = command.payload.account_id;
+  const storedAccountId =
+    existing.debt.direction === "i_owe"
+      ? existing.movement.account_origin_id
+      : existing.movement.account_destination_id;
+  const expectedMovementType =
+    existing.debt.direction === "i_owe"
+      ? "pago_deuda"
+      : "devolucion_recibida";
+
+  return (
+    existing.debt.id === command.payload.debt_id &&
+    existing.payment.debt_id === command.payload.debt_id &&
+    existing.payment.amount === command.payload.amount &&
+    existing.payment.currency ===
+      (command.payload.currency ?? existing.debt.currency) &&
+    sameInstant(existing.payment.paid_at, command.payload.paid_at) &&
+    existing.payment.source === command.payload.payment_source &&
+    existing.movement.type === expectedMovementType &&
+    storedAccountId === expectedAccountId &&
+    nullableMetadataString(metadata.note) === command.payload.note &&
+    nullableMetadataString(metadata.installment_id) ===
+      command.payload.installment_id &&
+    nullableMetadataNumber(metadata.installment_number) ===
+      command.payload.installment_number
+  );
+}
+
+function sameInstant(left: string, right: string): boolean {
+  const leftTimestamp = Date.parse(left);
+  const rightTimestamp = Date.parse(right);
+  return (
+    Number.isFinite(leftTimestamp) &&
+    Number.isFinite(rightTimestamp) &&
+    leftTimestamp === rightTimestamp
+  );
+}
+
+function nullableMetadataString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+function nullableMetadataNumber(value: unknown): number | null {
+  return typeof value === "number" ? value : null;
 }
 
 function mapDebtPaymentCommitError(error: unknown): unknown {

@@ -478,8 +478,10 @@ function buildFreeMoneyInsights(input: {
       accounts: accounts.map((account) => ({ current_balance: Number(account.current_balance) })),
       boxes: boxes.map((box) => ({ id: box.id, current_balance: Number(box.current_balance) })),
       commitments: commitments.map((commitment) => ({
+        id: commitment.id,
         amount: Number(commitment.amount),
         linked_box_id: commitment.linked_box_id,
+        due_at: commitment.due_at,
       })),
     });
     const totalBalance = layers.total_balance;
@@ -612,8 +614,10 @@ function buildMonthlyProjectionInsights(input: {
       accounts: accounts.map((account) => ({ current_balance: Number(account.current_balance) })),
       boxes: boxes.map((box) => ({ id: box.id, current_balance: Number(box.current_balance) })),
       commitments: commitments.map((commitment) => ({
+        id: commitment.id,
         amount: Number(commitment.amount),
         linked_box_id: commitment.linked_box_id,
+        due_at: commitment.due_at,
       })),
     });
     const operationalFreeMoney = projectionLayers.operational_free_money;

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   getActiveAccounts,
   getActiveBoxes,
@@ -11,6 +12,7 @@ import {
   getTraceId,
   okJson,
   unexpectedError,
+  validationError,
 } from "@/app/api/_lib/http";
 import type { Account, Box } from "@/shared/types/domain";
 import type {
@@ -24,6 +26,7 @@ import {
 } from "@/core/finance/money-layers";
 
 export const dynamic = "force-dynamic";
+const MoneyQuerySchema = z.object({}).strict();
 
 export async function GET(request: Request) {
   const trace_id = getTraceId(request);
@@ -34,6 +37,9 @@ export async function GET(request: Request) {
     if (!auth) {
       return errorJson("AUTH_REQUIRED", "Necesitas iniciar sesion.", meta, 401);
     }
+    MoneyQuerySchema.parse(
+      Object.fromEntries(new URL(request.url).searchParams.entries())
+    );
 
     const [accounts, boxes, recurringCommitments, debtCommitments] = await Promise.all([
       getActiveAccounts(auth.client, auth.userId),
@@ -47,6 +53,7 @@ export async function GET(request: Request) {
 
     return okJson(buildMoneyResponse(accounts, boxes, commitments), meta);
   } catch (error) {
+    if (isZodLike(error)) return validationError(error, meta);
     return unexpectedError(error, meta);
   }
 }
@@ -56,6 +63,7 @@ function buildMoneyResponse(
   boxes: Box[],
   commitments: UpcomingCommitmentSummary[]
 ): MoneyDashboardResponse {
+  const accountById = new Map(accounts.map((account) => [account.id, account]));
   const boxesByAccount = new Map<string, Box[]>();
   for (const box of boxes) {
     const current = boxesByAccount.get(box.account_id) ?? [];
@@ -83,28 +91,31 @@ function buildMoneyResponse(
     };
   });
 
-  const boxSummaries: BoxMoneySummary[] = boxes.map((box) => ({
-    ...box,
-    current_balance: roundMoney(Number(box.current_balance)),
-    target_amount:
-      typeof box.target_amount === "number"
-        ? roundMoney(Number(box.target_amount))
-        : box.target_amount,
-    account_name:
-      accounts.find((account) => account.id === box.account_id)?.name ??
-      "Cuenta",
-  }));
-
-  const layers = calculateMoneyLayers({
-    accounts: accounts.map((account) => ({ current_balance: Number(account.current_balance) })),
-    boxes: boxes.map((box) => ({ id: box.id, current_balance: Number(box.current_balance) })),
-    commitments: commitments.map((commitment) => ({
-      amount: commitment.amount,
-      linked_box_id: commitment.linked_box_id,
-    })),
+  const boxSummaries: BoxMoneySummary[] = boxes.flatMap((box) => {
+    const account = accountById.get(box.account_id);
+    const currency = toSupportedCurrency(account?.currency);
+    if (!account || !currency) return [];
+    return [{
+      ...box,
+      current_balance: roundMoney(Number(box.current_balance)),
+      target_amount:
+        typeof box.target_amount === "number"
+          ? roundMoney(Number(box.target_amount))
+          : box.target_amount,
+      account_name: account.name,
+      currency,
+    }];
   });
 
+  const currencyLayers = {
+    PEN: calculateLayersForCurrency("PEN", accounts, boxes, commitments),
+    USD: calculateLayersForCurrency("USD", accounts, boxes, commitments),
+  };
+  const layers = currencyLayers.PEN;
+
   return {
+    base_currency: "PEN",
+    currency_layers: currencyLayers,
     total_balance: layers.total_balance,
     free_in_accounts: layers.free_in_accounts,
     operational_free_money: layers.operational_free_money,
@@ -149,7 +160,47 @@ function buildWarnings(accounts: AccountMoneySummary[]): string[] {
     );
   }
 
+  if (accounts.some((account) => account.currency === "USD")) {
+    warnings.push(
+      "Las capas principales estan en soles. Los dolares se calculan por separado y nunca se convierten ni se suman sin un tipo de cambio."
+    );
+  }
+
   return warnings;
+}
+
+function calculateLayersForCurrency(
+  currency: "PEN" | "USD",
+  accounts: Account[],
+  boxes: Box[],
+  commitments: UpcomingCommitmentSummary[]
+) {
+  const currencyAccounts = accounts.filter(
+    (account) => account.currency === currency
+  );
+  const accountIds = new Set(currencyAccounts.map((account) => account.id));
+  const currencyBoxes = boxes.filter((box) => accountIds.has(box.account_id));
+  return calculateMoneyLayers({
+    accounts: currencyAccounts.map((account) => ({
+      current_balance: Number(account.current_balance),
+    })),
+    boxes: currencyBoxes.map((box) => ({
+      id: box.id,
+      current_balance: Number(box.current_balance),
+    })),
+    commitments: commitments
+      .filter((commitment) => commitment.currency === currency)
+      .map((commitment) => ({
+        id: commitment.id,
+        amount: commitment.amount,
+        linked_box_id: commitment.linked_box_id,
+        due_at: commitment.due_at,
+      })),
+  });
+}
+
+function toSupportedCurrency(value: string | undefined): "PEN" | "USD" | null {
+  return value === "PEN" || value === "USD" ? value : null;
 }
 
 function roundMoney(value: number): number {
@@ -161,4 +212,13 @@ function compareCommitments(
   right: UpcomingCommitmentSummary
 ): number {
   return left.due_at.localeCompare(right.due_at);
+}
+
+function isZodLike(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "issues" in error &&
+      Array.isArray((error as { issues?: unknown }).issues)
+  );
 }

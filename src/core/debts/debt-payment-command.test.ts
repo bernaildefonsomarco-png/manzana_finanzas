@@ -106,6 +106,21 @@ describe("RecordDebtPaymentCommand", () => {
     });
     expect(port.commit).not.toHaveBeenCalled();
   });
+
+  it("rechaza reutilizar la llave con un monto distinto", async () => {
+    const original = command();
+    const port = fakePort();
+    const existing = await port.commit(buildCommitInput(original));
+    port.findByIdempotencyKey.mockResolvedValue(existing);
+    port.commit.mockClear();
+
+    await expect(
+      dispatcher(port).dispatch(command({ amount: 31 })),
+    ).rejects.toMatchObject({
+      code: "DEBT_PAYMENT_IDEMPOTENCY_CONFLICT",
+    });
+    expect(port.commit).not.toHaveBeenCalled();
+  });
 });
 
 function dispatcher(port: ReturnType<typeof fakePort>) {
@@ -227,7 +242,15 @@ function buildCommitInput(value: RecordDebtPaymentCommand): DebtPaymentCommitInp
       currency: debt.currency,
       paid_at: value.payload.paid_at,
       source: "whatsapp",
-      metadata: {},
+      metadata: {
+        note: value.payload.note,
+        idempotency_key: value.payload.idempotency_key,
+        previous_balance: debt.current_balance,
+        projected_balance:
+          Math.round((debt.current_balance - value.payload.amount) * 100) / 100,
+        installment_id: value.payload.installment_id,
+        installment_number: value.payload.installment_number,
+      },
     },
     movementCommit: {
       movement,

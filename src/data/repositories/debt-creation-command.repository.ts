@@ -40,7 +40,10 @@ export class SupabaseDebtCreationExecutionPort
         principal_amount: command.payload.principal_amount,
         currency: command.payload.currency,
         opened_at: command.payload.opened_at,
-        due_date: input.installments.at(-1)?.due_date ?? null,
+        due_date:
+          input.installments.at(-1)?.due_date ??
+          command.payload.due_date ??
+          null,
         first_due_date: command.payload.first_due_date,
         installment_count: command.payload.installment_count,
         installment_amount: command.payload.installment_amount,

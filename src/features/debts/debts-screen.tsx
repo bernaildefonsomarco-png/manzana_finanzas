@@ -1,52 +1,53 @@
 "use client";
 
-import type { FormEvent, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
   CalendarDays,
   ChevronRight,
   HandCoins,
-  History,
-  Info,
+  Landmark,
   Plus,
-  RefreshCw,
   ShieldCheck,
-  X,
 } from "lucide-react";
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { ApiClientError } from "@/features/movements/movements-api";
 import { Badge } from "@/ui/primitivas/badge";
 import { Button } from "@/ui/primitivas/button";
 import { DiscreetValue } from "@/ui/primitivas/money";
-import { cn } from "@/ui/primitivas/cn";
-import { FieldShell, Input, Select } from "@/ui/primitivas/field";
 import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
-import type { Account, DebtDirection, DebtKind } from "@/shared/types/domain";
+import { Tab, TabList, TabPanel, Tabs } from "@/ui/primitivas/tabs";
+import type { DebtDirection } from "@/shared/types/domain";
+import { getDebtDetail, listDebts } from "./debts-api";
 import {
-  createDebt,
-  createDebtPayment,
-  getDebtDetail,
-  listDebtPaymentAccounts,
-  listDebts,
-} from "./debts-api";
+  DebtCloseDialog,
+  DebtEditorDialog,
+  DebtPaymentDialog,
+  DebtReopenDialog,
+  RescheduleInstallmentDialog,
+  SkipInstallmentDialog,
+} from "./debts-dialogs";
+import { DebtDetailSheet } from "./debts-detail";
 import type {
-  CreateDebtPayload,
-  CreateDebtPaymentPayload,
   DebtDetailWithPayments,
+  DebtInstallmentViewItem,
   DebtScreenIntent,
   DebtSummary,
   DebtViewItem,
   DebtWithPerson,
 } from "./debts-types";
 import {
-  debtDirectionLabels,
-  debtKindLabels,
   formatDebtMoney,
-  resolveDebtInstallmentPaymentTarget,
+  splitDebtsByState,
   summarizeDebts,
-  toDebtDetailViewModel,
   toDebtViewItem,
 } from "./debts-view-model";
 
@@ -55,526 +56,579 @@ type DebtsScreenProps = {
   onNavigate?: (view: AppView) => void;
   debtIntent?: DebtScreenIntent | null;
   onDebtIntentConsumed?: () => void;
+  onDebtDetailClose?: () => void;
 };
 
 type LoadState = "loading" | "ready" | "error";
-type PaymentSelection = {
-  item: DebtViewItem;
-  initialAmount?: number;
-  installmentNumber?: number;
-};
-
-const debtDirections: DebtDirection[] = ["i_owe", "they_owe_me"];
-const debtKinds: DebtKind[] = [
-  "personal",
-  "bank_loan",
-  "credit_card",
-  "installment_purchase",
-  "service_or_bill",
-  "other",
-];
+type EditorState = { debt: DebtWithPerson | null } | null;
+type InstallmentAction =
+  | { type: "reschedule"; installment: DebtInstallmentViewItem }
+  | { type: "skip"; installment: DebtInstallmentViewItem }
+  | null;
 
 export function DebtsScreen({
   onSignOut,
   onNavigate,
   debtIntent = null,
   onDebtIntentConsumed,
+  onDebtDetailClose,
 }: DebtsScreenProps) {
   const [debts, setDebts] = useState<DebtWithPerson[]>([]);
   const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [uiError, setUiError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [direction, setDirection] = useState<DebtDirection>("i_owe");
   const [feedback, setFeedback] = useState<string | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [paymentSelection, setPaymentSelection] =
-    useState<PaymentSelection | null>(null);
-  const [detailDebtId, setDetailDebtId] = useState<string | null>(null);
-  const [detailDebt, setDetailDebt] = useState<DebtDetailWithPayments | null>(null);
-  const [detailLoadState, setDetailLoadState] = useState<LoadState>("ready");
+  const [editor, setEditor] = useState<EditorState>(null);
+  const [detail, setDetail] = useState<DebtDetailWithPayments | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
-  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
-  const consumedIntentKeyRef = useRef<string | null>(null);
+  const [paymentDebt, setPaymentDebt] =
+    useState<DebtDetailWithPayments | null>(null);
+  const [paymentInstallmentId, setPaymentInstallmentId] = useState<
+    string | null
+  >(null);
+  const [closingDebt, setClosingDebt] =
+    useState<DebtDetailWithPayments | null>(null);
+  const [reopeningDebt, setReopeningDebt] =
+    useState<DebtDetailWithPayments | null>(null);
+  const [installmentAction, setInstallmentAction] =
+    useState<InstallmentAction>(null);
+  const consumedIntentRef = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     setLoadState("loading");
-    setUiError(null);
-
+    setLoadError(null);
     try {
-      const response = await listDebts();
-      setDebts(response.debts);
+      const result = await listDebts();
+      setDebts(result.debts);
       setLoadState("ready");
     } catch (error) {
       setLoadState("error");
-      setUiError(toUiError(error));
+      setLoadError(toUiError(error));
     }
   }, []);
 
   useEffect(() => {
     let active = true;
-
-    async function loadInitial() {
-      try {
-        const response = await listDebts();
+    void listDebts()
+      .then((result) => {
         if (!active) return;
-        setDebts(response.debts);
+        setDebts(result.debts);
+        const loadedSummary = summarizeDebts(result.debts);
+        if (
+          loadedSummary.active_i_owe === 0 &&
+          loadedSummary.active_they_owe_me > 0
+        ) {
+          setDirection("they_owe_me");
+        }
         setLoadState("ready");
-      } catch (error) {
+      })
+      .catch((error) => {
         if (!active) return;
         setLoadState("error");
-        setUiError(toUiError(error));
-      }
-    }
-
-    void loadInitial();
-
+        setLoadError(toUiError(error));
+      });
     return () => {
       active = false;
     };
   }, []);
 
-  const summary = useMemo(() => summarizeDebts(debts), [debts]);
-  const items = useMemo(() => debts.map(toDebtViewItem), [debts]);
+  const loadDetail = useCallback(async (debtId: string) => {
+    setDetailLoading(true);
+    setDetailError(null);
+    try {
+      const result = await getDebtDetail(debtId);
+      setDetail(result);
+      return result;
+    } catch (error) {
+      setDetailError(toUiError(error));
+      return null;
+    } finally {
+      setDetailLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (!debtIntent) {
-      consumedIntentKeyRef.current = null;
+      consumedIntentRef.current = null;
       return;
     }
-
-    const intent = debtIntent;
-    const intentKey = `${intent.debtId}:${intent.installmentId ?? ""}:${intent.action}`;
-    if (consumedIntentKeyRef.current === intentKey) return;
-    consumedIntentKeyRef.current = intentKey;
-
+    const key = `${debtIntent.debtId}:${debtIntent.installmentId ?? ""}:${debtIntent.action}`;
+    if (consumedIntentRef.current === key) return;
+    consumedIntentRef.current = key;
     let active = true;
-
-    async function openDebtIntent() {
-      try {
-        const debt = await getDebtDetail(intent.debtId);
+    void getDebtDetail(debtIntent.debtId)
+      .then((result) => {
         if (!active) return;
-
-        if (intent.action === "pay") {
-          const target = resolveDebtInstallmentPaymentTarget(
-            debt,
-            intent.installmentId
-          );
-
-          if (target) {
-            setPaymentSelection({
-              item: toDebtDetailViewModel(debt),
-              initialAmount: target.amount,
-              installmentNumber: target.installment_number,
-            });
-          } else {
-            setDetailDebt(debt);
-            setDetailDebtId(debt.id);
-            setDetailLoadState("ready");
-            setDetailError(null);
-            setFeedback(
-              "Abri la deuda, pero esa cuota ya no es la siguiente pagable. Revisa el calendario actualizado."
-            );
-          }
-        } else {
-          setDetailDebt(debt);
-          setDetailDebtId(debt.id);
-          setDetailLoadState("ready");
-          setDetailError(null);
+        setDetailError(null);
+        setDetail(result);
+        setDirection(result.direction);
+        if (debtIntent.action === "pay") {
+          setPaymentInstallmentId(debtIntent.installmentId ?? null);
+          setPaymentDebt(result);
         }
-      } catch (error) {
+      })
+      .catch((error) => {
         if (!active) return;
-        setDetailDebtId(intent.debtId);
-        setDetailLoadState("error");
         setDetailError(toUiError(error));
-      }
-
-      onDebtIntentConsumed?.();
-    }
-
-    void openDebtIntent();
-
+      })
+      .finally(() => {
+        if (active) onDebtIntentConsumed?.();
+      });
     return () => {
       active = false;
     };
   }, [debtIntent, onDebtIntentConsumed]);
 
-  useEffect(() => {
-    if (!detailDebtId) return;
+  const summary = useMemo(() => summarizeDebts(debts), [debts]);
+  const visible = useMemo(
+    () => splitDebtsByState(debts, direction),
+    [debts, direction]
+  );
+  const overlayOpen = Boolean(
+    editor ||
+      paymentDebt ||
+      closingDebt ||
+      reopeningDebt ||
+      installmentAction ||
+      detail
+  );
+  const operationOpen = Boolean(
+    editor ||
+      paymentDebt ||
+      closingDebt ||
+      reopeningDebt ||
+      installmentAction
+  );
 
-    const debtId = detailDebtId;
-    let active = true;
-
-    async function loadDetail() {
-      try {
-        const debt = await getDebtDetail(debtId);
-        if (!active) return;
-        setDetailDebt(debt);
-        setDetailLoadState("ready");
-      } catch (error) {
-        if (!active) return;
-        setDetailLoadState("error");
-        setDetailError(toUiError(error));
-      }
+  async function openDetail(item: DebtViewItem) {
+    const optimistic = debts.find((debt) => debt.id === item.id);
+    if (optimistic) {
+      setDetail({ ...optimistic, payments: [], installments: [] });
     }
-
-    void loadDetail();
-
-    return () => {
-      active = false;
-    };
-  }, [detailDebtId, detailRefreshKey]);
-
-  function handleOpenDetail(item: DebtViewItem) {
-    const debt = debts.find((entry) => entry.id === item.id) ?? null;
-    setDetailDebt(debt ? { ...debt, payments: [], installments: [] } : null);
-    setDetailDebtId(item.id);
-    setDetailLoadState("loading");
-    setDetailError(null);
-    setDetailRefreshKey((value) => value + 1);
+    await loadDetail(item.id);
   }
 
-  function handleCloseDetail() {
-    setDetailDebtId(null);
-    setDetailDebt(null);
-    setDetailLoadState("ready");
+  async function openPayment(
+    item: DebtViewItem,
+    installmentId: string | null = null
+  ) {
+    setDetailLoading(true);
     setDetailError(null);
-  }
-
-  function handleRetryDetail() {
-    setDetailLoadState("loading");
-    setDetailError(null);
-    setDetailRefreshKey((value) => value + 1);
-  }
-
-  function refreshOpenDetail(debtId: string | null) {
-    if (debtId && detailDebtId === debtId) {
-      setDetailLoadState("loading");
-      setDetailError(null);
-      setDetailRefreshKey((value) => value + 1);
+    try {
+      const result =
+        detail?.id === item.id ? detail : await getDebtDetail(item.id);
+      setPaymentInstallmentId(installmentId);
+      setPaymentDebt(result);
+    } catch (error) {
+      setDetailError(toUiError(error));
+    } finally {
+      setDetailLoading(false);
     }
   }
 
-  async function handleDebtCreated() {
-    setModalOpen(false);
-    setFeedback("Deuda guardada. No movi saldos; queda lista para registrar pagos despues.");
+  async function refreshAfterMutation(message: string) {
+    const detailId = detail?.id ?? null;
+    setEditor(null);
+    setPaymentDebt(null);
+    setClosingDebt(null);
+    setReopeningDebt(null);
+    setInstallmentAction(null);
+    setFeedback(message);
     await load();
-  }
-
-  async function handlePaymentSaved() {
-    const paidDebtId = paymentSelection?.item.id ?? null;
-    const paidDirection = paymentSelection?.item.direction ?? "i_owe";
-    setPaymentSelection(null);
-    setFeedback(
-      paidDirection === "i_owe"
-        ? "Pago registrado por Core. Actualice deuda, cuotas y los saldos que correspondian."
-        : "Devolucion registrada por Core. Actualice cobro, cuotas y los saldos que correspondian."
-    );
-    await load();
-    refreshOpenDetail(paidDebtId);
+    if (detailId) await loadDetail(detailId);
   }
 
   return (
     <AppShell
       title="Deudas"
-      subtitle="Compromisos, prestamos y cobros pendientes sin mezclar con gastos comunes."
+      subtitle="Lo que debes y lo que te deben, siempre por separado."
       activeView="debts"
-      hideMobileNavigation={
-        modalOpen || Boolean(detailDebt) || Boolean(paymentSelection)
-      }
+      hideMobileNavigation={overlayOpen}
       onNavigate={onNavigate}
       onSignOut={onSignOut}
       primaryAction={
-        <Button icon={<Plus className="h-4 w-4" />} onClick={() => setModalOpen(true)}>
-          Crear deuda
+        <Button
+          icon={<Plus className="h-4 w-4" />}
+          onClick={() => setEditor({ debt: null })}
+        >
+          Agregar deuda
         </Button>
       }
       mobilePrimaryAction={
-        !modalOpen && !detailDebt && !paymentSelection ? (
+        !overlayOpen ? (
           <Button
             size="icon"
-            aria-label="Crear deuda"
+            aria-label="Agregar deuda"
             icon={<Plus className="h-5 w-5" />}
-            onClick={() => setModalOpen(true)}
             className="h-12 w-12 rounded-full shadow-lg"
+            onClick={() => setEditor({ debt: null })}
           >
-            Crear deuda
+            Agregar deuda
           </Button>
         ) : undefined
       }
     >
-      <div id="deudas" className="mx-auto max-w-[1040px] pb-10 pt-2 lg:pt-4">
+      <main className="mx-auto max-w-[1040px] space-y-6 pb-12 pt-2 lg:pt-4">
         {loadState === "loading" ? (
-          <LoadingBlock label="Ordenando deudas" />
+          <LoadingBlock label="Cargando deudas" />
         ) : loadState === "error" ? (
           <ErrorState
             title="No pude cargar tus deudas"
-            description={uiError ?? "Intenta de nuevo en un momento."}
+            description={loadError ?? "Intenta nuevamente."}
             onRetry={() => void load()}
           />
         ) : (
-          <div className="space-y-6">
+          <>
             {feedback ? (
-              <div className="flex items-start gap-2 rounded-lg border border-success-subtle bg-success-subtle/60 px-4 py-3 text-sm text-text-secondary">
-                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-success" />
-                <span>{feedback}</span>
-                <button
-                  type="button"
-                  aria-label="Cerrar mensaje"
-                  className="ml-auto text-text-muted hover:text-text"
-                  onClick={() => setFeedback(null)}
-                >
-                  <X className="h-4 w-4" />
-                </button>
+              <div
+                role="status"
+                className="flex items-start gap-2 rounded-lg border border-success-subtle bg-success-subtle/55 p-3 text-sm text-text-secondary"
+              >
+                <ShieldCheck className="mt-0.5 h-4 w-4 text-success" />
+                {feedback}
               </div>
             ) : null}
-
-            <DebtsHero summary={summary} onCreate={() => setModalOpen(true)} />
-            <DebtProtectionNotice />
-
-            {items.length === 0 ? (
-              <EmptyDebtState onCreate={() => setModalOpen(true)} />
-            ) : (
-              <DebtList
-                items={items}
-                onOpenDetail={handleOpenDetail}
-                onRegisterPayment={(item) => setPaymentSelection({ item })}
+            {detailError && !detail ? (
+              <div
+                role="alert"
+                className="flex flex-col gap-3 rounded-lg border border-error-subtle bg-error-subtle/50 p-4 text-sm text-error sm:flex-row sm:items-center sm:justify-between"
+              >
+                <span>{detailError}</span>
+                {onDebtDetailClose ? (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setDetailError(null);
+                      onDebtDetailClose();
+                    }}
+                  >
+                    Volver al listado
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
+            <DebtSummaryCards summary={summary} />
+            <section className="rounded-xl border border-brand-subtle bg-brand-subtle/30 p-4 text-sm leading-6 text-text-secondary">
+              Una tarjeta aquí es una deuda simple: no es una cuenta disponible
+              ni modela ciclo de facturación. Tampoco compensamos lo que debes
+              con lo que te deben.
+            </section>
+            {debts.length === 0 ? (
+              <EmptyState
+                icon={<HandCoins className="h-6 w-6" />}
+                title="Aún no registras deudas"
+                description="Puedes crear un préstamo, una deuda informal, una tarjeta simple o una compra en cuotas."
+                action={
+                  <Button onClick={() => setEditor({ debt: null })}>
+                    Crear primera deuda
+                  </Button>
+                }
               />
+            ) : (
+              <Tabs
+                value={direction}
+                onValueChange={(value) =>
+                  setDirection(value as DebtDirection)
+                }
+              >
+                <TabList aria-label="Dirección de las deudas">
+                  <Tab value="i_owe">
+                    Debo ({summary.active_i_owe})
+                  </Tab>
+                  <Tab value="they_owe_me">
+                    Me deben ({summary.active_they_owe_me})
+                  </Tab>
+                </TabList>
+                <TabPanel value="i_owe">
+                  <DebtPanel
+                    direction="i_owe"
+                    open={visible.open}
+                    closed={visible.closed}
+                    onDetail={(item) => void openDetail(item)}
+                    onPayment={(item) => void openPayment(item)}
+                  />
+                </TabPanel>
+                <TabPanel value="they_owe_me">
+                  <DebtPanel
+                    direction="they_owe_me"
+                    open={visible.open}
+                    closed={visible.closed}
+                    onDetail={(item) => void openDetail(item)}
+                    onPayment={(item) => void openPayment(item)}
+                  />
+                </TabPanel>
+              </Tabs>
             )}
-          </div>
+          </>
         )}
-      </div>
+      </main>
 
-      {modalOpen ? (
-        <CreateDebtModal
-          onClose={() => setModalOpen(false)}
-          onCreated={() => void handleDebtCreated()}
-        />
-      ) : null}
-
-      {detailDebt ? (
-        <DebtDetailModal
-          debt={detailDebt}
-          loadState={detailLoadState}
+      {detail && !operationOpen ? (
+        <DebtDetailSheet
+          debt={detail}
+          loading={detailLoading}
           error={detailError}
-          onClose={handleCloseDetail}
-          onRetry={handleRetryDetail}
-          onRegisterPayment={(item) => setPaymentSelection({ item })}
+          onClose={() => {
+            setDetail(null);
+            setDetailError(null);
+            onDebtDetailClose?.();
+          }}
+          onRetry={() => void loadDetail(detail.id)}
+          onEdit={() => setEditor({ debt: detail })}
+          onPayment={() => void openPayment(toDebtViewItem(detail))}
+          onCloseDebt={() => setClosingDebt(detail)}
+          onReopen={() => setReopeningDebt(detail)}
+          onReschedule={(installment) =>
+            setInstallmentAction({ type: "reschedule", installment })
+          }
+          onSkip={(installment) =>
+            setInstallmentAction({ type: "skip", installment })
+          }
         />
       ) : null}
-
-      {paymentSelection ? (
-        <DebtPaymentModal
-          item={paymentSelection.item}
-          initialAmount={paymentSelection.initialAmount}
-          installmentNumber={paymentSelection.installmentNumber}
-          onClose={() => setPaymentSelection(null)}
-          onSaved={handlePaymentSaved}
+      {editor ? (
+        <DebtEditorDialog
+          debt={editor.debt}
+          onClose={() => setEditor(null)}
+          onSaved={() =>
+            refreshAfterMutation(
+              editor.debt
+                ? "Datos de la deuda actualizados sin tocar el saldo."
+                : "Deuda creada de forma atómica."
+            )
+          }
+        />
+      ) : null}
+      {paymentDebt ? (
+        <DebtPaymentDialog
+          debt={paymentDebt}
+          requestedInstallmentId={paymentInstallmentId}
+          onClose={() => {
+            setPaymentDebt(null);
+            setPaymentInstallmentId(null);
+          }}
+          onSaved={() =>
+            refreshAfterMutation(
+              paymentDebt.direction === "i_owe"
+                ? "Pago conciliado por Core."
+                : "Devolución conciliada por Core."
+            )
+          }
+        />
+      ) : null}
+      {closingDebt ? (
+        <DebtCloseDialog
+          debt={closingDebt}
+          onClose={() => setClosingDebt(null)}
+          onSaved={() =>
+            refreshAfterMutation(
+              closingDebt.current_balance === 0
+                ? "Deuda cerrada como pagada."
+                : "Deuda condonada; el saldo perdonado quedó registrado."
+            )
+          }
+        />
+      ) : null}
+      {reopeningDebt ? (
+        <DebtReopenDialog
+          debt={reopeningDebt}
+          onClose={() => setReopeningDebt(null)}
+          onSaved={() =>
+            refreshAfterMutation("Deuda condonada reabierta con su saldo.")
+          }
+        />
+      ) : null}
+      {detail && installmentAction?.type === "reschedule" ? (
+        <RescheduleInstallmentDialog
+          debtId={detail.id}
+          installment={installmentAction.installment}
+          onClose={() => setInstallmentAction(null)}
+          onSaved={() =>
+            refreshAfterMutation("Cuota reprogramada sin cambiar sus montos.")
+          }
+        />
+      ) : null}
+      {detail && installmentAction?.type === "skip" ? (
+        <SkipInstallmentDialog
+          debtId={detail.id}
+          installment={installmentAction.installment}
+          onClose={() => setInstallmentAction(null)}
+          onSaved={() =>
+            refreshAfterMutation("Cuota omitida con motivo auditable.")
+          }
         />
       ) : null}
     </AppShell>
   );
 }
 
-function DebtsHero({
-  summary,
-  onCreate,
-}: {
-  summary: DebtSummary;
-  onCreate: () => void;
-}) {
+function DebtSummaryCards({ summary }: { summary: DebtSummary }) {
   return (
-    <section className="rounded-xl border border-border bg-bg-surface-raised p-6 shadow-xs sm:p-7">
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
-        <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-text-muted">
-            mapa de compromisos
-          </p>
-          <h2 className="mt-3 max-w-2xl font-heading text-3xl font-semibold leading-tight tracking-normal text-text sm:text-4xl">
-            Tus deudas y cobros, separados del ruido diario.
-          </h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary">
-            Aqui ves lo que debes, lo que te deben y el neto. Crear una deuda no
-            toca cuentas ni cajas hasta registrar un pago por Core.
-          </p>
-        </div>
-        <Button
-          variant="secondary"
-          icon={<RefreshCw className="h-4 w-4" />}
-          onClick={onCreate}
-          className="lg:mt-1"
-        >
-          Nueva deuda
-        </Button>
-      </div>
-
-      <div className="mt-7 grid gap-3 sm:grid-cols-3">
-        <DebtFact
-          label="Yo debo"
-          value={<DiscreetValue>{formatDebtMoney(summary.total_i_owe)}</DiscreetValue>}
-          tone="debt"
-          icon={<ArrowUpRight className="h-4 w-4" />}
-        />
-        <DebtFact
-          label="Me deben"
-          value={<DiscreetValue>{formatDebtMoney(summary.total_they_owe_me)}</DiscreetValue>}
-          tone="success"
-          icon={<ArrowDownLeft className="h-4 w-4" />}
-        />
-        <DebtFact
-          label="Neto"
-          value={<DiscreetValue>{formatDebtMoney(summary.net_position)}</DiscreetValue>}
-          tone={summary.net_position >= 0 ? "success" : "warning"}
-          icon={<HandCoins className="h-4 w-4" />}
-        />
-      </div>
+    <section aria-label="Resumen bruto de deudas" className="grid gap-3 sm:grid-cols-2">
+      <SummaryCard
+        label="Debes"
+        amount={summary.total_i_owe}
+        usdAmount={summary.total_i_owe_usd}
+        icon={<ArrowUpRight className="h-4 w-4" />}
+        tone="debt"
+      />
+      <SummaryCard
+        label="Te deben"
+        amount={summary.total_they_owe_me}
+        usdAmount={summary.total_they_owe_me_usd}
+        icon={<ArrowDownLeft className="h-4 w-4" />}
+        tone="success"
+      />
     </section>
   );
 }
 
-function DebtFact({
+function SummaryCard({
   label,
-  value,
-  tone,
+  amount,
+  usdAmount,
   icon,
+  tone,
 }: {
   label: string;
-  value: ReactNode;
-  tone: "debt" | "success" | "warning";
+  amount: number;
+  usdAmount: number;
   icon: ReactNode;
+  tone: "debt" | "success";
 }) {
-  const iconClass =
-    tone === "success"
-      ? "bg-success-subtle text-success"
-      : tone === "warning"
-      ? "bg-warning-subtle text-amber-800"
-      : "bg-debt-subtle text-debt";
-
   return (
-    <div className="rounded-lg border border-border bg-bg-primary px-4 py-4">
-      <div className="flex items-center gap-3">
-        <div className={cn("flex h-9 w-9 items-center justify-center rounded-lg", iconClass)}>
-          {icon}
-        </div>
-        <div>
-          <p className="text-xs font-medium text-text-muted">{label}</p>
-          <p className="mt-1 font-heading text-xl font-semibold text-text">{value}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DebtProtectionNotice() {
-  return (
-    <section className="flex items-start gap-3 rounded-xl border border-brand-subtle bg-brand-subtle/35 px-4 py-4 text-sm leading-6 text-text-secondary">
-      <Info className="mt-0.5 h-5 w-5 shrink-0 text-brand" />
-      <div>
-        <p className="font-medium text-text">Deudas no son gastos genericos.</p>
-        <p>
-          Un pago de deuda reducira la deuda y, si eliges cuenta, tambien movera
-          saldo. Por eso lo registraremos en un flujo separado.
+    <article className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs">
+      <p
+        className={
+          tone === "debt"
+            ? "flex items-center gap-2 text-sm font-medium text-debt"
+            : "flex items-center gap-2 text-sm font-medium text-success"
+        }
+      >
+        {icon}
+        {label}
+      </p>
+      <p className="mt-2 font-heading text-3xl font-semibold text-text">
+        <DiscreetValue>{formatDebtMoney(amount)}</DiscreetValue>
+      </p>
+      {usdAmount > 0 ? (
+        <p className="mt-2 text-sm font-medium text-text-secondary">
+          Además:{" "}
+          <DiscreetValue>{formatDebtMoney(usdAmount, "USD")}</DiscreetValue>
         </p>
-      </div>
-    </section>
+      ) : null}
+      <p className="mt-2 text-xs text-text-muted">
+        Total bruto activo. No se compensa con la otra dirección.
+      </p>
+    </article>
   );
 }
 
-function EmptyDebtState({ onCreate }: { onCreate: () => void }) {
-  return (
-    <EmptyState
-      icon={<HandCoins className="h-6 w-6" />}
-      title="Aun no tienes deudas guardadas"
-      description='Puedes guardar deudas o prestamos con un mensaje como "le debo 50 a Luis", o crearlas desde aqui si ya estas en el Dashboard.'
-      action={
-        <Button icon={<Plus className="h-4 w-4" />} onClick={onCreate}>
-          Crear primera deuda
-        </Button>
-      }
-    />
-  );
-}
-
-function DebtList({
-  items,
-  onOpenDetail,
-  onRegisterPayment,
+function DebtPanel({
+  direction,
+  open,
+  closed,
+  onDetail,
+  onPayment,
 }: {
-  items: DebtViewItem[];
-  onOpenDetail: (item: DebtViewItem) => void;
-  onRegisterPayment: (item: DebtViewItem) => void;
+  direction: DebtDirection;
+  open: DebtViewItem[];
+  closed: DebtViewItem[];
+  onDetail: (item: DebtViewItem) => void;
+  onPayment: (item: DebtViewItem) => void;
 }) {
   return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="font-heading text-lg font-semibold tracking-normal text-text">
-            Deudas activas
-          </h2>
-          <p className="mt-1 text-sm text-text-secondary">
-            Lista confiable para revisar, no para juzgar.
+    <div className="space-y-6">
+      <section>
+        <h2 className="font-heading text-lg font-semibold text-text">
+          {direction === "i_owe" ? "Lo que debes" : "Lo que te deben"}
+        </h2>
+        {open.length === 0 ? (
+          <p className="mt-3 rounded-lg border border-dashed border-border p-5 text-sm text-text-secondary">
+            No hay saldos activos en esta dirección.
           </p>
-        </div>
-      </div>
-      <div className="grid gap-3">
-        {items.map((item) => (
-          <DebtCard
-            key={item.id}
-            item={item}
-            onOpenDetail={() => onOpenDetail(item)}
-            onRegisterPayment={() => onRegisterPayment(item)}
-          />
-        ))}
-      </div>
-    </section>
+        ) : (
+          <div className="mt-3 grid gap-3">
+            {open.map((item) => (
+              <DebtCard
+                key={item.id}
+                item={item}
+                onDetail={() => onDetail(item)}
+                onPayment={() => onPayment(item)}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+      {closed.length > 0 ? (
+        <details className="rounded-xl border border-border bg-bg-surface-raised p-4">
+          <summary className="cursor-pointer font-heading text-base font-semibold text-text">
+            Cerradas ({closed.length})
+          </summary>
+          <div className="mt-4 grid gap-3 opacity-85">
+            {closed.map((item) => (
+              <DebtCard
+                key={item.id}
+                item={item}
+                onDetail={() => onDetail(item)}
+                onPayment={() => onPayment(item)}
+              />
+            ))}
+          </div>
+        </details>
+      ) : null}
+    </div>
   );
 }
 
 function DebtCard({
   item,
-  onOpenDetail,
-  onRegisterPayment,
+  onDetail,
+  onPayment,
 }: {
   item: DebtViewItem;
-  onOpenDetail: () => void;
-  onRegisterPayment: () => void;
+  onDetail: () => void;
+  onPayment: () => void;
 }) {
   return (
     <article className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs">
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:justify-between">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap gap-2">
             <Badge tone={item.status_tone}>{item.status_label}</Badge>
             <Badge tone="neutral">{item.kind_label}</Badge>
-            <Badge tone={item.direction === "i_owe" ? "debt" : "success"}>
-              {item.direction_label}
-            </Badge>
           </div>
-          <h3 className="mt-3 font-heading text-xl font-semibold tracking-normal text-text">
-            {item.title}
+          <h3 className="mt-3 font-heading text-xl font-semibold text-text">
+            <DiscreetValue>{item.title}</DiscreetValue>
           </h3>
           {item.person_label ? (
-            <p className="mt-1 text-sm text-text-secondary">{item.person_label}</p>
+            <p className="mt-1 text-sm text-text-secondary">
+              <DiscreetValue>{item.person_label}</DiscreetValue>
+            </p>
           ) : null}
         </div>
-
-        <div className="shrink-0 text-left lg:text-right">
-          <p className="text-xs font-medium text-text-muted">Pendiente</p>
+        <div className="shrink-0 sm:text-right">
+          <p className="text-xs text-text-muted">
+            {item.direction === "i_owe" ? "Pendiente" : "Por recibir"}
+          </p>
           <p className="mt-1 font-heading text-2xl font-semibold text-text">
             <DiscreetValue>
               {formatDebtMoney(item.current_balance, item.currency)}
             </DiscreetValue>
           </p>
-          <p className="mt-1 text-xs text-text-muted">
+        </div>
+      </div>
+      <div className="mt-4">
+        <div className="flex justify-between text-xs text-text-muted">
+          <span>{item.progress}% pagado confirmado</span>
+          <span>
             de{" "}
             <DiscreetValue>
               {formatDebtMoney(item.principal_amount, item.currency)}
             </DiscreetValue>
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <div className="flex items-center justify-between gap-3 text-xs text-text-muted">
-          <span>Progreso pagado</span>
-          <span>{item.progress}%</span>
+          </span>
         </div>
         <div className="mt-2 h-2 overflow-hidden rounded-full bg-progress-track">
           <div
@@ -583,839 +637,42 @@ function DebtCard({
           />
         </div>
       </div>
-
-      <div className="mt-5 flex flex-col gap-3 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex items-center gap-2 text-sm text-text-secondary">
-          <CalendarDays className="h-4 w-4 text-text-muted" />
-          <span>{item.next_date_label ?? "Sin fecha proxima"}</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="secondary"
-            icon={<HandCoins className="h-4 w-4" />}
-            onClick={onRegisterPayment}
-          >
-            {item.direction === "i_owe" ? "Registrar pago" : "Registrar devolucion"}
+      <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-text-secondary">
+        <span className="flex items-center gap-2">
+          <CalendarDays className="h-4 w-4" />
+          {item.next_date_label ?? "Sin próxima fecha"}
+        </span>
+        {item.linked_box_name ? (
+          <span className="flex items-center gap-2">
+            <Landmark className="h-4 w-4 text-brand" />
+            Cubierto por{" "}
+            <DiscreetValue>{item.linked_box_name}</DiscreetValue>
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+        {!item.is_closed ? (
+          <Button variant="secondary" size="sm" onClick={onPayment}>
+            {item.direction === "i_owe"
+              ? "Registrar pago"
+              : "Registrar devolución"}
           </Button>
-          <Button
-            variant="ghost"
-            icon={<ChevronRight className="h-4 w-4" />}
-            onClick={onOpenDetail}
-          >
-            Detalle
-          </Button>
-        </div>
+        ) : null}
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={<ChevronRight className="h-4 w-4" />}
+          onClick={onDetail}
+        >
+          Ver detalle
+        </Button>
       </div>
     </article>
-  );
-}
-
-function DebtDetailModal({
-  debt,
-  loadState,
-  error,
-  onClose,
-  onRetry,
-  onRegisterPayment,
-}: {
-  debt: DebtDetailWithPayments;
-  loadState: LoadState;
-  error: string | null;
-  onClose: () => void;
-  onRetry: () => void;
-  onRegisterPayment: (item: DebtViewItem) => void;
-}) {
-  const detail = useMemo(() => toDebtDetailViewModel(debt), [debt]);
-  const canRegisterPayment =
-    detail.current_balance > 0 &&
-    !["paid", "cancelled", "archived"].includes(detail.status);
-
-  return (
-    <div className="fixed inset-0 z-modal flex items-end justify-center bg-black/35 px-3 py-4 sm:items-center">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="debt-detail-title"
-        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border bg-bg-surface-raised shadow-xl"
-      >
-        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-          <div>
-            <p className="text-xs font-medium text-text-muted">Detalle de deuda</p>
-            <h2
-              id="debt-detail-title"
-              className="font-heading text-xl font-semibold tracking-normal text-text"
-            >
-              {detail.title}
-            </h2>
-          </div>
-          <button
-            type="button"
-            aria-label="Cerrar modal"
-            className="rounded-md p-2 text-text-muted hover:bg-bg-surface hover:text-text"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <div className="space-y-5 px-5 py-5">
-          {loadState === "loading" ? (
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-surface px-4 py-3 text-sm text-text-secondary">
-              <RefreshCw className="h-4 w-4 animate-spin text-text-muted" />
-              Actualizando historial
-            </div>
-          ) : null}
-
-          {error ? (
-            <div className="flex flex-col gap-3 rounded-lg border border-warning-subtle bg-warning-subtle/55 px-4 py-3 text-sm text-text-secondary sm:flex-row sm:items-center sm:justify-between">
-              <span>{error}</span>
-              <Button type="button" variant="secondary" size="sm" onClick={onRetry}>
-                Reintentar
-              </Button>
-            </div>
-          ) : null}
-
-          <section className="rounded-lg border border-border bg-bg-primary px-4 py-4">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={detail.status_tone}>{detail.status_label}</Badge>
-                  <Badge tone={detail.direction === "i_owe" ? "debt" : "success"}>
-                    {detail.direction_label}
-                  </Badge>
-                  <Badge tone="neutral">{detail.kind_label}</Badge>
-                </div>
-                <p className="mt-4 text-sm text-text-muted">
-                  Saldo pendiente actual
-                </p>
-                <p className="mt-1 font-heading text-3xl font-semibold tracking-normal text-text">
-                  <DiscreetValue>
-                    {formatDebtMoney(detail.current_balance, detail.currency)}
-                  </DiscreetValue>
-                </p>
-                <p className="mt-2 text-sm text-text-secondary">
-                  Pagado:{" "}
-                  <DiscreetValue>
-                    {formatDebtMoney(detail.paid_amount, detail.currency)}
-                  </DiscreetValue>{" "}
-                  de{" "}
-                  <DiscreetValue>
-                    {formatDebtMoney(detail.principal_amount, detail.currency)}
-                  </DiscreetValue>
-                </p>
-              </div>
-
-              <div className="grid gap-2 text-sm text-text-secondary sm:min-w-64">
-                <DebtDetailInfoRow
-                  label="Persona"
-                  value={detail.person_label ?? "Sin persona vinculada"}
-                />
-                <DebtDetailInfoRow label="Inicio" value={detail.opened_label} />
-                <DebtDetailInfoRow
-                  label="Vencimiento"
-                  value={detail.due_label ?? "Sin fecha"}
-                />
-                <DebtDetailInfoRow
-                  label="Ultimo pago"
-                  value={detail.last_payment_label ?? "Sin pagos"}
-                />
-              </div>
-            </div>
-
-            <div className="mt-5">
-              <div className="flex items-center justify-between gap-3 text-xs text-text-muted">
-                <span>Progreso pagado</span>
-                <span>{detail.progress}%</span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-progress-track">
-                <div
-                  className="h-full rounded-full bg-progress-fill"
-                  style={{ width: `${detail.progress}%` }}
-                />
-              </div>
-            </div>
-          </section>
-
-          {detail.installment_label ? (
-            <div className="rounded-lg border border-border bg-bg-surface px-4 py-3 text-sm text-text-secondary">
-              Calendario configurado:{" "}
-              <span className="font-medium text-text">{detail.installment_label}</span>
-            </div>
-          ) : null}
-
-          {detail.installments.length > 0 ? (
-            <div className="rounded-lg border border-border bg-bg-surface px-4 py-3 text-sm text-text-secondary">
-              Calendario registrado:{" "}
-              <span className="font-medium text-text">
-                {detail.installments.length} cuotas -{" "}
-                <DiscreetValue>
-                  {formatDebtMoney(detail.schedule_pending_amount, detail.currency)}
-                </DiscreetValue>{" "}
-                pendientes
-              </span>
-            </div>
-          ) : null}
-
-          {detail.schedule_warning ? (
-            <div className="rounded-lg border border-warning-subtle bg-warning-subtle/45 px-4 py-3 text-sm leading-6 text-text-secondary">
-              {detail.schedule_warning}
-            </div>
-          ) : null}
-
-          <div className="rounded-lg border border-brand-subtle bg-brand-subtle/35 px-4 py-3 text-sm leading-6 text-text-secondary">
-            Este detalle muestra la deuda y pagos confirmados. Registrar un pago
-            reduce la deuda, concilia sus cuotas y solo toca cuenta si eliges una
-            cuenta en el flujo Core.
-          </div>
-
-          <div className="flex flex-wrap gap-2 border-y border-border py-4">
-            <Button
-              variant="secondary"
-              icon={<HandCoins className="h-4 w-4" />}
-              disabled={!canRegisterPayment}
-              onClick={() => onRegisterPayment(detail)}
-            >
-              {detail.direction === "i_owe" ? "Registrar pago" : "Registrar devolucion"}
-            </Button>
-          </div>
-
-          <section>
-            <div className="flex items-center gap-2">
-              <CalendarDays className="h-4 w-4 text-text-muted" />
-              <h3 className="font-heading text-base font-semibold tracking-normal text-text">
-                Cuotas
-              </h3>
-            </div>
-
-            {detail.installments.length === 0 ? (
-              <div className="mt-3 rounded-lg border border-dashed border-border bg-bg-surface px-4 py-5 text-sm text-text-secondary">
-                Aun no hay calendario de cuotas para esta deuda.
-              </div>
-            ) : (
-              <div className="mt-3 divide-y divide-border rounded-lg border border-border bg-bg-primary">
-                {detail.installments.map((installment) => (
-                  <div
-                    key={installment.id}
-                    className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone={installment.status_tone}>
-                          {installment.status_label}
-                        </Badge>
-                        <span className="text-sm text-text-secondary">
-                          Cuota {installment.number} - {installment.due_label}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-sm text-text-muted">
-                        {installment.movement_label}. Esperado:{" "}
-                        <DiscreetValue>
-                          {installment.expected_amount_label}
-                        </DiscreetValue>
-                      </p>
-                    </div>
-                    <div className="text-left sm:text-right">
-                      <p className="font-heading text-lg font-semibold text-text">
-                        <DiscreetValue>
-                          {installment.pending_amount_label}
-                        </DiscreetValue>
-                      </p>
-                      <p className="mt-1 text-xs text-text-muted">
-                        pendiente de cuota
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-
-          <section>
-            <div className="flex items-center gap-2">
-              <History className="h-4 w-4 text-text-muted" />
-              <h3 className="font-heading text-base font-semibold tracking-normal text-text">
-                Historial
-              </h3>
-            </div>
-
-            {detail.history.length === 0 ? (
-              <div className="mt-3 rounded-lg border border-dashed border-border bg-bg-surface px-4 py-5 text-sm text-text-secondary">
-                Aun no hay pagos registrados para esta deuda.
-              </div>
-            ) : (
-              <div className="mt-3 divide-y divide-border rounded-lg border border-border bg-bg-primary">
-                {detail.history.map((payment) => (
-                  <div
-                    key={payment.id}
-                    className="grid gap-3 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone="success">{payment.type_label}</Badge>
-                        <span className="text-sm text-text-secondary">
-                          {payment.paid_label}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-sm text-text-muted">
-                        {payment.movement_label} - {payment.source_label}
-                      </p>
-                      <p className="mt-1 text-xs text-text-muted">
-                        {payment.allocation_label}
-                      </p>
-                    </div>
-                    <div className="text-left sm:text-right">
-                      <p className="font-heading text-lg font-semibold text-text">
-                        {payment.amount_label}
-                      </p>
-                      <p className="mt-1 text-xs text-text-muted">
-                        {payment.movement_id ? "Movimiento vinculado" : "Sin movimiento"}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DebtDetailInfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-b border-border py-2 last:border-b-0">
-      <span className="text-text-muted">{label}</span>
-      <span className="truncate font-medium text-text">{value}</span>
-    </div>
-  );
-}
-
-function DebtPaymentModal({
-  item,
-  initialAmount,
-  installmentNumber,
-  onClose,
-  onSaved,
-}: {
-  item: DebtViewItem;
-  initialAmount?: number;
-  installmentNumber?: number;
-  onClose: () => void;
-  onSaved: () => void | Promise<void>;
-}) {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [accountsState, setAccountsState] = useState<LoadState>("loading");
-  const [accountId, setAccountId] = useState("");
-  const [amount, setAmount] = useState(
-    formatInputMoney(
-      Math.min(
-        item.current_balance,
-        initialAmount && initialAmount > 0
-          ? initialAmount
-          : item.current_balance
-      )
-    )
-  );
-  const [paidDate, setPaidDate] = useState(todayInputDate());
-  const [note, setNote] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let active = true;
-
-    async function loadAccounts() {
-      setAccountsState("loading");
-      try {
-        const response = await listDebtPaymentAccounts();
-        if (!active) return;
-        setAccounts(response.accounts);
-        setAccountsState("ready");
-      } catch {
-        if (!active) return;
-        setAccountsState("error");
-      }
-    }
-
-    void loadAccounts();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const matchingAccounts = useMemo(
-    () => accounts.filter((account) => account.currency === item.currency),
-    [accounts, item.currency]
-  );
-  const selectedAccount =
-    matchingAccounts.find((account) => account.id === accountId) ?? null;
-  const numericAmount = Number(amount);
-  const canSubmit =
-    Number.isFinite(numericAmount) &&
-    numericAmount > 0 &&
-    numericAmount <= item.current_balance;
-  const isPayment = item.direction === "i_owe";
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!canSubmit || submitting) return;
-
-    setSubmitting(true);
-    setError(null);
-
-    const payload: CreateDebtPaymentPayload = {
-      amount: numericAmount,
-      account_id: accountId || null,
-      paid_at: toLocalNoonIso(paidDate),
-      note: note.trim() || null,
-    };
-
-    try {
-      await createDebtPayment(item.id, payload);
-      await onSaved();
-    } catch (caught) {
-      setError(toUiError(caught));
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-modal flex items-end justify-center bg-black/35 px-3 py-4 sm:items-center">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="debt-payment-title"
-        className="max-h-[92vh] w-full max-w-xl overflow-y-auto rounded-xl border border-border bg-bg-surface-raised shadow-xl"
-      >
-        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-          <div>
-            <p className="text-xs font-medium text-text-muted">
-              {installmentNumber
-                ? `Cuota ${installmentNumber}`
-                : isPayment
-                ? "Pago de deuda"
-                : "Devolucion recibida"}
-            </p>
-            <h2
-              id="debt-payment-title"
-              className="font-heading text-xl font-semibold tracking-normal text-text"
-            >
-              {item.title}
-            </h2>
-            <p className="mt-1 text-sm text-text-secondary">
-              Pendiente:{" "}
-              <DiscreetValue>
-                {formatDebtMoney(item.current_balance, item.currency)}
-              </DiscreetValue>
-            </p>
-          </div>
-          <button
-            type="button"
-            aria-label="Cerrar modal"
-            className="rounded-md p-2 text-text-muted hover:bg-bg-surface hover:text-text"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <form className="space-y-5 px-5 py-5" onSubmit={handleSubmit}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FieldShell
-              label={isPayment ? "Monto pagado" : "Monto recibido"}
-              htmlFor="debt-payment-amount"
-              error={
-                numericAmount > item.current_balance
-                  ? "No puede superar el saldo pendiente."
-                  : undefined
-              }
-            >
-              <Input
-                id="debt-payment-amount"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                inputMode="decimal"
-                type="number"
-                min="0.01"
-                max={item.current_balance}
-                step="0.01"
-              />
-            </FieldShell>
-
-            <FieldShell label="Fecha" htmlFor="debt-payment-date">
-              <Input
-                id="debt-payment-date"
-                value={paidDate}
-                onChange={(event) => setPaidDate(event.target.value)}
-                type="date"
-              />
-            </FieldShell>
-          </div>
-
-          <FieldShell
-            label={isPayment ? "Cuenta desde donde pagaste" : "Cuenta donde recibiste"}
-            htmlFor="debt-payment-account"
-            hint="Puedes dejarlo sin cuenta si solo quieres reducir la deuda por ahora."
-          >
-            <Select
-              id="debt-payment-account"
-              value={accountId}
-              onChange={(event) => setAccountId(event.target.value)}
-              disabled={accountsState === "loading"}
-            >
-              <option value="">
-                {accountsState === "loading"
-                  ? "Cargando cuentas..."
-                  : "Sin cuenta por ahora"}
-              </option>
-              {matchingAccounts.map((account) => (
-                <option key={account.id} value={account.id}>
-                  {account.name} - {formatDebtMoney(account.current_balance, item.currency)}
-                </option>
-              ))}
-            </Select>
-          </FieldShell>
-
-          {accountsState === "error" ? (
-            <div className="rounded-lg border border-warning-subtle bg-warning-subtle/55 px-4 py-3 text-sm text-text-secondary">
-              No pude cargar tus cuentas. Igual puedes registrar el pago sin
-              cuenta y asignarla despues.
-            </div>
-          ) : null}
-
-          <FieldShell label="Nota" htmlFor="debt-payment-note" hint="Opcional.">
-            <Input
-              id="debt-payment-note"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder={isPayment ? "Ej. Pague cuota de junio" : "Ej. Ana me devolvio"}
-              maxLength={180}
-            />
-          </FieldShell>
-
-          <div className="rounded-lg border border-brand-subtle bg-brand-subtle/35 px-4 py-3 text-sm leading-6 text-text-secondary">
-            {selectedAccount ? (
-              <>
-                Manzana reducira la deuda y actualizara el saldo de{" "}
-                <span className="font-medium text-text">{selectedAccount.name}</span>{" "}
-                por Core.
-              </>
-            ) : (
-              <>
-                Manzana reducira la deuda. Como no elegiste cuenta, no tocara
-                saldos de cuentas.
-              </>
-            )}
-            <p className="mt-2">
-              Si hay cuotas abiertas, Core aplica el monto primero a la mas
-              antigua y continua con las siguientes.
-            </p>
-          </div>
-
-          {error ? (
-            <div className="rounded-lg border border-error-subtle bg-error-subtle/60 px-4 py-3 text-sm text-error">
-              {error}
-            </div>
-          ) : null}
-
-          <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-end">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" loading={submitting} disabled={!canSubmit}>
-              {isPayment ? "Guardar pago" : "Guardar devolucion"}
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-function CreateDebtModal({
-  onClose,
-  onCreated,
-}: {
-  onClose: () => void;
-  onCreated: () => void;
-}) {
-  const [direction, setDirection] = useState<DebtDirection>("i_owe");
-  const [kind, setKind] = useState<DebtKind>("personal");
-  const [name, setName] = useState("");
-  const [relatedPersonName, setRelatedPersonName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [currency, setCurrency] = useState<"PEN" | "USD">("PEN");
-  const [dueDate, setDueDate] = useState("");
-  const [installmentCount, setInstallmentCount] = useState("");
-  const [installmentAmount, setInstallmentAmount] = useState("");
-  const [interestNotes, setInterestNotes] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const numericAmount = Number(amount);
-  const hasInstallments = Boolean(installmentCount);
-  const canSubmit =
-    name.trim().length > 0 &&
-    Number.isFinite(numericAmount) &&
-    numericAmount > 0 &&
-    (!hasInstallments || Boolean(dueDate));
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!canSubmit || submitting) return;
-
-    setSubmitting(true);
-    setError(null);
-
-    const payload: CreateDebtPayload = {
-      direction,
-      kind,
-      name: name.trim(),
-      related_person_name: relatedPersonName.trim() || null,
-      principal_amount: numericAmount,
-      currency,
-      due_date: dueDate || null,
-      next_payment_date: dueDate || null,
-      installment_count: installmentCount ? Number(installmentCount) : null,
-      installment_amount: installmentAmount ? Number(installmentAmount) : null,
-      interest_notes: interestNotes.trim() || null,
-    };
-
-    try {
-      await createDebt(payload);
-      onCreated();
-    } catch (caught) {
-      setError(toUiError(caught));
-      setSubmitting(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-modal flex items-end justify-center bg-black/35 px-3 py-4 sm:items-center">
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="create-debt-title"
-        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-border bg-bg-surface-raised shadow-xl"
-      >
-        <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
-          <div>
-            <p className="text-xs font-medium text-text-muted">Registro manual</p>
-            <h2
-              id="create-debt-title"
-              className="font-heading text-xl font-semibold tracking-normal text-text"
-            >
-              Crear deuda
-            </h2>
-          </div>
-          <button
-            type="button"
-            aria-label="Cerrar modal"
-            className="rounded-md p-2 text-text-muted hover:bg-bg-surface hover:text-text"
-            onClick={onClose}
-          >
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-
-        <form className="space-y-5 px-5 py-5" onSubmit={handleSubmit}>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {debtDirections.map((option) => (
-              <button
-                key={option}
-                type="button"
-                className={cn(
-                  "rounded-lg border px-4 py-3 text-left transition",
-                  direction === option
-                    ? "border-brand bg-brand-subtle text-text"
-                    : "border-border bg-bg-surface-raised text-text-secondary hover:border-border-strong"
-                )}
-                onClick={() => setDirection(option)}
-              >
-                <span className="font-medium">{debtDirectionLabels[option]}</span>
-                <span className="mt-1 block text-xs text-text-muted">
-                  {option === "i_owe"
-                    ? "Algo que tengo pendiente por pagar."
-                    : "Alguien tiene pendiente devolverme."}
-                </span>
-              </button>
-            ))}
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FieldShell label="Tipo" htmlFor="debt-kind">
-              <Select
-                id="debt-kind"
-                value={kind}
-                onChange={(event) => setKind(event.target.value as DebtKind)}
-              >
-                {debtKinds.map((option) => (
-                  <option key={option} value={option}>
-                    {debtKindLabels[option]}
-                  </option>
-                ))}
-              </Select>
-            </FieldShell>
-
-            <FieldShell label="Moneda" htmlFor="debt-currency">
-              <Select
-                id="debt-currency"
-                value={currency}
-                onChange={(event) => setCurrency(event.target.value as "PEN" | "USD")}
-              >
-                <option value="PEN">Soles</option>
-                <option value="USD">Dolares</option>
-              </Select>
-            </FieldShell>
-          </div>
-
-          <FieldShell
-            label="Nombre"
-            htmlFor="debt-name"
-            hint="Ej. Prestamo con Luis, Tarjeta BCP o Laptop en cuotas."
-          >
-            <Input
-              id="debt-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder="Ej. Prestamo con Luis"
-              maxLength={120}
-            />
-          </FieldShell>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <FieldShell
-              label="Persona o entidad"
-              htmlFor="debt-person"
-              hint="Opcional, ayuda a agrupar saldos por persona."
-            >
-              <Input
-                id="debt-person"
-                value={relatedPersonName}
-                onChange={(event) => setRelatedPersonName(event.target.value)}
-                placeholder="Luis, BCP, tienda..."
-                maxLength={120}
-              />
-            </FieldShell>
-
-            <FieldShell label="Monto pendiente" htmlFor="debt-amount">
-              <Input
-                id="debt-amount"
-                value={amount}
-                onChange={(event) => setAmount(event.target.value)}
-                placeholder="150.00"
-                inputMode="decimal"
-                type="number"
-                min="0.01"
-                step="0.01"
-              />
-            </FieldShell>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-3">
-            <FieldShell
-              label="Fecha proxima"
-              htmlFor="debt-due-date"
-              hint={
-                hasInstallments
-                  ? "Necesaria para crear el calendario mensual de cuotas."
-                  : "Opcional."
-              }
-              error={
-                hasInstallments && !dueDate
-                  ? "Agrega la primera fecha de cuota."
-                  : undefined
-              }
-            >
-              <Input
-                id="debt-due-date"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-                type="date"
-              />
-            </FieldShell>
-
-            <FieldShell label="Cuotas" htmlFor="debt-installments" hint="Opcional.">
-              <Input
-                id="debt-installments"
-                value={installmentCount}
-                onChange={(event) => setInstallmentCount(event.target.value)}
-                type="number"
-                min="1"
-                step="1"
-                placeholder="6"
-              />
-            </FieldShell>
-
-            <FieldShell label="Monto cuota" htmlFor="debt-installment-amount" hint="Opcional.">
-              <Input
-                id="debt-installment-amount"
-                value={installmentAmount}
-                onChange={(event) => setInstallmentAmount(event.target.value)}
-                type="number"
-                min="0.01"
-                step="0.01"
-                placeholder="50.00"
-              />
-            </FieldShell>
-          </div>
-
-          <FieldShell label="Nota" htmlFor="debt-notes" hint="Opcional.">
-            <textarea
-              id="debt-notes"
-              value={interestNotes}
-              onChange={(event) => setInterestNotes(event.target.value)}
-              maxLength={300}
-              placeholder="Interes, acuerdo, contexto..."
-              className="min-h-24 w-full rounded-lg border border-border bg-bg-surface-raised px-3 py-3 text-sm text-text shadow-xs transition placeholder:text-text-muted focus:border-border-focus focus:outline-none focus:ring-2 focus:ring-brand-subtle"
-            />
-          </FieldShell>
-
-          <div className="rounded-lg border border-brand-subtle bg-brand-subtle/35 px-4 py-3 text-sm leading-6 text-text-secondary">
-            Crear esta deuda no mueve saldos. Cuando registres un pago, Manzana
-            reducira la deuda y actualizara cuentas solo si corresponde.
-          </div>
-
-          {error ? (
-            <div className="rounded-lg border border-error-subtle bg-error-subtle/60 px-4 py-3 text-sm text-error">
-              {error}
-            </div>
-          ) : null}
-
-          <div className="flex flex-col-reverse gap-3 border-t border-border pt-5 sm:flex-row sm:justify-end">
-            <Button type="button" variant="ghost" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button type="submit" loading={submitting} disabled={!canSubmit}>
-              Guardar deuda
-            </Button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }
 
 function toUiError(error: unknown): string {
   if (error instanceof ApiClientError) return error.message;
   if (error instanceof Error) return error.message;
-  return "Ocurrio un error inesperado.";
-}
-
-function formatInputMoney(value: number): string {
-  return value.toFixed(2).replace(/\.00$/, "");
-}
-
-function todayInputDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
-
-function toLocalNoonIso(dateValue: string): string {
-  const fallback = new Date();
-  const date = dateValue ? new Date(`${dateValue}T12:00:00`) : fallback;
-
-  if (Number.isNaN(date.getTime())) return fallback.toISOString();
-  return date.toISOString();
+  return "Ocurrió un error inesperado.";
 }

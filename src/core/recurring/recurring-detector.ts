@@ -316,7 +316,7 @@ function getConfidence(params: {
   const amountScore =
     params.amountVariationRatio <= 0.02
       ? 0.08
-      : params.amountVariationRatio <= 0.1
+      : params.amountVariationRatio <= 0.15
       ? 0.05
       : -0.08;
   const categoryScore = params.hasCategory ? 0.02 : 0;
@@ -337,7 +337,7 @@ function getAmountVariability(
   variationRatio: number
 ): RecurringAmountVariability {
   if (variationRatio <= 0.02) return "fixed";
-  if (variationRatio <= 0.1) return "estimated";
+  if (variationRatio <= 0.15) return "estimated";
   return "variable";
 }
 

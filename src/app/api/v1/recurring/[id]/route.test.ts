@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GET } from "./route";
+import { GET, PATCH } from "./route";
 
 const mocks = vi.hoisted(() => ({
   getApiAuth: vi.fn(),
@@ -27,8 +27,14 @@ vi.mock("@/data/repositories/accounts.repository", () => ({
 }));
 
 beforeEach(() => {
-  mocks.getApiAuth.mockReset();
-  mocks.getRecurringRuleById.mockReset();
+  Object.values(mocks).forEach((mock) => mock.mockReset());
+  mocks.createServiceClient.mockReturnValue({});
+  mocks.getApiAuth.mockResolvedValue({
+    client: {},
+    userId: "22222222-2222-4222-8222-222222222222",
+  });
+  mocks.getRecurringRuleById.mockResolvedValue(ruleFixture());
+  mocks.updateRecurringRule.mockResolvedValue(ruleFixture());
 });
 
 describe("recurring detail route", () => {
@@ -91,10 +97,114 @@ describe("recurring detail route", () => {
   });
 });
 
+describe("PATCH /api/v1/recurring/[id]", () => {
+  it("camino feliz: una regla variable puede quedar sin estimación", async () => {
+    const response = await PATCH(
+      patchRequest({
+        amount_variability: "variable",
+        expected_amount: null,
+      }),
+      routeContext()
+    );
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateRecurringRule).toHaveBeenCalledWith(
+      expect.anything(),
+      "22222222-2222-4222-8222-222222222222",
+      "11111111-1111-4111-8111-111111111111",
+      expect.objectContaining({
+        amountVariability: "variable",
+        expectedAmount: null,
+      })
+    );
+  });
+
+  it("sin sesión devuelve 401", async () => {
+    mocks.getApiAuth.mockResolvedValue(null);
+
+    const response = await PATCH(
+      patchRequest({ name: "Internet hogar" }),
+      routeContext()
+    );
+
+    expect(response.status).toBe(401);
+    expect(mocks.updateRecurringRule).not.toHaveBeenCalled();
+  });
+
+  it("regla de otro usuario se oculta como 404, nunca 403", async () => {
+    mocks.getRecurringRuleById.mockResolvedValue(null);
+
+    const response = await PATCH(
+      patchRequest({ name: "Internet hogar" }),
+      routeContext()
+    );
+
+    expect(response.status).toBe(404);
+  });
+
+  it("validación: no permite fixed sin monto", async () => {
+    mocks.getRecurringRuleById.mockResolvedValue(
+      ruleFixture({
+        amount_variability: "variable",
+        expected_amount: null,
+      })
+    );
+
+    const response = await PATCH(
+      patchRequest({ amount_variability: "fixed" }),
+      routeContext()
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.updateRecurringRule).not.toHaveBeenCalled();
+  });
+
+  it("idempotencia natural: repetir el mismo PATCH conserva el resultado", async () => {
+    const first = await PATCH(
+      patchRequest({ name: "Internet hogar" }),
+      routeContext()
+    );
+    const replay = await PATCH(
+      patchRequest({ name: "Internet hogar" }),
+      routeContext()
+    );
+
+    expect(first.status).toBe(200);
+    expect(replay.status).toBe(200);
+    expect(mocks.updateRecurringRule).toHaveBeenCalledTimes(2);
+  });
+});
+
 function routeContext() {
   return {
     params: Promise.resolve({
       id: "11111111-1111-4111-8111-111111111111",
     }),
+  };
+}
+
+function patchRequest(body: unknown) {
+  return new Request(
+    "http://localhost/api/v1/recurring/11111111-1111-4111-8111-111111111111",
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  );
+}
+
+function ruleFixture(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "11111111-1111-4111-8111-111111111111",
+    user_id: "22222222-2222-4222-8222-222222222222",
+    status: "active",
+    name: "Internet",
+    expected_amount: 89,
+    amount_variability: "fixed",
+    currency: "PEN",
+    metadata: {},
+    occurrences: [],
+    ...overrides,
   };
 }

@@ -84,7 +84,7 @@ export function EditBoxDialog({
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
           <div className="flex items-baseline justify-between rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm">
             <span className="text-text-secondary">Cuenta: {box.account_name}</span>
-            <MoneyText value={box.current_balance} />
+            <MoneyText value={box.current_balance} currency={box.currency} />
           </div>
           <FieldShell label="Nombre" htmlFor="edit-box-name" error={form.formState.errors.name?.message}>
             <Input id="edit-box-name" {...form.register("name")} />

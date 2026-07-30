@@ -1,8 +1,8 @@
 // AC-DINERO-01, AC-CUENTAS-01/16 (`09` §4, `24` §6, §17): GET /api/v1/money
 // devuelve las cuatro capas con el ejemplo canonico, sin sesion da 401, y no
 // crece en numero de consultas con el volumen de cuentas/cajas (WEB-D193).
-// Sin cuerpo de entrada, "validacion" e "idempotencia" (51 §6.2) no aplican
-// a un GET sin parametros: no se inventan casos que no prueban nada.
+// W-11 modifica la lectura para incorporar cuotas de deuda, por lo que este
+// fichero cubre expresamente los cinco casos de `51` §6.2.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GET } from "./route";
 
@@ -122,6 +122,58 @@ describe("GET /api/v1/money", () => {
     expect(body.data.operational_free_money).toBe(170);
   });
 
+  it("no suma PEN y USD: calcula las cuatro capas por moneda", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "u1" });
+    mocks.getActiveAccounts.mockResolvedValue([
+      account({ id: "pen", currency: "PEN", current_balance: 100 }),
+      account({ id: "usd", currency: "USD", current_balance: 100 }),
+    ]);
+    mocks.getActiveBoxes.mockResolvedValue([
+      box({ id: "usd-box", account_id: "usd", current_balance: 20 }),
+    ]);
+    mocks.listUpcomingCommitments.mockResolvedValue([
+      {
+        id: "pen-rec",
+        title: "Internet",
+        amount: 30,
+        currency: "PEN",
+        due_at: "2026-08-01",
+        kind: "recurring",
+        linked_box_id: null,
+      },
+      {
+        id: "usd-rec",
+        title: "Servicio USD",
+        amount: 40,
+        currency: "USD",
+        due_at: "2026-08-02",
+        kind: "recurring",
+        linked_box_id: null,
+      },
+    ]);
+    mocks.listDebtInstallmentCommitments.mockResolvedValue([]);
+
+    const response = await GET(new Request("http://localhost/api/v1/money"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.data.base_currency).toBe("PEN");
+    expect(body.data).toMatchObject({
+      total_balance: 100,
+      separated_in_boxes: 0,
+      free_in_accounts: 100,
+      upcoming_uncovered_commitments: 30,
+      operational_free_money: 70,
+    });
+    expect(body.data.currency_layers.USD).toMatchObject({
+      total_balance: 100,
+      separated_in_boxes: 20,
+      free_in_accounts: 80,
+      upcoming_uncovered_commitments: 40,
+      operational_free_money: 40,
+    });
+  });
+
   it("sin sesion: 401", async () => {
     mocks.getApiAuth.mockResolvedValue(null);
 
@@ -130,6 +182,52 @@ describe("GET /api/v1/money", () => {
     expect(response.status).toBe(401);
     const body = await response.json();
     expect(body.ok).toBe(false);
+  });
+
+  it("coleccion propia: no acepta un id ajeno ni expone un recurso individual", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "u1" });
+    mocks.getActiveAccounts.mockResolvedValue([]);
+    mocks.getActiveBoxes.mockResolvedValue([]);
+    mocks.listUpcomingCommitments.mockResolvedValue([]);
+    mocks.listDebtInstallmentCommitments.mockResolvedValue([]);
+
+    const response = await GET(new Request("http://localhost/api/v1/money"));
+
+    expect(response.status).toBe(200);
+    expect(mocks.getActiveAccounts).toHaveBeenCalledWith(expect.anything(), "u1");
+    expect(mocks.listDebtInstallmentCommitments).toHaveBeenCalledWith(
+      expect.anything(),
+      "u1",
+      30
+    );
+  });
+
+  it("validacion: rechaza parametros no documentados", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "u1" });
+
+    const response = await GET(
+      new Request("http://localhost/api/v1/money?user_id=otro")
+    );
+
+    expect(response.status).toBe(400);
+    expect(mocks.getActiveAccounts).not.toHaveBeenCalled();
+  });
+
+  it("idempotencia de lectura: repetir GET devuelve lo mismo y no escribe", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "u1" });
+    mocks.getActiveAccounts.mockResolvedValue([]);
+    mocks.getActiveBoxes.mockResolvedValue([]);
+    mocks.listUpcomingCommitments.mockResolvedValue([]);
+    mocks.listDebtInstallmentCommitments.mockResolvedValue([]);
+
+    const first = await GET(new Request("http://localhost/api/v1/money"));
+    const second = await GET(new Request("http://localhost/api/v1/money"));
+
+    const firstBody = await first.json();
+    const secondBody = await second.json();
+    expect(firstBody.data).toEqual(secondBody.data);
+    expect(mocks.getActiveAccounts).toHaveBeenCalledTimes(2);
+    expect(mocks.getActiveBoxes).toHaveBeenCalledTimes(2);
   });
 
   it("AC-CUENTAS-16 (WEB-D193): el numero de consultas no crece con el numero de cuentas/cajas", async () => {

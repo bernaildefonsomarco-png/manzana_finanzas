@@ -2,6 +2,7 @@ import type {
   Account,
   CategoryId,
   DebtDirection,
+  DebtKind,
   Movement,
   RecurringAmountVariability,
   RecurringCandidate,
@@ -9,35 +10,51 @@ import type {
   RecurringOccurrence,
   RecurringOccurrenceStatus,
   RecurringRule,
-  RecurringStatus,
 } from "@/shared/types/domain";
 
 export type RecurringRuleWithOccurrences = RecurringRule & {
   occurrences: RecurringOccurrence[];
 };
 
-export type DebtInstallmentCommitment = {
+export type UpcomingCommitment = {
   id: string;
   title: string;
-  amount: number;
+  amount: number | null;
   currency: "PEN" | "USD";
-  direction: DebtDirection;
   due_at: string;
-  kind: "debt";
-  linked_box_id: null;
-  debt_id: string;
-  installment_id: string;
+  kind: "recurring" | "debt";
+  linked_box_id: string | null;
+  linked_debt_id?: string | null;
+  recurring_rule_id?: string;
+  occurrence_id?: string | null;
+  presentation_state?: "upcoming" | "pending_confirmation" | "overdue";
+  presentation_label?: "Próximo" | "Pago pendiente" | "Vencido";
+  days_late?: number;
+  direction?: DebtDirection;
+  debt_id?: string;
+  debt_name?: string;
+  installment_id?: string;
+  installment_number?: number;
+  debt_kind?: DebtKind;
+  date_is_approximate?: boolean;
+  informal_agreement?: boolean;
 };
 
-export type UpcomingDashboardResponse = {
-  rules: RecurringRuleWithOccurrences[];
+export type UpcomingApiResponse = {
+  commitments: UpcomingCommitment[];
+  recurring_rules: RecurringRuleWithOccurrences[];
   candidates: RecurringCandidate[];
-  debt_installments: DebtInstallmentCommitment[];
+  horizon_days: number;
+  timezone: "America/Lima";
+};
+
+export type RecurringAccountsResponse = {
+  accounts: Account[];
 };
 
 export type CreateRecurringPayload = {
   name: string;
-  expected_amount: number;
+  expected_amount: number | null;
   amount_variability: RecurringAmountVariability;
   currency: "PEN" | "USD";
   frequency: RecurringFrequency;
@@ -46,9 +63,11 @@ export type CreateRecurringPayload = {
   default_account_id?: string | null;
 };
 
-export type UpdateRecurringPayload = Partial<CreateRecurringPayload> & {
-  status?: Extract<RecurringStatus, "active" | "paused">;
-};
+export type UpdateRecurringPayload = Partial<
+  Omit<CreateRecurringPayload, "currency">
+>;
+
+export type ConfirmRecurringCandidatePayload = Partial<CreateRecurringPayload>;
 
 export type MarkRecurringPaidPayload = {
   amount: number;
@@ -64,113 +83,89 @@ export type MarkRecurringPaidResponse = {
   idempotent: boolean;
 };
 
-export type RecurringRuleResponse = {
-  recurring_rule: RecurringRuleWithOccurrences;
+export type RecurringOccurrencesResponse = {
+  occurrences: RecurringOccurrence[];
 };
 
-export type DetectRecurringCandidatesPayload = {
-  lookback_days?: number;
-  limit?: number;
-};
+export type UpcomingSectionKey =
+  | "this_week"
+  | "later"
+  | "pending";
 
-export type DetectRecurringCandidatesResponse = {
-  result: {
-    detected: number;
-    ready_to_suggest: number;
-    inserted: number;
-    updated: number;
-    stored: number;
-    candidates: RecurringCandidate[];
-  };
-};
-
-export type ConfirmRecurringCandidatePayload = Partial<CreateRecurringPayload>;
-
-export type ConfirmRecurringCandidateResponse = {
-  candidate: RecurringCandidate;
-  recurring_rule: RecurringRuleWithOccurrences;
-};
-
-export type DiscardRecurringCandidateResponse = {
-  candidate: RecurringCandidate;
-};
-
-export type RecurringAccountsResponse = {
-  accounts: Account[];
-};
-
-export type UpcomingSummary = {
-  active_count: number;
-  overdue_count: number;
-  paused_count: number;
-  suggested_count: number;
-  monthly_estimate: number;
-};
-
-export type DebtInstallmentViewItem = {
-  id: string;
-  debt_id: string;
-  installment_id: string;
-  title: string;
-  amount: number;
-  currency: "PEN" | "USD";
-  direction: DebtDirection;
-  due_at: string;
-  due_label: string;
-  status_label: "Proxima" | "Vencida";
-  status_tone: "info" | "warning";
-  is_overdue: boolean;
-  can_register_payment: boolean;
-  payment_action_label: "Registrar pago" | "Registrar cobro";
-};
+export type UpcomingStatusTone =
+  | "neutral"
+  | "success"
+  | "warning"
+  | "error"
+  | "info"
+  | "debt";
 
 export type UpcomingViewItem = {
+  key: string;
   id: string;
-  occurrence_id: string | null;
   title: string;
-  amount: number;
+  discreet_title: string;
+  amount: number | null;
   currency: "PEN" | "USD";
-  frequency: RecurringFrequency;
-  cadence_label: string;
-  due_at: string | null;
+  due_at: string;
   due_label: string;
-  is_future: boolean;
-  status: RecurringStatus;
-  group: "active" | "overdue" | "paid" | "paused" | "suggested";
+  section: UpcomingSectionKey;
   status_label: string;
-  status_tone: "neutral" | "success" | "warning" | "error" | "info" | "debt";
-  category_id: CategoryId | null;
-  account_id: string | null;
+  status_tone: UpcomingStatusTone;
+  alert: boolean;
+  kind: "recurring" | "debt";
+  linked_box_id: string | null;
+  linked_box_label: string | null;
+  recurring_rule_id: string | null;
+  occurrence_id: string | null;
+  debt_id: string | null;
+  installment_id: string | null;
+  debt_kind?: DebtKind;
+  date_is_approximate?: boolean;
+  informal_agreement?: boolean;
   can_mark_paid: boolean;
-  payment_action_label: string;
-  rule: RecurringRuleWithOccurrences;
+  can_skip: boolean;
+  can_pause: boolean;
+  can_resume: boolean;
+  rule: RecurringRuleWithOccurrences | null;
 };
 
-export type RecurringDetailOccurrenceView = {
+export type UpcomingSections = Record<
+  UpcomingSectionKey,
+  UpcomingViewItem[]
+>;
+
+export type UpcomingSummary = {
+  month_totals: Record<"PEN" | "USD", number>;
+  month_count: number;
+  linked_box_count: number;
+  pending_count: number;
+};
+
+export type SuggestedCandidateViewModel = {
+  id: string;
+  title: string;
+  discreet_title: string;
+  evidence_label: string;
+  amount: number | null;
+  currency: "PEN" | "USD";
+  amount_label: string;
+  frequency: RecurringFrequency;
+  frequency_label: string;
+  amount_variability: RecurringAmountVariability;
+  next_expected_date: string | null;
+  next_label: string;
+  category_id: CategoryId | null;
+};
+
+export type RecurringHistoryViewItem = {
   id: string;
   expected_date: string;
   date_label: string;
-  amount_label: string;
+  amount: number | null;
   status: RecurringOccurrenceStatus;
   status_label: string;
-  status_tone: "neutral" | "success" | "warning" | "error" | "info" | "debt";
-  paid_label: string | null;
+  status_tone: UpcomingStatusTone;
+  paid_at: string | null;
   paid_movement_id: string | null;
-  can_mark_paid: boolean;
-};
-
-export type RecurringDetailViewModel = {
-  id: string;
-  title: string;
-  amount_label: string;
-  cadence_label: string;
-  status_label: string;
-  status_tone: "neutral" | "success" | "warning" | "error" | "info" | "debt";
-  category_label: string | null;
-  account_id: string | null;
-  next_due_label: string;
-  next_due_at: string | null;
-  last_paid_label: string | null;
-  linked_debt: boolean;
-  timeline: RecurringDetailOccurrenceView[];
 };

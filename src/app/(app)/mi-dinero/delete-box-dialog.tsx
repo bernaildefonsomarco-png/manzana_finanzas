@@ -62,7 +62,7 @@ export function DeleteBoxDialog({
         </AlertDialogHeader>
         <div className="flex items-baseline justify-between rounded-lg border border-border bg-bg-surface px-3 py-2 text-sm">
           <span className="text-text-secondary">Saldo en la caja</span>
-          <MoneyText value={box.current_balance} />
+          <MoneyText value={box.current_balance} currency={box.currency} />
         </div>
         {mutation.error ? (
           <p role="alert" className="mt-3 text-sm text-error">

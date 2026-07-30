@@ -489,9 +489,26 @@ describe("POST /api/v1/movements — pago de deuda (pago_deuda, devolucion_recib
     mocks.getDebtById.mockResolvedValue(debtFixture());
     mocks.findDebtPaymentByIdempotencyKey.mockResolvedValueOnce(null);
     const committed = {
-      movement: { id: "88888888-8888-4888-8888-888888888888", type: "pago_deuda" },
+      movement: {
+        id: "88888888-8888-4888-8888-888888888888",
+        type: "pago_deuda",
+        account_origin_id: null,
+        account_destination_id: null,
+      },
       debt: debtFixture({ current_balance: 70 }),
-      payment: { id: "99999999-9999-4999-8999-999999999999", amount: 30 },
+      payment: {
+        id: "99999999-9999-4999-8999-999999999999",
+        debt_id: "77777777-7777-4777-8777-777777777777",
+        amount: 30,
+        currency: "PEN",
+        paid_at: "2026-07-14T19:20:00-05:00",
+        source: "dashboard_manual",
+        metadata: {
+          note: null,
+          installment_id: null,
+          installment_number: null,
+        },
+      },
       installment_allocations: [],
       allocation_policy: "oldest_open_due_date_first_v1",
       idempotent: false,

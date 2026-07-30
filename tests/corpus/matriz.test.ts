@@ -91,6 +91,12 @@ describe("generador de la matriz de trazabilidad", () => {
     // por `WEB-D202`/`WEB-D203` (dependen de `36`/`38`, o de interfaz que
     // este corte no construye), o abiertos desde antes de `W-10` sin prueba
     // dedicada (`AC-EMAIL-13`, `16`, `17`, `18`; `AC-PEND-03`, `12`, `14`).
+    // W-11 añadió veintiséis: `30` aporta diez `unidad` y cuatro
+    // `integracion` más un criterio explícitamente diferido; `31` aporta
+    // siete `unidad` y cinco `integracion`, con los límites restantes
+    // documentados en sus anotaciones de §20. No se presentan como
+    // verificados los criterios que exigen sesión real de usuario/navegador
+    // o un contrato aún no definido.
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 16,
@@ -98,11 +104,11 @@ describe("generador de la matriz de trazabilidad", () => {
       e2e: 7,
       presupuesto: 2,
       contenido: 1,
-      integracion: 34,
-      unidad: 56,
+      integracion: 43,
+      unidad: 73,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(191);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(440);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(217);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(415);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {

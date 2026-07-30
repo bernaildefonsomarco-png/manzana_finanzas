@@ -29,7 +29,7 @@ export type DebtCreationCommandResult = {
 export type DebtCreationCommitInput = {
   debtId: string;
   command: CreateDebtCommand;
-  normalizedRelatedPersonName: string;
+  normalizedRelatedPersonName: string | null;
   installments: Array<{
     id: string;
     user_id: string;
@@ -94,9 +94,9 @@ export class DebtCreationCommandHandler {
       const result = await this.port.commit({
         debtId,
         command,
-        normalizedRelatedPersonName: normalizePersonName(
-          command.payload.related_person_name,
-        ),
+        normalizedRelatedPersonName: command.payload.related_person_name
+          ? normalizePersonName(command.payload.related_person_name)
+          : null,
         installments,
         movementCommit,
         outboxEvents,

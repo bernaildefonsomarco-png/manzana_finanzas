@@ -6,9 +6,8 @@ import { DebtsScreen } from "@/features/debts/debts-screen";
 import { useLegacyNavigate, useLegacySignOut } from "@/shared/legacy-nav/legacy-view-routes";
 import { parseDebtScreenIntent } from "@/shared/routing/debt-intent";
 
-// `DebtsScreen` ya muestra el detalle como panel sobre su propio listado
-// (`52`, condenado); montarla aquí con la intención resuelta le da a ese
-// panel una URL propia y navegable (`10` §4), sin duplicar su lógica.
+// El detalle reconstruido vive en el panel accesible de `DebtsScreen`.
+// Esta ruta conserva una URL navegable sin duplicar su estado ni sus acciones.
 export default function DeudaDetallePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
@@ -28,6 +27,7 @@ export default function DeudaDetallePage({ params }: { params: Promise<{ id: str
     <DebtsScreen
       debtIntent={debtIntent}
       onDebtIntentConsumed={() => router.replace(`/deudas/${id}`)}
+      onDebtDetailClose={() => router.replace("/deudas")}
       onNavigate={onNavigate}
       onSignOut={onSignOut}
     />

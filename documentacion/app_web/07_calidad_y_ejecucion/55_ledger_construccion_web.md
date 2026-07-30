@@ -201,13 +201,16 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-10` cerraron `G1` y `G2`. Ninguno
-tiene criterios de `G3` propios.
+**La construcción avanza.** `W-01` a `W-11` cerraron `G1` y `G2`. Ninguno
+tiene criterios de `G3` propios. En `W-11`, “verificado” incluye la parte
+`TEST` que el criterio realmente cubre; las mitades `USER` sin sesión y los
+criterios explícitamente diferidos siguen marcados como abiertos en sus
+documentos.
 
 | | |
 |---|---|
-| Cortes cerrados | 10 de 20 |
-| Criterios `verificado` | 109 de 708 |
+| Cortes cerrados | 11 de 20 |
+| Criterios `verificado` | 134 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -1405,6 +1408,126 @@ corte.
   casos de `51§6.2` que le faltaban a una ruta preexistente.
 - `03_decisiones_producto_web.md`: `WEB-D202` (alcance de `27`/`28`/`29`),
   `WEB-D203` (diferir la capa de interfaz) (nuevas).
+
+---
+
+## W-11 — Pagos que vienen y Deudas sin doble registro
+
+**Cerrado:** 2026-07-29
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-29, con `npm run matriz:generar`; hash del
+commit sustantivo: `PENDIENTE` (hash real registrado en el commit de seguimiento
+de este cierre).
+
+### Qué se entregó
+
+El módulo `30` quedó conectado a un motor de ocurrencias que materializa el
+horizonte desde un job diario idempotente, sin generar filas al crear o editar
+una regla. `GET /api/v1/upcoming` combina recurrentes y cuotas de deuda con
+un horizonte civil fijo de 30 días, conserva vencidos fuera de ese horizonte,
+deduplica una cuota ligada a una regla y consume una caja virtual una sola vez
+por fecha. Las reglas variables no inventan una estimación: solo descuentan si
+el monto esperado fue aceptado explícitamente. `mark-paid`, pausa/reanudación,
+omisión, candidatos y reversión pasan por Core especializado; la misma llave
+de idempotencia con una petición distinta devuelve conflicto.
+
+El módulo `31` recibió creación atómica de deuda, preview y registro
+oldest-first, lifecycle atómico de cuotas (cerrar, condonar, reabrir,
+reprogramar y omitir), historial de pagos sin recorte silencioso, y reversión
+especializada de `pago_deuda` con auditoría/outbox. La reversión de una deuda
+condonada exige reabrirla antes. Las pantallas condenadas de Recurrentes,
+Pagos que vienen y Deudas fueron reemplazadas enteras según `WEB-D164`; el
+detalle de deuda separa `Debes`/`Me deben`, estados de cuota y pagos
+revertidos.
+
+La capa de dinero ahora conserva PEN como base y muestra USD en una capa
+paralela, sin conversión implícita (`WEB-D212`). La base impone la
+idempotencia y unicidad normalizada de reglas, los checks de creación y el
+acceso service-only del worker. `tests/rls/` cerró seis archivos y 18 pruebas
+específicas del corte y la suite RLS completa cerró 12 archivos y 87 pruebas
+contra el Supabase local; cada endpoint de usuario nuevo o modificado tiene
+los cinco casos de `51` §6.2 en su fichero de ruta (las acciones `pause`/`resume`
+comparten un fichero explícito de cinco casos por acción). Los jobs internos
+no tienen sesión ni recurso de otro usuario por diseño y conservan sus
+pruebas de autenticación de cron/idempotencia específicas.
+`npx tsc --noEmit`, `npx eslint .` y `npm run build` pasan. `npm test` termina
+con 271/272 archivos y 1.656/1.657 pruebas por el timeout frío intermitente de
+`src/app/api/v1/movements/route.test.ts` (`AC-API-04`), conocido desde `W-09`;
+el archivo aislado pasa con `--testTimeout=20000`.
+
+### Qué sorprendió
+
+La primera prueba de contrato encontró que el `CHECK` de creación de
+Recurrentes aceptaba una llave sin hash (Postgres trata una expresión con
+`NULL` como desconocida). Se revirtió la implementación, la prueba RLS falló
+en el caso incompleto y se restauró (`RUL-HECHO-02`); el check quedó escrito
+con las dos ramas explícitas y la prueba negativa.
+
+La segunda: la rama idempotente de `pago_recurrente` comparaba solo la llave y
+el estado mutable de la ocurrencia. Un retry con el mismo evento podía
+rechazar una ocurrencia ya pagada, y la misma llave con otro monto podía
+reutilizar el resultado. La prueba de monto distinto falló antes del cambio;
+ahora se compara la huella completa de la petición.
+
+La tercera: el worker diario cortaba silenciosamente a 50 usuarios. El
+reconocimiento de la ruta y su prueba HECHO-02 demostraron que un usuario
+posterior no recibía ocurrencias; el RPC service-only enumera todos por
+defecto y solo acepta `max_users` como límite operativo explícito.
+
+La cuarta: revertir un pago después de condonar la deuda reconstruía un saldo
+inventado. La prueba negativa, primero contra la implementación sin guarda,
+falló como debía; la transacción ahora exige `reopen` y no toca ninguna fila
+si la deuda está `cancelled`.
+
+La quinta: había límites `.limit(40)`/`.limit(80)` sin cursor consumidor en
+cuotas e historial de pagos. Quitarlos evita ocultar filas antiguas; `WEB-D217`
+deja la paginación real pendiente de un contrato de cursor. La revisión de
+monedas también encontró que las cinco cifras de dinero sumaban PEN y USD como
+si fueran una unidad; `WEB-D212` las separa.
+
+### Qué quedó abierto
+
+`AC-REC-04` tiene camino feliz de ruta/Core, pero todavía no una prueba RLS
+completa de creación desde una ocurrencia esperada; `AC-REC-14` carece de la
+integración dedicada de correo. `AC-DEUDAS-07` sigue bloqueado por
+`WEB-D208`: no existe un único commit compuesto para caja + deuda, ni UI de
+vinculación/selección automática. `AC-DEUDAS-10`, `11`, `12`, `17` no tienen
+aún las pruebas negativas/globales que exige su redacción. `AC-DEUDAS-14`
+queda abierto por separado: falta una prueba que combine una tarjeta como
+deuda con las capas de `/money`; no se confunde ese vacío con el bloqueo
+transaccional de `WEB-D208`.
+
+Las mitades `USER` de `AC-REC-06`, `08`, `10` y de `AC-DEUDAS-03`, `05`,
+`06`, `16` no cierran porque no hubo sesión real de navegador. `AC-REC-08`
+conserva la prueba de umbral, pero la validación visual queda abierta.
+`WEB-D205` mantiene fuera de V1 el cálculo monetario de intereses y
+renegociación. `WEB-D217` deja pendiente el cursor de historial; también
+quedan sin consumidor URL/cursor de detalle, historial de movimientos de una
+ocurrencia y cualquier integración de correo que escriba automáticamente.
+No se hizo validación contra staging ni push de migraciones: el clasificador
+de modo automático bloquea esa operación y no se intentó rodearlo.
+
+### Documentos corregidos
+
+- `30` §20 y `31` §20: anotaciones `Evidencia`/`Clase` verificadas contra
+  tests reales, con cada criterio abierto explicado; se incorporó `WEB-D217`
+  en `31` §17.
+- `03_decisiones_producto_web.md`: `WEB-D204` a `WEB-D217` (enums,
+  horizonte/detección, caja compuesta, reversión, privacidad, lifecycle,
+  monedas, unicidad, idempotencia, worker e historial).
+- `50_matriz_de_trazabilidad_web.md`: regeneración y conteos reales
+  (`217` con clase; `43` integración; `73` unidad; `415` con `TEST` sin
+  clase).
+- `tests/corpus/matriz.test.ts` y
+  `scripts/matriz/matriz.generada.json`: expectativas y censo regenerados.
+- `scripts/gates/service-role-lista.ts`, `tests/lint/service-role-en-rutas.test.ts`
+  y `tests/lint/seg-04-404-no-403.test.ts`: ocho rutas de lifecycle y doce
+  superficies nuevas de W-11 declaradas y auditadas.
+- `tests/rls/lib/fixtures.ts`: la semilla de reglas variables actualizada al
+  contrato de monto de la migración `058`; `adjust-balance-dialog.tsx` quedó
+  bajo el límite de tamaño sin justificar una excepción.
+- Migraciones `056` a `060`, repositorios, rutas, Core y pantallas de los
+  dos módulos; seis pruebas RLS nuevas para los contratos de base.
 
 ---
 

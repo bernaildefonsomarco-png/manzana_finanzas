@@ -61,13 +61,17 @@ export function BoxesPanel({
                   <Progress
                     value={box.current_balance}
                     max={box.target_amount}
-                    aria-label={`${box.name}, ${box.current_balance.toFixed(0)} de ${box.target_amount.toFixed(0)} soles`}
+                    aria-label={`${box.name}, ${box.current_balance.toFixed(0)} de ${box.target_amount.toFixed(0)} ${box.currency === "USD" ? "dolares" : "soles"}`}
                     className="mt-1 h-1.5 w-32"
                   />
                 ) : null}
               </Link>
               <div className="flex items-center gap-2">
-                <MoneyText value={box.current_balance} className="w-24 text-right" />
+                <MoneyText
+                  value={box.current_balance}
+                  currency={box.currency}
+                  className="w-24 text-right"
+                />
                 <Button
                   size="icon"
                   variant="ghost"

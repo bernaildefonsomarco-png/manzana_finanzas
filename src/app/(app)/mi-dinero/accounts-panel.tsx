@@ -52,7 +52,11 @@ export function AccountsPanel({
               ) : (
                 <span className="text-xs text-text-muted">{getAccountStatusLabel(account)}</span>
               )}
-              <MoneyText value={account.current_balance} className="w-24 text-right" />
+              <MoneyText
+                value={account.current_balance}
+                currency={account.currency === "USD" ? "USD" : "PEN"}
+                className="w-24 text-right"
+              />
               <Button
                 size="icon"
                 variant="ghost"

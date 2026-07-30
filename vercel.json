@@ -5,6 +5,10 @@
       "schedule": "0 13 * * *"
     },
     {
+      "path": "/api/internal/jobs/recurring-occurrences",
+      "schedule": "5 13 * * *"
+    },
+    {
       "path": "/api/internal/jobs/debt-lifecycle",
       "schedule": "10 13 * * *"
     },

@@ -126,15 +126,20 @@ export const CreateDebtCommandSchema = CommandEnvelopeBaseSchema.extend({
         "other",
       ]),
       name: z.string().trim().min(1).max(120),
-      related_person_name: z.string().trim().min(1).max(120),
+      related_person_name: z.string().trim().min(1).max(60).nullable(),
       principal_amount: PositiveMoneySchema,
       currency: z.enum(["PEN", "USD"]),
       opened_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      due_date: z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .nullable()
+        .optional(),
       first_due_date: z
         .string()
         .regex(/^\d{4}-\d{2}-\d{2}$/)
         .nullable(),
-      installment_count: z.number().int().min(1).max(240).nullable(),
+      installment_count: z.number().int().min(1).max(360).nullable(),
       installment_amount: PositiveMoneySchema.nullable(),
       interest_notes: z.string().trim().min(1).max(300).nullable(),
       account_id: z.string().uuid().nullable(),

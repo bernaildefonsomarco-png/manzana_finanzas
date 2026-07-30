@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RecurringSignalAgent } from "@/agents/recurring-signal-agent";
 import {
@@ -12,6 +13,13 @@ import {
 } from "@/core/recurring/recurring-candidate-enricher";
 import type { OutboxEventDraft } from "@/core/events/domain-events";
 import type { MovementCommitPayload } from "@/core/finance/repository";
+import {
+  addCalendarDays,
+  isoDateInLima,
+  planRecurringOccurrenceHorizon,
+  recurringDuePresentation,
+  RECURRING_OCCURRENCE_HORIZON_DAYS,
+} from "@/core/recurring/recurring-occurrence-scheduler";
 import type { Database, Json } from "@/data/supabase/types";
 import {
   CATEGORY_IDS,
@@ -22,6 +30,7 @@ import {
   type PendingItem,
   type RecurringAmountVariability,
   type RecurringCandidate,
+  type RecurringCandidateStatus,
   type RecurringFrequency,
   type RecurringOccurrence,
   type RecurringOccurrenceStatus,
@@ -56,6 +65,12 @@ export type UpcomingCommitmentSummary = {
   due_at: string;
   kind: "recurring" | "debt";
   linked_box_id: string | null;
+  linked_debt_id?: string | null;
+  recurring_rule_id?: string;
+  occurrence_id?: string | null;
+  presentation_state?: "upcoming" | "pending_confirmation" | "overdue";
+  presentation_label?: "Próximo" | "Pago pendiente" | "Vencido";
+  days_late?: number;
 };
 
 const openOccurrenceStatuses: RecurringOccurrenceStatus[] = [
@@ -82,7 +97,7 @@ export type RecurringCandidateDetectionResult = {
 
 export type RecurringCandidateConfirmOverrides = {
   name?: string;
-  expectedAmount?: number;
+  expectedAmount?: number | null;
   amountVariability?: RecurringAmountVariability;
   currency?: "PEN" | "USD";
   frequency?: RecurringFrequency;
@@ -148,7 +163,10 @@ export async function listRecurringDashboard(
     ruleIds.length > 0
       ? listOpenOccurrencesForRules(client, userId, ruleIds)
       : Promise.resolve([]),
-    listSuggestedCandidates(client, userId),
+    listRecurringCandidates(client, userId, [
+      "ready_to_suggest",
+      "suggested",
+    ]),
   ]);
   const occurrencesByRule = groupOccurrencesByRule(occurrences);
 
@@ -180,7 +198,7 @@ export async function createRecurringRule(
   params: {
     userId: string;
     name: string;
-    expectedAmount: number;
+    expectedAmount: number | null;
     amountVariability: RecurringAmountVariability;
     currency: "PEN" | "USD";
     frequency: RecurringFrequency;
@@ -193,9 +211,28 @@ export async function createRecurringRule(
     merchantPattern?: string | null;
     source?: string;
     confidence?: number | null;
+    idempotencyKey?: string;
     metadata?: Json;
   }
 ): Promise<RecurringRuleWithOccurrences> {
+  const creationRequestHash = params.idempotencyKey
+    ? recurringCreationRequestHash(params)
+    : null;
+  if (params.idempotencyKey && creationRequestHash) {
+    const existing = await findRecurringRuleByCreationKey(
+      client,
+      params.userId,
+      params.idempotencyKey
+    );
+    if (existing) {
+      assertSameRecurringCreation(existing, creationRequestHash);
+      return { ...existing, occurrences: [] };
+    }
+  }
+  if (params.nextExpectedDate < isoDateInLima()) {
+    throw new Error("RECURRING_RULE_NEXT_DATE_IN_PAST");
+  }
+
   const { data: ruleData, error: ruleError } = await client
     .from("recurring_rules")
     .insert({
@@ -215,6 +252,8 @@ export async function createRecurringRule(
       default_account_id: params.defaultAccountId ?? null,
       source: params.source ?? "dashboard_manual",
       confidence: params.confidence ?? 1,
+      creation_idempotency_key: params.idempotencyKey ?? null,
+      creation_request_hash: creationRequestHash,
       requires_confirmation_for_payment: true,
       metadata: params.metadata ?? {},
     })
@@ -222,6 +261,20 @@ export async function createRecurringRule(
     .single();
 
   if (ruleError) {
+    if (params.idempotencyKey && creationRequestHash && isUniqueViolation(ruleError)) {
+      const existing = await findRecurringRuleByCreationKey(
+        client,
+        params.userId,
+        params.idempotencyKey
+      );
+      if (existing) {
+        assertSameRecurringCreation(existing, creationRequestHash);
+        return { ...existing, occurrences: [] };
+      }
+    }
+    if (isRecurringActiveNameViolation(ruleError)) {
+      throw new Error("RECURRING_RULE_NAME_CONFLICT");
+    }
     logger.error("recurring.create_rule_failed", {
       error: ruleError,
       user_id: params.userId,
@@ -229,20 +282,9 @@ export async function createRecurringRule(
     throw ruleError;
   }
 
-  const rule = ruleData as RecurringRule;
-  const occurrence = await ensureOccurrence(client, {
-    userId: params.userId,
-    recurringRuleId: rule.id,
-    expectedDate: params.nextExpectedDate,
-    expectedAmount: params.expectedAmount,
-    metadata: {
-      created_from: "dashboard_recurring_create",
-    },
-  });
-
   return {
-    ...rule,
-    occurrences: [occurrence],
+    ...(ruleData as RecurringRule),
+    occurrences: [],
   };
 }
 
@@ -301,13 +343,56 @@ export async function getRecurringOccurrenceById(
   return (data as RecurringOccurrence | null) ?? null;
 }
 
+export async function listRecurringOccurrences(
+  client: Client,
+  userId: string,
+  recurringRuleId: string,
+  options: {
+    statuses?: RecurringOccurrenceStatus[];
+    fromDate?: string;
+    toDate?: string;
+    limit?: number;
+    cursorFilter?: string;
+  } = {}
+): Promise<RecurringOccurrence[]> {
+  let builder = client
+    .from("recurring_occurrences")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("recurring_rule_id", recurringRuleId);
+
+  if (options.statuses?.length) {
+    builder = builder.in("status", options.statuses);
+  }
+  if (options.fromDate) builder = builder.gte("expected_date", options.fromDate);
+  if (options.toDate) builder = builder.lte("expected_date", options.toDate);
+  if (options.cursorFilter) builder = builder.or(options.cursorFilter);
+
+  builder = builder
+    .order("expected_date", { ascending: false })
+    .order("id", { ascending: false });
+  if (options.limit !== undefined) builder = builder.limit(options.limit);
+
+  const { data, error } = await builder;
+  if (error) {
+    logger.error("recurring.list_occurrences_history_failed", {
+      error,
+      user_id: userId,
+      recurring_rule_id: recurringRuleId,
+    });
+    throw error;
+  }
+
+  return (data ?? []) as RecurringOccurrence[];
+}
+
 export async function updateRecurringRule(
   client: Client,
   userId: string,
   ruleId: string,
   updates: {
     name?: string;
-    expectedAmount?: number;
+    expectedAmount?: number | null;
     amountVariability?: RecurringAmountVariability;
     frequency?: RecurringFrequency;
     nextExpectedDate?: string;
@@ -346,6 +431,9 @@ export async function updateRecurringRule(
     .single();
 
   if (error) {
+    if (isRecurringActiveNameViolation(error)) {
+      throw new Error("RECURRING_RULE_NAME_CONFLICT");
+    }
     logger.error("recurring.update_rule_failed", {
       error,
       user_id: userId,
@@ -355,18 +443,6 @@ export async function updateRecurringRule(
   }
 
   const rule = data as RecurringRule;
-  if (updates.nextExpectedDate && rule.status === "active") {
-    await ensureOccurrence(client, {
-      userId,
-      recurringRuleId: rule.id,
-      expectedDate: updates.nextExpectedDate,
-      expectedAmount: rule.expected_amount,
-      metadata: {
-        created_from: "dashboard_recurring_update",
-      },
-    });
-  }
-
   const occurrences = await listOpenOccurrencesForRules(client, userId, [ruleId]);
   return { ...rule, occurrences };
 }
@@ -405,37 +481,244 @@ export async function cancelRecurringRule(
   return data as RecurringRule;
 }
 
+export type RecurringOccurrenceSkipResult = {
+  recurring_rule: RecurringRule;
+  occurrence: RecurringOccurrence;
+  idempotent: boolean;
+};
+
+export async function skipRecurringOccurrence(
+  client: Client,
+  params: {
+    userId: string;
+    recurringRuleId: string;
+    occurrenceId: string;
+    traceId: string;
+  }
+): Promise<RecurringOccurrenceSkipResult> {
+  const { data, error } = await client.rpc(
+    "commit_recurring_occurrence_skip",
+    {
+      p_user_id: params.userId,
+      p_recurring_rule_id: params.recurringRuleId,
+      p_occurrence_id: params.occurrenceId,
+      p_trace_id: params.traceId,
+    }
+  );
+
+  if (error) {
+    logger.error("recurring.skip_occurrence_failed", {
+      error,
+      user_id: params.userId,
+      recurring_rule_id: params.recurringRuleId,
+      occurrence_id: params.occurrenceId,
+    });
+    throw error;
+  }
+
+  return data as unknown as RecurringOccurrenceSkipResult;
+}
+
 export async function listUpcomingCommitments(
   client: Client,
   userId: string,
-  horizonDays = 31
+  horizonDays = 30,
+  now = new Date()
 ): Promise<UpcomingCommitmentSummary[]> {
-  const now = new Date();
-  const horizon = new Date(now);
-  horizon.setDate(horizon.getDate() + horizonDays);
+  const today = isoDateInLima(now);
+  const horizonDate = addCalendarDays(today, horizonDays);
+  const { data: rulesData, error: rulesError } = await client
+    .from("recurring_rules")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .is("linked_debt_id", null)
+    .order("next_expected_date", { ascending: true });
 
-  const { rules } = await listRecurringDashboard(client, userId, ["active"]);
-  return rules
-    .map<UpcomingCommitmentSummary | null>((rule) => {
-      const occurrence = pickNextOccurrence(rule);
-      const dueAt = occurrence?.expected_date ?? rule.next_expected_date;
-      const amount = occurrence?.expected_amount ?? rule.expected_amount;
+  if (rulesError) {
+    logger.error("recurring.upcoming_rules_failed", {
+      error: rulesError,
+      user_id: userId,
+    });
+    throw rulesError;
+  }
 
-      if (!dueAt || typeof amount !== "number") return null;
-      if (new Date(`${dueAt}T00:00:00`).getTime() > horizon.getTime()) return null;
+  const rules = (rulesData ?? []) as RecurringRule[];
+  if (rules.length === 0) return [];
 
-      return {
-        id: occurrence?.id ?? rule.id,
-        title: rule.name,
-        amount: roundMoney(amount),
-        currency: rule.currency,
-        due_at: dueAt,
-        kind: "recurring" as const,
-        linked_box_id: rule.linked_box_id,
-      };
-    })
-    .filter((item): item is UpcomingCommitmentSummary => item !== null)
-    .sort((left, right) => left.due_at.localeCompare(right.due_at));
+  const ruleIds = rules.map((rule) => rule.id);
+  const { data: occurrencesData, error: occurrencesError } = await client
+    .from("recurring_occurrences")
+    .select("*")
+    .eq("user_id", userId)
+    .in("recurring_rule_id", ruleIds)
+    .in("status", openOccurrenceStatuses)
+    .lte("expected_date", horizonDate)
+    .order("expected_date", { ascending: true });
+
+  if (occurrencesError) {
+    logger.error("recurring.upcoming_occurrences_failed", {
+      error: occurrencesError,
+      user_id: userId,
+    });
+    throw occurrencesError;
+  }
+
+  const occurrences = (occurrencesData ?? []) as RecurringOccurrence[];
+  const ruleById = new Map(rules.map((rule) => [rule.id, rule]));
+  const commitments: UpcomingCommitmentSummary[] = [];
+  const materializedKeys = new Set<string>();
+
+  for (const occurrence of occurrences) {
+    const rule = ruleById.get(occurrence.recurring_rule_id);
+    const amount =
+      rule?.amount_variability === "variable"
+        ? rule.expected_amount
+        : occurrence.expected_amount ?? rule?.expected_amount;
+    if (!rule || typeof amount !== "number") continue;
+    materializedKeys.add(`${rule.id}:${occurrence.expected_date}`);
+    commitments.push(
+      toUpcomingCommitment(rule, occurrence, amount, today)
+    );
+  }
+
+  // Compatibilidad durante el despliegue del job: una regla activa que aún
+  // no tenga su ocurrencia materializada sigue apareciendo una sola vez.
+  for (const rule of rules) {
+    if (
+      !rule.next_expected_date ||
+      typeof rule.expected_amount !== "number" ||
+      rule.next_expected_date > horizonDate ||
+      materializedKeys.has(`${rule.id}:${rule.next_expected_date}`)
+    ) {
+      continue;
+    }
+    commitments.push(
+      toUpcomingCommitment(rule, null, rule.expected_amount, today)
+    );
+  }
+
+  return commitments.sort((left, right) =>
+    left.due_at.localeCompare(right.due_at)
+  );
+}
+
+export type RecurringOccurrenceMaterializationResult = {
+  as_of_date: string;
+  horizon_days: number;
+  rules_scanned: number;
+  occurrences_scanned: number;
+  occurrences_planned: number;
+  occurrences_inserted: number;
+  statuses_updated: number;
+};
+
+export async function listRecurringOccurrenceGenerationUserIds(
+  client: Client,
+  maxUsers?: number
+): Promise<string[]> {
+  const { data, error } = await client.rpc(
+    "list_recurring_generation_user_ids",
+    { p_limit: maxUsers ?? null }
+  );
+
+  if (error) throw error;
+  return (data ?? []).map((row) => row.user_id);
+}
+
+export async function materializeRecurringOccurrenceHorizon(
+  client: Client,
+  userId: string,
+  options: {
+    asOfDate?: string;
+    horizonDays?: number;
+  } = {}
+): Promise<RecurringOccurrenceMaterializationResult> {
+  const asOfDate = options.asOfDate ?? isoDateInLima();
+  const horizonDays =
+    options.horizonDays ?? RECURRING_OCCURRENCE_HORIZON_DAYS;
+  const horizonDate = addCalendarDays(asOfDate, horizonDays);
+  const { data: rulesData, error: rulesError } = await client
+    .from("recurring_rules")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .is("deleted_at", null)
+    .order("id", { ascending: true });
+
+  if (rulesError) throw rulesError;
+  const rules = (rulesData ?? []) as RecurringRule[];
+  if (rules.length === 0) {
+    return {
+      as_of_date: asOfDate,
+      horizon_days: horizonDays,
+      rules_scanned: 0,
+      occurrences_scanned: 0,
+      occurrences_planned: 0,
+      occurrences_inserted: 0,
+      statuses_updated: 0,
+    };
+  }
+
+  const { data: occurrencesData, error: occurrencesError } = await client
+    .from("recurring_occurrences")
+    .select("*")
+    .eq("user_id", userId)
+    .in(
+      "recurring_rule_id",
+      rules.map((rule) => rule.id)
+    )
+    .in("status", openOccurrenceStatuses)
+    .lte("expected_date", horizonDate)
+    .order("expected_date", { ascending: true });
+
+  if (occurrencesError) throw occurrencesError;
+  const occurrences = (occurrencesData ?? []) as RecurringOccurrence[];
+  const plan = planRecurringOccurrenceHorizon({
+    rules,
+    occurrences,
+    asOfDate,
+    horizonDays,
+  });
+
+  let inserted = 0;
+  if (plan.inserts.length > 0) {
+    const { data, error } = await client
+      .from("recurring_occurrences")
+      .upsert(plan.inserts, {
+        onConflict: "recurring_rule_id,expected_date",
+        ignoreDuplicates: true,
+      })
+      .select("id");
+    if (error) throw error;
+    inserted = data?.length ?? 0;
+  }
+
+  let statusesUpdated = 0;
+  for (const status of ["pending_confirmation", "overdue"] as const) {
+    const ids = plan.status_updates
+      .filter((update) => update.status === status)
+      .map((update) => update.id);
+    if (ids.length === 0) continue;
+    const { error } = await client
+      .from("recurring_occurrences")
+      .update({ status })
+      .eq("user_id", userId)
+      .in("id", ids);
+    if (error) throw error;
+    statusesUpdated += ids.length;
+  }
+
+  return {
+    as_of_date: asOfDate,
+    horizon_days: horizonDays,
+    rules_scanned: rules.length,
+    occurrences_scanned: occurrences.length,
+    occurrences_planned: plan.inserts.length,
+    occurrences_inserted: inserted,
+    statuses_updated: statusesUpdated,
+  };
 }
 
 export async function runRecurringCandidateDetection(
@@ -991,17 +1274,26 @@ async function listOpenOccurrencesForRules(
   return (data ?? []) as RecurringOccurrence[];
 }
 
-async function listSuggestedCandidates(
+export async function listRecurringCandidates(
   client: Client,
-  userId: string
+  userId: string,
+  statuses: RecurringCandidateStatus[] = [
+    "candidate",
+    "ready_to_suggest",
+    "suggested",
+  ],
+  options: { limit?: number } = {}
 ): Promise<RecurringCandidate[]> {
-  const { data, error } = await client
+  let builder = client
     .from("recurring_candidates")
     .select("*")
     .eq("user_id", userId)
-    .in("status", ["ready_to_suggest", "suggested"])
+    .in("status", statuses)
     .order("confidence", { ascending: false })
-    .limit(20);
+    .order("created_at", { ascending: false });
+
+  builder = builder.limit(options.limit ?? 20);
+  const { data, error } = await builder;
 
   if (error) {
     logger.error("recurring.list_candidates_failed", { error, user_id: userId });
@@ -1009,44 +1301,6 @@ async function listSuggestedCandidates(
   }
 
   return (data ?? []) as RecurringCandidate[];
-}
-
-async function ensureOccurrence(
-  client: Client,
-  params: {
-    userId: string;
-    recurringRuleId: string;
-    expectedDate: string;
-    expectedAmount: number | null;
-    metadata?: Json;
-  }
-): Promise<RecurringOccurrence> {
-  const { data, error } = await client
-    .from("recurring_occurrences")
-    .upsert(
-      {
-        user_id: params.userId,
-        recurring_rule_id: params.recurringRuleId,
-        expected_date: params.expectedDate,
-        expected_amount: params.expectedAmount,
-        status: "expected",
-        metadata: params.metadata ?? {},
-      },
-      { onConflict: "recurring_rule_id,expected_date" }
-    )
-    .select()
-    .single();
-
-  if (error) {
-    logger.error("recurring.ensure_occurrence_failed", {
-      error,
-      user_id: params.userId,
-      recurring_rule_id: params.recurringRuleId,
-    });
-    throw error;
-  }
-
-  return data as RecurringOccurrence;
 }
 
 function groupOccurrencesByRule(occurrences: RecurringOccurrence[]) {
@@ -1060,15 +1314,30 @@ function groupOccurrencesByRule(occurrences: RecurringOccurrence[]) {
   return map;
 }
 
-function pickNextOccurrence(
-  rule: RecurringRuleWithOccurrences
-): RecurringOccurrence | null {
-  return (
-    rule.occurrences
-      .filter((occurrence) => openOccurrenceStatuses.includes(occurrence.status))
-      .sort((left, right) => left.expected_date.localeCompare(right.expected_date))[0] ??
-    null
-  );
+function toUpcomingCommitment(
+  rule: RecurringRule,
+  occurrence: RecurringOccurrence | null,
+  amount: number,
+  today: string
+): UpcomingCommitmentSummary {
+  const dueAt = occurrence?.expected_date ?? rule.next_expected_date;
+  if (!dueAt) throw new Error("RECURRING_UPCOMING_DATE_REQUIRED");
+  const presentation = recurringDuePresentation(dueAt, today);
+  return {
+    id: occurrence?.id ?? rule.id,
+    title: rule.name,
+    amount: roundMoney(amount),
+    currency: rule.currency,
+    due_at: dueAt,
+    kind: "recurring",
+    linked_box_id: rule.linked_box_id,
+    linked_debt_id: rule.linked_debt_id,
+    recurring_rule_id: rule.id,
+    occurrence_id: occurrence?.id ?? null,
+    presentation_state: presentation.state,
+    presentation_label: presentation.label,
+    days_late: presentation.days_late,
+  };
 }
 
 function clampInteger(value: number, min: number, max: number): number {
@@ -1080,6 +1349,88 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+async function findRecurringRuleByCreationKey(
+  client: Client,
+  userId: string,
+  idempotencyKey: string
+): Promise<RecurringRule | null> {
+  const { data, error } = await client
+    .from("recurring_rules")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("creation_idempotency_key", idempotencyKey)
+    .maybeSingle();
+
+  if (error) {
+    logger.error("recurring.creation_idempotency_lookup_failed", {
+      error,
+      user_id: userId,
+    });
+    throw error;
+  }
+  return (data as RecurringRule | null) ?? null;
+}
+
+function recurringCreationRequestHash(params: {
+  name: string;
+  expectedAmount: number | null;
+  amountVariability: RecurringAmountVariability;
+  currency: "PEN" | "USD";
+  frequency: RecurringFrequency;
+  nextExpectedDate: string;
+  dayOfMonth?: number | null;
+  dateWindowStartDay?: number | null;
+  dateWindowEndDay?: number | null;
+  categoryId?: CategoryId | null;
+  defaultAccountId?: string | null;
+  merchantPattern?: string | null;
+  source?: string;
+  confidence?: number | null;
+}): string {
+  const canonical = JSON.stringify({
+    name: params.name,
+    expected_amount: params.expectedAmount,
+    amount_variability: params.amountVariability,
+    currency: params.currency,
+    frequency: params.frequency,
+    next_expected_date: params.nextExpectedDate,
+    day_of_month: params.dayOfMonth ?? dateDay(params.nextExpectedDate),
+    date_window_start_day: params.dateWindowStartDay ?? null,
+    date_window_end_day: params.dateWindowEndDay ?? null,
+    category_id: params.categoryId ?? null,
+    default_account_id: params.defaultAccountId ?? null,
+    merchant_pattern: params.merchantPattern ?? null,
+    source: params.source ?? "dashboard_manual",
+    confidence: params.confidence ?? 1,
+  });
+  return createHash("sha256").update(canonical).digest("hex");
+}
+
+function assertSameRecurringCreation(
+  existing: RecurringRule,
+  requestHash: string
+): void {
+  if (existing.creation_request_hash !== requestHash) {
+    throw new Error("RECURRING_RULE_IDEMPOTENCY_CONFLICT");
+  }
+}
+
+function isUniqueViolation(error: unknown): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as { code?: unknown }).code === "23505"
+  );
+}
+
+function isRecurringActiveNameViolation(error: unknown): boolean {
+  return (
+    isUniqueViolation(error) &&
+    JSON.stringify(error).includes("recurring_rules_user_active_name_unique")
+  );
 }
 
 function getRecordString(

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
+  Box,
   Debt,
   DebtInstallment,
   DebtPayment,
@@ -16,11 +17,13 @@ import type { Database, Json } from "@/data/supabase/types";
 import { logger } from "@/shared/telemetry/logger";
 import type { OutboxEventDraft } from "@/core/events/domain-events";
 import type { MovementCommitPayload } from "@/core/finance/repository";
+import { addCalendarDays, isoDateInLima } from "@/shared/dates/lima";
 
 type Client = SupabaseClient<Database>;
 
 export type DebtWithPerson = Debt & {
   related_person: RelatedPerson | null;
+  linked_box?: Box | null;
 };
 
 export type DebtPaymentWithMovement = DebtPayment & {
@@ -74,12 +77,47 @@ export type DebtInstallmentCommitmentSummary = {
   direction: DebtDirection;
   due_at: string;
   kind: "debt";
-  linked_box_id: null;
+  linked_box_id: string | null;
   debt_id: string;
   debt_name: string;
   installment_id: string;
   installment_number: number;
+  debt_kind: DebtKind;
+  date_is_approximate: boolean;
+  informal_agreement: boolean;
 };
+
+export type DebtPaymentAllocationPreview = {
+  installment_id: string;
+  installment_number: number;
+  due_date: string;
+  previous_paid_amount: number;
+  allocated_amount: number;
+  projected_paid_amount: number;
+  projected_status: InstallmentStatus;
+};
+
+export type DebtPaymentPreview = {
+  amount: number;
+  previous_balance: number;
+  projected_balance: number;
+  allocations: DebtPaymentAllocationPreview[];
+  unallocated_amount: number;
+  allocation_policy: "oldest_open_due_date_first_v1";
+};
+
+export class DebtOperationError extends Error {
+  constructor(
+    readonly code:
+      | "DEBT_OPERATION_CONFLICT"
+      | "DEBT_OPERATION_INVALID"
+      | "DEBT_OPERATION_NOT_FOUND",
+    message: string
+  ) {
+    super(message);
+    this.name = "DebtOperationError";
+  }
+}
 
 type DebtInstallmentDraft = {
   user_id: string;
@@ -96,7 +134,11 @@ export async function listDebts(
   client: Client,
   userId: string,
   statuses: DebtStatus[] = ["active", "due_soon", "overdue"],
-  options: { limit?: number; cursorFilter?: string } = {}
+  options: {
+    limit?: number;
+    cursorFilter?: string;
+    direction?: DebtDirection;
+  } = {}
 ): Promise<DebtWithPerson[]> {
   // Clave de paginacion: `created_at desc, id desc` (no `next_payment_date`,
   // que admite null y no puede compararse de forma estable con un cursor,
@@ -107,7 +149,8 @@ export async function listDebts(
     .select(
       `
         *,
-        related_persons (*)
+        related_persons (*),
+        boxes (*)
       `
     )
     .eq("user_id", userId)
@@ -116,6 +159,9 @@ export async function listDebts(
     .order("created_at", { ascending: false })
     .order("id", { ascending: false });
 
+  if (options.direction) {
+    builder = builder.eq("direction", options.direction);
+  }
   if (options.cursorFilter) builder = builder.or(options.cursorFilter);
   if (options.limit !== undefined) builder = builder.limit(options.limit);
 
@@ -134,12 +180,20 @@ export async function listDebts(
   // fila equivocada. Los demas llamadores (`tool-gateway`, `email-ingestion`,
   // `insights.repository`) no dependen del orden: solo filtran/agrupan.
   return (data ?? []).map((row) => {
-    const debt = row as Debt & { related_persons?: RelatedPerson | null };
-    const { related_persons: relatedPerson, ...plainDebt } = debt;
+    const debt = row as Debt & {
+      related_persons?: RelatedPerson | null;
+      boxes?: Box[] | null;
+    };
+    const {
+      related_persons: relatedPerson,
+      boxes,
+      ...plainDebt
+    } = debt;
 
     return {
       ...(plainDebt as Debt),
       related_person: relatedPerson ?? null,
+      linked_box: findCanonicalDebtBox(boxes),
     };
   });
 }
@@ -282,7 +336,8 @@ export async function getDebtById(
     .select(
       `
         *,
-        related_persons (*)
+        related_persons (*),
+        boxes (*)
       `
     )
     .eq("user_id", userId)
@@ -301,12 +356,20 @@ export async function getDebtById(
 
   if (!data) return null;
 
-  const debt = data as Debt & { related_persons?: RelatedPerson | null };
-  const { related_persons: relatedPerson, ...plainDebt } = debt;
+  const debt = data as Debt & {
+    related_persons?: RelatedPerson | null;
+    boxes?: Box[] | null;
+  };
+  const {
+    related_persons: relatedPerson,
+    boxes,
+    ...plainDebt
+  } = debt;
 
   return {
     ...(plainDebt as Debt),
     related_person: relatedPerson ?? null,
+    linked_box: findCanonicalDebtBox(boxes),
   };
 }
 
@@ -343,8 +406,7 @@ export async function listDebtPaymentsForDebt(
     )
     .eq("user_id", userId)
     .eq("debt_id", debtId)
-    .order("paid_at", { ascending: false })
-    .limit(80);
+    .order("paid_at", { ascending: false });
 
   if (error) {
     logger.error("debts.payments_list_failed", {
@@ -476,8 +538,7 @@ export async function listDebtInstallmentCommitments(
   horizonDays = 31,
   now = new Date()
 ): Promise<DebtInstallmentCommitmentSummary[]> {
-  const horizon = new Date(now);
-  horizon.setDate(horizon.getDate() + horizonDays);
+  const horizonDate = addCalendarDays(isoDateInLima(now), horizonDays);
 
   const { data, error } = await client
     .from("debt_installments")
@@ -490,19 +551,26 @@ export async function listDebtInstallmentCommitments(
           name,
           currency,
           direction,
+          kind,
+          metadata,
           status,
-          deleted_at
+          deleted_at,
+          boxes (
+            id,
+            linked_debt_id,
+            deleted_at
+          )
         )
       `
     )
     .eq("user_id", userId)
     .in("status", ["pending", "due_soon", "overdue"])
     .eq("debts.user_id", userId)
+    .eq("debts.direction", "i_owe")
     .is("debts.deleted_at", null)
     .in("debts.status", ["active", "due_soon", "overdue"])
-    .lte("due_date", toIsoDate(horizon))
-    .order("due_date", { ascending: true })
-    .limit(40);
+    .lte("due_date", horizonDate)
+    .order("due_date", { ascending: true });
 
   if (error) {
     logger.error("debts.installment_commitments_failed", {
@@ -512,33 +580,407 @@ export async function listDebtInstallmentCommitments(
     throw error;
   }
 
-  return (data ?? []).map((row) => {
-    const installment = row as DebtInstallment & {
-      debts?: {
-        id: string;
-        name: string;
-        currency: "PEN" | "USD";
-        direction: DebtDirection;
-      } | null;
-    };
+  return buildDebtInstallmentCommitments(data ?? []);
+}
 
-    return {
-      id: installment.id,
-      title: `Cuota ${installment.number}: ${installment.debts?.name ?? "Deuda"}`,
-      amount: roundMoney(
-        Number(installment.expected_amount) - Number(installment.paid_amount)
-      ),
-      currency: installment.debts?.currency ?? "PEN",
-      direction: installment.debts?.direction ?? "i_owe",
-      due_at: installment.due_date,
-      kind: "debt",
-      linked_box_id: null,
-      debt_id: installment.debt_id,
-      debt_name: installment.debts?.name ?? "Deuda",
+type DebtInstallmentCommitmentRow = DebtInstallment & {
+  debts?: {
+    id: string;
+    name: string;
+    currency: "PEN" | "USD";
+    direction: DebtDirection;
+    kind: DebtKind;
+    metadata?: Record<string, unknown> | null;
+    boxes?: Array<{
+      id: string;
+      linked_debt_id: string | null;
+      deleted_at: string | null;
+    }> | null;
+  } | null;
+};
+
+export function buildDebtInstallmentCommitments(
+  rows: unknown[]
+): DebtInstallmentCommitmentSummary[] {
+  return rows
+    .map((row) => row as DebtInstallmentCommitmentRow)
+    .filter((installment) => installment.debts?.direction === "i_owe")
+    .map((installment) => {
+      const debt = installment.debts!;
+      const linkedBox =
+        debt.boxes?.find(
+          (box) =>
+            box.deleted_at === null && box.linked_debt_id === installment.debt_id
+        ) ?? null;
+      return {
+        id: installment.id,
+        title: `Cuota ${installment.number}: ${debt.name}`,
+        amount: roundMoney(
+          Number(installment.expected_amount) - Number(installment.paid_amount)
+        ),
+        currency: debt.currency,
+        direction: debt.direction,
+        due_at: installment.due_date,
+        kind: "debt" as const,
+        linked_box_id: linkedBox?.id ?? null,
+        debt_id: installment.debt_id,
+        debt_name: debt.name,
+        installment_id: installment.id,
+        installment_number: installment.number,
+        debt_kind: debt.kind,
+        date_is_approximate: debt.metadata?.date_is_approximate === true,
+        informal_agreement: debt.metadata?.informal_agreement === true,
+      };
+    });
+}
+
+export function previewDebtPaymentAllocation(params: {
+  amount: number;
+  currentBalance: number;
+  installments: DebtInstallment[];
+}): DebtPaymentPreview {
+  const amount = roundMoney(params.amount);
+  const currentBalance = roundMoney(params.currentBalance);
+  if (amount <= 0) {
+    throw new DebtOperationError(
+      "DEBT_OPERATION_INVALID",
+      "El monto debe ser mayor a cero."
+    );
+  }
+  if (amount > currentBalance) {
+    throw new DebtOperationError(
+      "DEBT_OPERATION_INVALID",
+      "El pago supera el saldo. Paga exactamente el saldo o registra la diferencia como otro movimiento."
+    );
+  }
+
+  let remaining = amount;
+  const allocations: DebtPaymentAllocationPreview[] = [];
+  const openStatuses = new Set<InstallmentStatus>([
+    "pending",
+    "due_soon",
+    "overdue",
+  ]);
+  const openInstallments = [...params.installments]
+    .filter((item) => openStatuses.has(item.status))
+    .sort((left, right) =>
+      left.due_date === right.due_date
+        ? left.number - right.number
+        : left.due_date.localeCompare(right.due_date)
+    );
+
+  for (const installment of openInstallments) {
+    if (remaining <= 0) break;
+    const unpaid = roundMoney(
+      Number(installment.expected_amount) - Number(installment.paid_amount)
+    );
+    if (unpaid <= 0) continue;
+    const allocated = roundMoney(Math.min(unpaid, remaining));
+    const projectedPaid = roundMoney(
+      Number(installment.paid_amount) + allocated
+    );
+    allocations.push({
       installment_id: installment.id,
       installment_number: installment.number,
-    };
+      due_date: installment.due_date,
+      previous_paid_amount: roundMoney(Number(installment.paid_amount)),
+      allocated_amount: allocated,
+      projected_paid_amount: projectedPaid,
+      projected_status:
+        projectedPaid === roundMoney(Number(installment.expected_amount))
+          ? "paid"
+          : installment.status,
+    });
+    remaining = roundMoney(remaining - allocated);
+  }
+
+  return {
+    amount,
+    previous_balance: currentBalance,
+    projected_balance: roundMoney(currentBalance - amount),
+    allocations,
+    unallocated_amount: remaining,
+    allocation_policy: "oldest_open_due_date_first_v1",
+  };
+}
+
+export async function updateDebtBasics(
+  client: Client,
+  userId: string,
+  debtId: string,
+  patch: {
+    name?: string;
+    kind?: DebtKind;
+    due_date?: string | null;
+    interest_notes?: string | null;
+    related_person_id?: string | null;
+  }
+): Promise<Debt> {
+  const { data, error } = await client
+    .from("debts")
+    .update(patch)
+    .eq("user_id", userId)
+    .eq("id", debtId)
+    .is("deleted_at", null)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) {
+    throw new DebtOperationError(
+      "DEBT_OPERATION_NOT_FOUND",
+      "No encontre esa deuda."
+    );
+  }
+  return data as Debt;
+}
+
+export async function closeDebt(
+  client: Client,
+  params: {
+    userId: string;
+    debt: Debt;
+    reason: "paid" | "forgiven";
+    idempotencyKey: string;
+    traceId: string;
+  }
+): Promise<{ debt: Debt; idempotent: boolean }> {
+  const result = await commitDebtOperation(client, {
+    userId: params.userId,
+    debtId: params.debt.id,
+    operation: "close",
+    payload: { reason: params.reason },
+    idempotencyKey: params.idempotencyKey,
+    traceId: params.traceId,
   });
+  return { debt: result.debt, idempotent: result.idempotent };
+}
+
+export async function reopenDebt(
+  client: Client,
+  params: {
+    userId: string;
+    debt: Debt;
+    idempotencyKey: string;
+    traceId: string;
+  }
+): Promise<{ debt: Debt; idempotent: boolean }> {
+  const result = await commitDebtOperation(client, {
+    userId: params.userId,
+    debtId: params.debt.id,
+    operation: "reopen",
+    payload: {},
+    idempotencyKey: params.idempotencyKey,
+    traceId: params.traceId,
+  });
+  return { debt: result.debt, idempotent: result.idempotent };
+}
+
+export async function rescheduleDebtInstallment(
+  client: Client,
+  params: {
+    userId: string;
+    installment: DebtInstallment;
+    dueDate: string;
+    reason: string | null;
+    idempotencyKey: string;
+    traceId: string;
+  }
+): Promise<{ installment: DebtInstallment; idempotent: boolean }> {
+  const result = await commitDebtOperation(client, {
+    userId: params.userId,
+    debtId: params.installment.debt_id,
+    operation: "reschedule_installment",
+    payload: {
+      installment_id: params.installment.id,
+      due_date: params.dueDate,
+      reason: params.reason,
+    },
+    idempotencyKey: params.idempotencyKey,
+    traceId: params.traceId,
+  });
+  if (!result.installment) {
+    throw new DebtOperationError(
+      "DEBT_OPERATION_INVALID",
+      "El Core no devolvio la cuota reprogramada."
+    );
+  }
+  return {
+    installment: result.installment,
+    idempotent: result.idempotent,
+  };
+}
+
+export async function skipDebtInstallment(
+  client: Client,
+  params: {
+    userId: string;
+    installment: DebtInstallment;
+    reason: string;
+    idempotencyKey: string;
+    traceId: string;
+  }
+): Promise<{ installment: DebtInstallment; idempotent: boolean }> {
+  const result = await commitDebtOperation(client, {
+    userId: params.userId,
+    debtId: params.installment.debt_id,
+    operation: "skip_installment",
+    payload: {
+      installment_id: params.installment.id,
+      reason: params.reason,
+    },
+    idempotencyKey: params.idempotencyKey,
+    traceId: params.traceId,
+  });
+  if (!result.installment) {
+    throw new DebtOperationError(
+      "DEBT_OPERATION_INVALID",
+      "El Core no devolvio la cuota omitida."
+    );
+  }
+  return {
+    installment: result.installment,
+    idempotent: result.idempotent,
+  };
+}
+
+type DebtOperationName =
+  | "close"
+  | "reopen"
+  | "reschedule_installment"
+  | "skip_installment";
+
+type DebtOperationRpcResult = {
+  debt: Debt;
+  installment?: DebtInstallment;
+  idempotent: boolean;
+};
+
+async function commitDebtOperation(
+  client: Client,
+  params: {
+    userId: string;
+    debtId: string;
+    operation: DebtOperationName;
+    payload: Record<string, unknown>;
+    idempotencyKey: string;
+    traceId: string;
+  }
+): Promise<DebtOperationRpcResult> {
+  const { data, error } = await client.rpc("commit_debt_operation", {
+    p_user_id: params.userId,
+    p_debt_id: params.debtId,
+    p_operation: params.operation,
+    p_payload: toJson(params.payload),
+    p_idempotency_key: params.idempotencyKey,
+    p_trace_id: params.traceId,
+  });
+
+  if (error) throw mapDebtOperationRpcError(error);
+  if (!isDebtOperationRpcResult(data)) {
+    throw new DebtOperationError(
+      "DEBT_OPERATION_INVALID",
+      "El Core devolvio una operacion de deuda invalida."
+    );
+  }
+  return {
+    debt: data.debt as unknown as Debt,
+    installment: data.installment
+      ? (data.installment as unknown as DebtInstallment)
+      : undefined,
+    idempotent: data.idempotent,
+  };
+}
+
+function isDebtOperationRpcResult(value: Json): value is Json & {
+  debt: Record<string, Json | undefined>;
+  installment?: Record<string, Json | undefined>;
+  idempotent: boolean;
+} {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      "debt" in value &&
+      value.debt &&
+      typeof value.debt === "object" &&
+      !Array.isArray(value.debt) &&
+      "idempotent" in value &&
+      typeof value.idempotent === "boolean"
+  );
+}
+
+function mapDebtOperationRpcError(error: unknown): DebtOperationError | unknown {
+  const message =
+    error && typeof error === "object" && "message" in error
+      ? String((error as { message: unknown }).message)
+      : error instanceof Error
+        ? error.message
+        : "";
+
+  if (message.includes("DEBT_OPERATION_NOT_FOUND")) {
+    return new DebtOperationError(
+      "DEBT_OPERATION_NOT_FOUND",
+      "No encontre esa deuda o cuota."
+    );
+  }
+  if (
+    message.includes("DEBT_OPERATION_CONFLICT") ||
+    message.includes("DEBT_OPERATION_IDEMPOTENCY_CONFLICT") ||
+    message.includes("DEBT_OPERATION_PAID_CANNOT_REOPEN") ||
+    message.includes("DEBT_OPERATION_MISSING_FORGIVEN_BALANCE")
+  ) {
+    return new DebtOperationError(
+      "DEBT_OPERATION_CONFLICT",
+      message.includes("PAID_CANNOT_REOPEN")
+        ? "Una deuda pagada no se reabre en silencio; registra un ajuste nuevo."
+        : "La deuda o cuota ya no admite esa operacion."
+    );
+  }
+  if (
+    message.includes("DEBT_OPERATION_PAID_WITH_BALANCE") ||
+    message.includes("DEBT_OPERATION_FORGIVEN_WITHOUT_BALANCE") ||
+    message.includes("DEBT_OPERATION_INVALID") ||
+    message.includes("DEBT_OPERATION_REQUIRED") ||
+    message.includes("DEBT_OPERATION_REASON_REQUIRED")
+  ) {
+    return new DebtOperationError(
+      "DEBT_OPERATION_INVALID",
+      message.includes("PAID_WITH_BALANCE")
+        ? "Para cerrarla como pagada, primero registra el saldo pendiente."
+        : message.includes("FORGIVEN_WITHOUT_BALANCE")
+          ? "Una deuda sin saldo se cierra como pagada, no como condonada."
+          : "Revisa los datos de la operacion de deuda."
+    );
+  }
+  return error;
+}
+
+export async function getDebtInstallmentById(
+  client: Client,
+  userId: string,
+  debtId: string,
+  installmentId: string
+): Promise<DebtInstallment | null> {
+  const { data, error } = await client
+    .from("debt_installments")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("debt_id", debtId)
+    .eq("id", installmentId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? (data as DebtInstallment) : null;
+}
+
+function findCanonicalDebtBox(boxes: Box[] | null | undefined): Box | null {
+  return (
+    (boxes ?? [])
+      .filter((box) => box.deleted_at === null)
+      .sort((left, right) => {
+        const byCreatedAt = left.created_at.localeCompare(right.created_at);
+        return byCreatedAt !== 0 ? byCreatedAt : left.id.localeCompare(right.id);
+      })[0] ?? null
+  );
 }
 
 export async function commitDebtPayment(

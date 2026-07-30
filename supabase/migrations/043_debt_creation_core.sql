@@ -143,11 +143,20 @@ begin
       or v_existing.principal_amount <> round((p_debt->>'principal_amount')::numeric, 2)
       or v_existing.currency <> p_debt->>'currency'
       or v_existing.opened_at <> (p_debt->>'opened_at')::date
+      or v_existing.due_date is distinct from
+        nullif(p_debt->>'due_date', '')::date
       or v_existing.installment_count is distinct from v_installment_count
       or v_existing.installment_amount is distinct from
         nullif(p_debt->>'installment_amount', '')::numeric
       or v_existing.next_payment_date is distinct from
         nullif(p_debt->>'first_due_date', '')::date
+      or v_existing.interest_notes is distinct from
+        nullif(p_debt->>'interest_notes', '')
+      or v_existing.source is distinct from p_debt->>'source'
+      or v_existing.metadata->>'account_id' is distinct from
+        p_debt->'metadata'->>'account_id'
+      or v_existing.metadata->>'movement_type' is distinct from
+        p_debt->'metadata'->>'movement_type'
       or v_existing_person_name is distinct from
         p_related_person_normalized_name
     then
@@ -202,32 +211,37 @@ begin
     );
   end if;
 
-  select *
-    into v_person
-    from public.related_persons
-   where user_id = v_user_id
-     and normalized_name = p_related_person_normalized_name
-     and deleted_at is null
-   for update;
+  -- WEB-D204 / W-11: una deuda de servicio, tarjeta o entidad puede existir
+  -- sin persona relacionada. El comando conserva atomicidad sin inventar
+  -- una persona vacia.
+  if p_related_person_normalized_name is not null then
+    select *
+      into v_person
+      from public.related_persons
+     where user_id = v_user_id
+       and normalized_name = p_related_person_normalized_name
+       and deleted_at is null
+     for update;
 
-  if not found then
-    insert into public.related_persons (
-      user_id,
-      display_name,
-      normalized_name,
-      kind,
-      metadata
-    )
-    values (
-      v_user_id,
-      trim(p_debt->>'related_person_name'),
-      p_related_person_normalized_name,
-      'person_or_entity',
-      jsonb_build_object('created_from', p_debt->>'source')
-    )
-    on conflict (user_id, normalized_name) where deleted_at is null
-    do update set updated_at = now()
-    returning * into v_person;
+    if not found then
+      insert into public.related_persons (
+        user_id,
+        display_name,
+        normalized_name,
+        kind,
+        metadata
+      )
+      values (
+        v_user_id,
+        trim(p_debt->>'related_person_name'),
+        p_related_person_normalized_name,
+        'person_or_entity',
+        jsonb_build_object('created_from', p_debt->>'source')
+      )
+      on conflict (user_id, normalized_name) where deleted_at is null
+      do update set updated_at = now()
+      returning * into v_person;
+    end if;
   end if;
 
   insert into public.debts (

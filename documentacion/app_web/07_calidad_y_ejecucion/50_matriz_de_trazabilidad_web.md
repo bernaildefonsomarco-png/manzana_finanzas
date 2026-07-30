@@ -155,9 +155,11 @@ criterios que existían antes del bloque `07` y deliberadamente no publica
 totales: los documentos de este bloque siguen añadiendo identificadores, y un
 total escrito en un documento `aprobado` nace desactualizado.
 
-Última regeneración: 27 de julio de 2026, con el generador de `W-01`
+Última regeneración: 29 de julio de 2026, con el generador de `W-11`
 (`scripts/matriz/generar.ts`, `npm run matriz:generar`). Es la primera vez que
-esta tabla sale de ejecutar código y no de contarlo a mano.
+esta tabla sale de ejecutar código y no de contarlo a mano; desde `W-11` los
+conteos de clases y de criterios con evidencia se vuelven a contrastar contra
+la salida ejecutada en cada cierre.
 
 **1.552 identificadores en 59 documentos.** Una unidad más que el conteo
 manual anterior: dos defectos reales que el generador destapó al construirse
@@ -201,23 +203,25 @@ test las distingue por familia.
 |---|---|
 | `corpus` | 45 |
 | `build` | 16 |
-| `lint` | 29 |
+| `lint` | 30 |
 | `e2e` | 7 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
-| `integracion` | 21 |
-| `unidad` | 50 |
-| **Con clase** | **171** |
-| **Con `TEST` y sin clase** | **460** |
-| **Total con `TEST`** | **631** |
+| `integracion` | 43 |
+| `unidad` | 73 |
+| **Con clase** | **217** |
+| **Con `TEST` y sin clase** | **415** |
+| **Total con `TEST`** | **632** |
 
 `lint` sube de 13 a 14 en `W-01`: `AC-INV-10` recibe su clase al escribir su
 prueba (`51` §4.1), como manda el árbol de decisión — es una comparación
 leída sin ejecutar la aplicación.
 
 Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
-posible. Las 544 sin clase las reparte el `51` §4 al escribir cada prueba, y
-`AC-HECHO-03` impide que ninguna llegue a `verificado` sin ella.
+posible. De los 491 criterios que todavía no tienen clase, 415 ya declaran
+`TEST` y quedan pendientes de asignación explícita; los otros 76 aún no tienen
+evidencia de prueba. `AC-HECHO-03` impide que cualquiera llegue a `verificado`
+sin clase.
 
 ---
 

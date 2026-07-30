@@ -22,4 +22,10 @@ describe("MoneyText", () => {
     render(<MoneyText value={1250.5} compact />);
     expect(screen.getByText("S/1,250.50")).toBeInTheDocument();
   });
+
+  it("muestra USD como dolares y no como soles", () => {
+    render(<MoneyText value={1250.5} currency="USD" />);
+    expect(screen.getByText(/US\$1,250\.50/)).toBeInTheDocument();
+    expect(screen.queryByText(/S\/1,250\.50/)).not.toBeInTheDocument();
+  });
 });

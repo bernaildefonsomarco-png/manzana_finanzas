@@ -1,224 +1,163 @@
-import type { ApiResponse } from "@/features/movements/movements-api";
-import { ApiClientError } from "@/features/movements/movements-api";
+import {
+  clientIdempotencyKey,
+  parseApiResponse,
+} from "@/shared/api/http-client";
+import type { RecurringRule } from "@/shared/types/domain";
 import type {
   ConfirmRecurringCandidatePayload,
-  ConfirmRecurringCandidateResponse,
   CreateRecurringPayload,
-  DetectRecurringCandidatesPayload,
-  DetectRecurringCandidatesResponse,
-  DiscardRecurringCandidateResponse,
   MarkRecurringPaidPayload,
   MarkRecurringPaidResponse,
   RecurringAccountsResponse,
-  RecurringRuleResponse,
+  RecurringOccurrencesResponse,
   RecurringRuleWithOccurrences,
-  UpcomingDashboardResponse,
+  UpcomingApiResponse,
   UpdateRecurringPayload,
 } from "./upcoming-types";
 
-export async function listUpcomingPayments(): Promise<UpcomingDashboardResponse> {
-  const response = await fetch("/api/v1/dashboard/upcoming", {
-    credentials: "same-origin",
-  });
-  const payload = (await response.json()) as ApiResponse<UpcomingDashboardResponse>;
+export async function listUpcomingPayments(): Promise<UpcomingApiResponse> {
+  return requestJson<UpcomingApiResponse>("/api/v1/upcoming");
+}
 
-  if (!payload.ok) {
-    throw toClientError(payload, response.status);
-  }
+export async function listRecurringAccounts(): Promise<RecurringAccountsResponse> {
+  return requestJson<RecurringAccountsResponse>("/api/v1/accounts");
+}
 
-  return payload.data;
+export async function listRecurringOccurrences(
+  ruleId: string
+): Promise<RecurringOccurrencesResponse> {
+  return requestJson<RecurringOccurrencesResponse>(
+    `/api/v1/recurring/${ruleId}/occurrences?limit=100`
+  );
 }
 
 export async function getRecurringRule(
   ruleId: string
 ): Promise<RecurringRuleWithOccurrences> {
-  const response = await fetch(`/api/v1/recurring/${ruleId}`, {
-    credentials: "same-origin",
-  });
-  const payload = (await response.json()) as ApiResponse<RecurringRuleResponse>;
-
-  if (!payload.ok) {
-    throw toClientError(payload, response.status);
-  }
-
-  return payload.data.recurring_rule;
+  const data = await requestJson<{
+    recurring_rule: Omit<RecurringRuleWithOccurrences, "occurrences">;
+  }>(`/api/v1/recurring/${ruleId}`);
+  return { ...data.recurring_rule, occurrences: [] };
 }
 
 export async function createRecurringRule(
-  payload: CreateRecurringPayload
-): Promise<RecurringRuleWithOccurrences> {
-  const response = await fetch("/api/v1/recurring", {
+  payload: CreateRecurringPayload,
+  idempotencyKey = clientIdempotencyKey("dashboard-recurring-create")
+): Promise<RecurringRule> {
+  const data = await requestJson<{
+    recurring_rule: RecurringRule;
+  }>("/api/v1/recurring", {
     method: "POST",
-    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey,
     },
     body: JSON.stringify(payload),
   });
-  const apiPayload = (await response.json()) as ApiResponse<{
-    recurring_rule: RecurringRuleWithOccurrences;
-  }>;
-
-  if (!apiPayload.ok) {
-    throw toClientError(apiPayload, response.status);
-  }
-
-  return apiPayload.data.recurring_rule;
+  return data.recurring_rule;
 }
 
 export async function updateRecurringRule(
   ruleId: string,
   payload: UpdateRecurringPayload
-): Promise<RecurringRuleWithOccurrences> {
-  const response = await fetch(`/api/v1/recurring/${ruleId}`, {
+): Promise<RecurringRule> {
+  const data = await requestJson<{
+    recurring_rule: RecurringRule;
+  }>(`/api/v1/recurring/${ruleId}`, {
     method: "PATCH",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  const apiPayload = (await response.json()) as ApiResponse<{
+  return data.recurring_rule;
+}
+
+export async function pauseRecurringRule(ruleId: string) {
+  return requestJson<{
     recurring_rule: RecurringRuleWithOccurrences;
-  }>;
+    idempotent: boolean;
+  }>(`/api/v1/recurring/${ruleId}/pause`, { method: "POST" });
+}
 
-  if (!apiPayload.ok) {
-    throw toClientError(apiPayload, response.status);
-  }
-
-  return apiPayload.data.recurring_rule;
+export async function resumeRecurringRule(ruleId: string) {
+  return requestJson<{
+    recurring_rule: RecurringRuleWithOccurrences;
+    idempotent: boolean;
+  }>(`/api/v1/recurring/${ruleId}/resume`, { method: "POST" });
 }
 
 export async function cancelRecurringRule(ruleId: string) {
-  const response = await fetch(`/api/v1/recurring/${ruleId}/cancel`, {
-    method: "POST",
-    credentials: "same-origin",
-  });
-  const apiPayload = (await response.json()) as ApiResponse<{
-    recurring_rule: RecurringRuleWithOccurrences;
-  }>;
+  return requestJson<{ recurring_rule: RecurringRuleWithOccurrences }>(
+    `/api/v1/recurring/${ruleId}/cancel`,
+    { method: "POST" }
+  );
+}
 
-  if (!apiPayload.ok) {
-    throw toClientError(apiPayload, response.status);
-  }
-
-  return apiPayload.data.recurring_rule;
+export async function skipRecurringOccurrence(
+  ruleId: string,
+  occurrenceId: string
+) {
+  return requestJson<{
+    occurrence: RecurringOccurrencesResponse["occurrences"][number];
+    idempotent: boolean;
+  }>(
+    `/api/v1/recurring/${ruleId}/occurrences/${occurrenceId}/skip`,
+    { method: "POST" }
+  );
 }
 
 export async function markRecurringPaid(
   ruleId: string,
   occurrenceId: string,
-  payload: MarkRecurringPaidPayload
+  payload: MarkRecurringPaidPayload,
+  idempotencyKey: string
 ): Promise<MarkRecurringPaidResponse> {
-  const response = await fetch(
+  return requestJson<MarkRecurringPaidResponse>(
     `/api/v1/recurring/${ruleId}/occurrences/${occurrenceId}/mark-paid`,
     {
       method: "POST",
-      credentials: "same-origin",
       headers: {
         "Content-Type": "application/json",
-        "Idempotency-Key": createClientIdempotencyKey(ruleId, occurrenceId),
+        "Idempotency-Key": idempotencyKey,
       },
       body: JSON.stringify(payload),
     }
   );
-  const apiPayload = (await response.json()) as ApiResponse<MarkRecurringPaidResponse>;
-
-  if (!apiPayload.ok) {
-    throw toClientError(apiPayload, response.status);
-  }
-
-  return apiPayload.data;
-}
-
-export async function detectRecurringCandidates(
-  payload: DetectRecurringCandidatesPayload = {}
-): Promise<DetectRecurringCandidatesResponse> {
-  const response = await fetch("/api/v1/recurring/detect", {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  const apiPayload = (await response.json()) as ApiResponse<DetectRecurringCandidatesResponse>;
-
-  if (!apiPayload.ok) {
-    throw toClientError(apiPayload, response.status);
-  }
-
-  return apiPayload.data;
 }
 
 export async function confirmRecurringCandidate(
   candidateId: string,
   payload: ConfirmRecurringCandidatePayload = {}
-): Promise<ConfirmRecurringCandidateResponse> {
-  const response = await fetch(`/api/v1/recurring/candidates/${candidateId}/confirm`, {
-    method: "POST",
-    credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  const apiPayload = (await response.json()) as ApiResponse<ConfirmRecurringCandidateResponse>;
-
-  if (!apiPayload.ok) {
-    throw toClientError(apiPayload, response.status);
-  }
-
-  return apiPayload.data;
-}
-
-export async function discardRecurringCandidate(
-  candidateId: string
-): Promise<DiscardRecurringCandidateResponse> {
-  const response = await fetch(`/api/v1/recurring/candidates/${candidateId}/discard`, {
-    method: "POST",
-    credentials: "same-origin",
-  });
-  const apiPayload = (await response.json()) as ApiResponse<DiscardRecurringCandidateResponse>;
-
-  if (!apiPayload.ok) {
-    throw toClientError(apiPayload, response.status);
-  }
-
-  return apiPayload.data;
-}
-
-export async function listRecurringAccounts(): Promise<RecurringAccountsResponse> {
-  const response = await fetch("/api/v1/accounts", {
-    credentials: "same-origin",
-  });
-  const payload = (await response.json()) as ApiResponse<RecurringAccountsResponse>;
-
-  if (!payload.ok) {
-    throw toClientError(payload, response.status);
-  }
-
-  return payload.data;
-}
-
-function createClientIdempotencyKey(ruleId: string, occurrenceId: string): string {
-  const random =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-
-  return `dashboard-recurring-payment:${ruleId}:${occurrenceId}:${random}`;
-}
-
-function toClientError<T>(payload: ApiResponse<T>, status: number) {
-  if (payload.ok) {
-    return new ApiClientError("INVALID_RESPONSE", "Respuesta inesperada.", status, null);
-  }
-
-  return new ApiClientError(
-    payload.error.code,
-    payload.error.message,
-    status,
-    payload.meta?.trace_id ?? null
+): Promise<{
+  candidate: UpcomingApiResponse["candidates"][number];
+  recurring_rule: RecurringRule;
+}> {
+  return requestJson<{
+    candidate: UpcomingApiResponse["candidates"][number];
+    recurring_rule: RecurringRule;
+  }>(
+    `/api/v1/recurring/candidates/${candidateId}/confirm`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }
   );
+}
+
+export async function discardRecurringCandidate(candidateId: string) {
+  return requestJson<{ candidate: UpcomingApiResponse["candidates"][number] }>(
+    `/api/v1/recurring/candidates/${candidateId}/discard`,
+    { method: "POST" }
+  );
+}
+
+async function requestJson<T>(
+  input: string,
+  init: RequestInit = {}
+): Promise<T> {
+  const response = await fetch(input, {
+    credentials: "same-origin",
+    ...init,
+  });
+  return parseApiResponse<T>(response);
 }

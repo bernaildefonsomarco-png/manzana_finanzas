@@ -23,16 +23,16 @@ export type MoneyLayersBox = {
  * cubra (o la caja no aparece en la lista, p. ej. porque esta archivada),
  * el compromiso completo cuenta como no cubierto.
  *
- * Nota de alcance: hoy solo los compromisos recurrentes (`recurring_rules
- * .linked_box_id`) llegan aqui con una caja vinculada. Los compromisos de
- * deuda podrian cubrirse por una caja via `boxes.linked_debt_id`
- * (`24` §4.2), pero esa cobertura no esta cableada todavia — es del
- * dominio de `31_modulo_deudas.md` ("sin doble descuento", dueño `W-11`),
- * no de este corte.
+ * Recurrentes y cuotas de deuda llegan con la caja resuelta por sus
+ * repositorios. Si varios compromisos apuntan a la misma caja, el saldo de
+ * esa reserva se consume virtualmente una sola vez y en orden de vencimiento
+ * (`WEB-D206`).
  */
 export type MoneyLayersCommitment = {
+  id?: string;
   amount: number;
   linked_box_id: string | null;
+  due_at?: string;
 };
 
 export type MoneyLayers = {
@@ -65,17 +65,31 @@ export function calculateMoneyLayers(params: {
   const separatedInBoxes = sum(boxes.map((box) => box.current_balance));
   const freeInAccounts = totalBalance - separatedInBoxes;
 
-  const boxById = new Map(boxes.map((box) => [box.id, box]));
+  // WEB-D206: una caja representa una sola reserva. Su saldo se consume
+  // virtualmente una vez, por vencimiento estable, en vez de volver a usar
+  // el saldo completo para cada compromiso vinculado.
+  const remainingByBoxId = new Map(
+    boxes.map((box) => [box.id, Math.max(0, box.current_balance)])
+  );
   const upcomingUncoveredCommitments = sum(
-    commitments.map((commitment) => {
-      const coveringBox = commitment.linked_box_id
-        ? boxById.get(commitment.linked_box_id)
-        : undefined;
-      const covered = coveringBox
-        ? Math.min(commitment.amount, Math.max(0, coveringBox.current_balance))
-        : 0;
-      return Math.max(0, commitment.amount - covered);
-    })
+    [...commitments]
+      .sort(compareCommitmentsForCoverage)
+      .map((commitment) => {
+        const remaining = commitment.linked_box_id
+          ? remainingByBoxId.get(commitment.linked_box_id)
+          : undefined;
+        const covered =
+          remaining === undefined
+            ? 0
+            : Math.min(commitment.amount, remaining);
+        if (commitment.linked_box_id && remaining !== undefined) {
+          remainingByBoxId.set(
+            commitment.linked_box_id,
+            normalizeMovementAmount(remaining - covered)
+          );
+        }
+        return Math.max(0, commitment.amount - covered);
+      })
   );
 
   return {
@@ -85,6 +99,17 @@ export function calculateMoneyLayers(params: {
     upcoming_uncovered_commitments: normalizeMovementAmount(upcomingUncoveredCommitments),
     operational_free_money: normalizeMovementAmount(freeInAccounts - upcomingUncoveredCommitments),
   };
+}
+
+function compareCommitmentsForCoverage(
+  left: MoneyLayersCommitment,
+  right: MoneyLayersCommitment
+): number {
+  const byDate = (left.due_at ?? "9999-12-31").localeCompare(
+    right.due_at ?? "9999-12-31"
+  );
+  if (byDate !== 0) return byDate;
+  return (left.id ?? "").localeCompare(right.id ?? "");
 }
 
 function sum(values: number[]): number {

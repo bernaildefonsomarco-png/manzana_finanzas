@@ -1,13 +1,19 @@
+import { randomUUID } from "node:crypto";
 import { createServiceClient } from "@/data/supabase/server";
 import { refreshDebtLifecycle } from "@/core/debts/debt-lifecycle-service";
+import { DebtCreationCommandHandler } from "@/core/debts/debt-creation-command";
 import { recordInitialOnboardingValue } from "@/core/onboarding/onboarding-activation";
 import {
-  createDebt,
   listDebts,
   sortDebtsByNextPaymentDate,
 } from "@/data/repositories/debts.repository";
+import { SupabaseDebtCreationExecutionPort } from "@/data/repositories/debt-creation-command.repository";
+import { SupabaseFinancialCoreRepository } from "@/data/repositories/movements.repository";
+import { CommandDispatcher } from "@/core/finance";
+import { CoreError } from "@/core/finance/errors";
 import { getApiAuth } from "@/app/api/_lib/auth";
 import {
+  coreError,
   errorJson,
   getTraceId,
   okJson,
@@ -50,6 +56,7 @@ export async function GET(request: Request) {
 
     const debts = await listDebts(auth.client, auth.userId, query.status, {
       limit: limit + 1,
+      direction: query.direction,
       cursorFilter: cursor
         ? buildCursorOrFilter("created_at", cursor, "desc")
         : undefined,
@@ -91,28 +98,45 @@ export async function POST(request: Request) {
     const parsed = CreateDebtRequestSchema.parse(body);
     const serviceClient = createServiceClient();
 
-    const { debt, idempotent } = await createDebt(serviceClient, {
-      userId: auth.userId,
-      direction: parsed.direction,
-      kind: parsed.kind,
-      name: parsed.name,
-      relatedPersonName: parsed.related_person_name ?? null,
-      principalAmount: parsed.principal_amount,
-      currency: parsed.currency,
-      openedAt: parsed.opened_at ?? undefined,
-      dueDate: parsed.due_date ?? null,
-      nextPaymentDate: parsed.next_payment_date ?? null,
-      installmentCount: parsed.installment_count ?? null,
-      installmentAmount: parsed.installment_amount ?? null,
-      interestNotes: parsed.interest_notes ?? null,
-      source: "dashboard_manual",
-      metadata: {
-        created_from: "dashboard_debts",
-        trace_id,
-        note: "Debt creation does not affect balances until a payment is recorded through Core.",
+    const handler = new DebtCreationCommandHandler(
+      new SupabaseDebtCreationExecutionPort(serviceClient)
+    );
+    const dispatcher = new CommandDispatcher(
+      new SupabaseFinancialCoreRepository(serviceClient),
+      { debtCreationHandler: handler }
+    );
+    const result = await dispatcher.dispatch({
+      type: "CreateDebtCommand",
+      command_id: randomUUID(),
+      user_id: auth.userId,
+      actor: { type: "user", id: auth.userId },
+      source: "api.v1.debts.post",
+      trace_id,
+      payload: {
+        direction: parsed.direction,
+        kind: parsed.kind,
+        name: parsed.name,
+        related_person_name: parsed.related_person_name ?? null,
+        principal_amount: parsed.principal_amount,
+        currency: parsed.currency,
+        opened_at: parsed.opened_at ?? limaIsoDate(),
+        due_date: parsed.due_date ?? null,
+        first_due_date: parsed.next_payment_date ?? parsed.due_date ?? null,
+        installment_count: parsed.installment_count ?? null,
+        installment_amount: parsed.installment_amount ?? null,
+        interest_notes: parsed.interest_notes ?? null,
+        account_id: parsed.account_id ?? null,
+        movement_type:
+          parsed.direction === "they_owe_me"
+            ? "prestamo_dado"
+            : parsed.account_id
+              ? "prestamo_recibido"
+              : "deuda_adquirida",
+        idempotency_key: idempotencyKey,
+        creation_source: "dashboard_manual",
       },
-      idempotencyKey,
     });
+    const { debt, idempotent } = result;
 
     if (!idempotent) {
       try {
@@ -151,6 +175,7 @@ export async function POST(request: Request) {
       { status: idempotent ? 200 : 201 }
     );
   } catch (error) {
+    if (error instanceof CoreError) return coreError(error, meta);
     if (isZodLike(error)) return validationError(error, meta);
 
     if (isConflictError(error)) {
@@ -164,6 +189,18 @@ export async function POST(request: Request) {
 
     return unexpectedError(error, meta);
   }
+}
+
+function limaIsoDate(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(now);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 function isZodLike(error: unknown): boolean {

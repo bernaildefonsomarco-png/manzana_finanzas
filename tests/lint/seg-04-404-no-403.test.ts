@@ -1,7 +1,7 @@
 // `AC-SEG-04` (`15` §8): un recurso de otro usuario devuelve 404, nunca 403.
-// Criterio agregado (`51` §5): su conjunto son las 71 rutas de `/api/v1`
+// Criterio agregado (`51` §5): su conjunto son las 83 rutas de `/api/v1`
 // (`AC-SEG-04` no se cierra con una prueba, se cierra con la unión de que
-// ninguna de las 71 use 403 para "no es tuyo" — que es exactamente lo que
+// ninguna de las 83 use 403 para "no es tuyo" — que es exactamente lo que
 // produce el patrón de repositorio del proyecto: toda consulta de un
 // recurso filtra por `user_id` e `id` a la vez, así que un recurso ajeno
 // simplemente no aparece, nunca se detecta y se rechaza aparte). W-08 sumó
@@ -10,6 +10,12 @@
 // `pending/[id]/context`, `pending/batch/[batch_id]/undo`,
 // `email/suggestions`, `email/suggestions/[id]/{accept,reject,silence}`,
 // `templates`, `templates/[id]`, `templates/[id]/use`, `capture/parse`.
+// W-11 suma doce: `debts/[id]/close`, `debts/[id]/installments`,
+// `debts/[id]/installments/[iid]/{reschedule,skip}`,
+// `debts/[id]/payments/preview`, `debts/[id]/reopen`,
+// `recurring/[id]/occurrences`,
+// `recurring/[id]/occurrences/[occurrence_id]/skip`,
+// `recurring/[id]/{pause,resume}`, `recurring/candidates`, `upcoming`.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -28,11 +34,11 @@ function recorrer(directorio: string, acumulado: string[]): string[] {
   return acumulado;
 }
 
-describe("AC-SEG-04 (agregado): ninguna de las 71 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
+describe("AC-SEG-04 (agregado): ninguna de las 83 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
   const rutas = recorrer(RAIZ_V1, []);
 
-  it("el conjunto declarado tiene 71 rutas — si cambia, hay que revisar esta prueba", () => {
-    expect(rutas.length).toBe(71);
+  it("el conjunto declarado tiene 83 rutas — si cambia, hay que revisar esta prueba", () => {
+    expect(rutas.length).toBe(83);
   });
 
   it.each(rutas.map((rutaAbsoluta) => [relative(RAIZ_V1, rutaAbsoluta).split("\\").join("/"), rutaAbsoluta]))(

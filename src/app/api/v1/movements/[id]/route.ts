@@ -4,6 +4,10 @@ import { CommandDispatcher } from "@/core/finance";
 import { CoreError } from "@/core/finance/errors";
 import { createServiceClient } from "@/data/supabase/server";
 import { SupabaseFinancialCoreRepository } from "@/data/repositories/movements.repository";
+import {
+  reverseDebtPayment,
+  reverseRecurringPayment,
+} from "@/data/repositories/specialized-payment-reversal.repository";
 import { getApiAuth } from "@/app/api/_lib/auth";
 import {
   coreError,
@@ -132,8 +136,65 @@ export async function DELETE(request: Request, context: RouteContext) {
     const params = ParamsSchema.parse(await context.params);
     const body = await readJsonBody(request);
     const parsed = DeleteMovementRequestSchema.parse(body);
+    const { data: ownedMovement, error: ownershipError } = await auth.client
+      .from("movements")
+      .select(
+        "id,type,status,debt_id,recurring_rule_id,recurring_occurrence_id"
+      )
+      .eq("user_id", auth.userId)
+      .eq("id", params.id)
+      .maybeSingle();
+
+    if (ownershipError) {
+      return errorJson(
+        "INTERNAL_ERROR",
+        "No pude comprobar el movimiento.",
+        meta,
+        500
+      );
+    }
+    if (!ownedMovement) {
+      return errorJson("NOT_FOUND", "Movimiento no encontrado.", meta, 404);
+    }
+
+    const serviceClient = createServiceClient();
+    if (
+      ownedMovement.type === "pago_recurrente" &&
+      ownedMovement.recurring_rule_id &&
+      ownedMovement.recurring_occurrence_id
+    ) {
+      const reversal = await reverseRecurringPayment(serviceClient, {
+        userId: auth.userId,
+        movementId: ownedMovement.id,
+        reason: parsed.reason,
+        mode: parsed.mode,
+        traceId: trace_id,
+      });
+      return okJson(
+        { type: "movement_deleted", ...reversal },
+        { ...meta, idempotent_replay: reversal.idempotent || undefined }
+      );
+    }
+
+    if (
+      ["pago_deuda", "devolucion_recibida"].includes(ownedMovement.type) &&
+      ownedMovement.debt_id
+    ) {
+      const reversal = await reverseDebtPayment(serviceClient, {
+        userId: auth.userId,
+        movementId: ownedMovement.id,
+        reason: parsed.reason,
+        mode: parsed.mode,
+        traceId: trace_id,
+      });
+      return okJson(
+        { type: "movement_deleted", ...reversal },
+        { ...meta, idempotent_replay: reversal.idempotent || undefined }
+      );
+    }
+
     const dispatcher = new CommandDispatcher(
-      new SupabaseFinancialCoreRepository(createServiceClient())
+      new SupabaseFinancialCoreRepository(serviceClient)
     );
 
     const result = await dispatcher.dispatch({
@@ -170,4 +231,3 @@ function isZodLike(error: unknown): boolean {
       Array.isArray((error as { issues?: unknown }).issues)
   );
 }
-

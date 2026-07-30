@@ -344,6 +344,7 @@ export type Database = {
           metadata: Json
           movement_id: string
           policy: string
+          reversed_at: string | null
           user_id: string
         }
         Insert: {
@@ -357,6 +358,7 @@ export type Database = {
           metadata?: Json
           movement_id: string
           policy?: string
+          reversed_at?: string | null
           user_id: string
         }
         Update: {
@@ -370,6 +372,7 @@ export type Database = {
           metadata?: Json
           movement_id?: string
           policy?: string
+          reversed_at?: string | null
           user_id?: string
         }
         Relationships: [
@@ -413,6 +416,8 @@ export type Database = {
           metadata: Json
           movement_id: string | null
           paid_at: string
+          reversal_reason: string | null
+          reversed_at: string | null
           source: string
           user_id: string
         }
@@ -425,6 +430,8 @@ export type Database = {
           metadata?: Json
           movement_id?: string | null
           paid_at?: string
+          reversal_reason?: string | null
+          reversed_at?: string | null
           source?: string
           user_id: string
         }
@@ -437,6 +444,8 @@ export type Database = {
           metadata?: Json
           movement_id?: string | null
           paid_at?: string
+          reversal_reason?: string | null
+          reversed_at?: string | null
           source?: string
           user_id?: string
         }
@@ -2177,6 +2186,8 @@ export type Database = {
           cancelled_at: string | null
           category_id: string | null
           confidence: number | null
+          creation_idempotency_key: string | null
+          creation_request_hash: string | null
           created_at: string
           currency: string
           date_window_end_day: number | null
@@ -2207,6 +2218,8 @@ export type Database = {
           cancelled_at?: string | null
           category_id?: string | null
           confidence?: number | null
+          creation_idempotency_key?: string | null
+          creation_request_hash?: string | null
           created_at?: string
           currency?: string
           date_window_end_day?: number | null
@@ -2237,6 +2250,8 @@ export type Database = {
           cancelled_at?: string | null
           category_id?: string | null
           confidence?: number | null
+          creation_idempotency_key?: string | null
+          creation_request_hash?: string | null
           created_at?: string
           currency?: string
           date_window_end_day?: number | null
@@ -2901,7 +2916,18 @@ export type Database = {
           p_movement: Json
           p_movement_audit_logs: Json
           p_movement_outbox_events: Json
-          p_related_person_normalized_name: string
+          p_related_person_normalized_name: string | null
+        }
+        Returns: Json
+      }
+      commit_debt_operation: {
+        Args: {
+          p_debt_id: string
+          p_idempotency_key: string
+          p_operation: string
+          p_payload: Json
+          p_trace_id: string
+          p_user_id: string
         }
         Returns: Json
       }
@@ -3012,6 +3038,15 @@ export type Database = {
           p_occurrence_id: string
           p_recurring_outbox_events: Json
           p_recurring_rule_id: string
+        }
+        Returns: Json
+      }
+      commit_recurring_occurrence_skip: {
+        Args: {
+          p_occurrence_id: string
+          p_recurring_rule_id: string
+          p_trace_id: string
+          p_user_id: string
         }
         Returns: Json
       }
@@ -3314,6 +3349,12 @@ export type Database = {
         Args: { p_days?: number }
         Returns: Json
       }
+      list_recurring_generation_user_ids: {
+        Args: { p_limit?: number | null }
+        Returns: {
+          user_id: string
+        }[]
+      }
       manage_financial_memory: {
         Args: {
           p_action: string
@@ -3586,6 +3627,26 @@ export type Database = {
         Args: {
           p_as_of_date: string
           p_due_soon_days: number
+          p_trace_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      reverse_debt_payment: {
+        Args: {
+          p_mode: string
+          p_movement_id: string
+          p_reason: string
+          p_trace_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      reverse_recurring_payment: {
+        Args: {
+          p_mode: string
+          p_movement_id: string
+          p_reason: string
           p_trace_id: string
           p_user_id: string
         }
@@ -4196,4 +4257,3 @@ export const Constants = {
     },
   },
 } as const
-

@@ -6,8 +6,8 @@
 //
 // Dos listas (`service-role-lista.ts`): la permanente (trabajadores,
 // webhooks, salud, los dos casos de `15` §4 que sí necesitan el rol para
-// siempre) y las excepciones temporales (las 48 rutas de `/api/v1`
-// pendientes de migrar junto con `14`, `WEB-D168`). Cualquier importación
+// siempre) y las excepciones temporales de `/api/v1` pendientes de migrar
+// junto con `14` y los contratos de cada corte (`WEB-D168`). Cualquier importación
 // fuera de las dos falla el build. Una entrada de la lista que ya no
 // corresponde a ninguna importación real también falla — la lista debe
 // seguir siendo exacta, no solo permisiva.

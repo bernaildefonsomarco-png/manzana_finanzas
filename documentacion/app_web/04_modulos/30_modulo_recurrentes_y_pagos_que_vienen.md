@@ -72,16 +72,16 @@ status                             recurring_status not null
 name                               text not null
 merchant_pattern                   text null
 expected_amount                    numeric(14,2) null
-amount_variability                 text not null   -- fijo | variable
+amount_variability                 text not null   -- fixed | variable | estimated
 currency                           text not null default 'PEN'
-frequency                          text not null   -- mensual | quincenal | semanal | anual | personalizada
+frequency                          text not null   -- weekly | biweekly | monthly | yearly | custom_window
 day_of_month                       int null
 next_expected_date                 date null
 category_id                        text null
 subcategory_id                     uuid null
 linked_box_id                      uuid null references boxes(id)
 linked_debt_id                     uuid null references debts(id)
-source                             text not null   -- manual | detectado | email
+source                             text not null   -- dashboard_manual | detected | email
 requires_confirmation_for_payment  boolean not null default true
 created_at, updated_at, deleted_at, metadata
 ```
@@ -128,7 +128,14 @@ con datos concretos en vez de con un porcentaje.
 
 ### 4.4 Migración requerida
 
-Ninguna nueva. Las tablas existen desde la migración `014`.
+Las tablas existen desde la migración `015`. `W-11` corrige esa misma
+migración para que confirmar un pago no materialice la siguiente ocurrencia
+en el request, y añade la `056` para la reversión especializada y el
+constraint inmutable de confirmación. Se reaplica el esquema completo según
+`WEB-D163`.
+
+Los valores persistidos anteriores son canónicos; las etiquetas españolas
+pertenecen solo a la interfaz (`WEB-D204`).
 
 ## 5. Máquina de estados
 
@@ -194,7 +201,7 @@ Se sugiere un pago que viene cuando se cumplen las tres condiciones:
 |---|---|
 | Repeticiones del mismo comercio | **3 o más** |
 | Regularidad del intervalo | Desviación menor al 20% del periodo |
-| Estabilidad del monto | Igual, o variación menor al 15% |
+| Clasificación del monto | Hasta 15%: fijo/estimado. Más de 15%: variable |
 
 Ejemplo que **sí** dispara sugerencia: Netflix S/44.90 el 14 de mayo, el 14
 de junio y el 13 de julio. Tres repeticiones, intervalo de ~30 días con
@@ -205,7 +212,9 @@ S/40.00, S/120.00 y S/85.00 en fechas irregulares. Es un comercio habitual,
 no un pago que se repite.
 
 Si el monto varía más del 15% pero el intervalo es regular, se sugiere como
-`amount_variability: variable` y sin monto esperado fijo.
+`amount_variability: variable`. La variación no invalida por sí sola el
+patrón temporal, pero una regla variable no descuenta del dinero libre hasta
+que el usuario acepte una estimación explícita (`WEB-D207`).
 
 **`RUL-REC-03` — Un pago esperado no afecta saldos**
 
@@ -233,7 +242,8 @@ Es `RUL-CUENTAS-04` visto desde este lado.
 3. La ocurrencia guarda `paid_movement_id` y pasa a `pagada`
 4. El saldo de la cuenta baja
 5. El compromiso deja de descontar del dinero libre (ya salió de verdad)
-6. Se genera la siguiente ocurrencia
+6. La regla avanza su próxima fecha; el trabajo diario materializa el
+   horizonte de ocurrencias, nunca este request
 ```
 
 El paso 5 es donde la contabilidad cuadra: el dinero pasa de "comprometido" a
@@ -267,8 +277,9 @@ Un pago que viene puede corresponder a la cuota de una deuda. En ese caso:
 
 - El seguimiento del saldo y el progreso los lleva **el módulo de deudas**.
 - Este módulo aporta la fecha y el recordatorio.
-- Marcar pagado aquí ejecuta el pago de cuota del módulo 31, no un
-  `pago_recurrente` genérico.
+- Marcar pagado aquí solo podrá ejecutar el pago de cuota cuando exista el
+  commit compuesto único de `WEB-D208`; hasta entonces la acción se bloquea
+  y se deriva al flujo especializado de la deuda, nunca encadena dos RPC.
 - **El compromiso se cuenta una sola vez**, no como cuota y como recurrente.
 
 **`RUL-REC-10` — "Vencido" solo cuando aporta**
@@ -575,8 +586,8 @@ debe subir.
   `(recurring_rule_id, expected_date)` único,
   `recurring_candidates (user_id, status)`.
 - Las ocurrencias se generan por trabajo diario, nunca en una petición.
-- `GET /upcoming` resuelve la unión con deudas en **una sola consulta**, sin
-  N+1.
+- `GET /upcoming` resuelve la unión con un número fijo de lecturas, sin N+1;
+  “una consulta” no significa una sola sentencia SQL (`WEB-D206`).
 - La detección de candidatos corre como trabajo diario sobre movimientos
   recientes, no sobre todo el historial.
 - Presupuesto: listado bajo 400 ms; `/upcoming` bajo 300 ms porque lo consume
@@ -595,7 +606,8 @@ debe subir.
 ## 19. Casos borde
 
 1. **Día 31 en un mes de 30.** La ocurrencia cae el último día del mes.
-2. **Frecuencia quincenal a fin de mes.** Días 15 y último del mes.
+2. **Frecuencia quincenal.** Cada 14 días desde la fecha base; no significa
+   días 15 y último del mes (`WEB-D207`).
 3. **Pago adelantado antes de la fecha esperada.** Se marca la ocurrencia
    próxima como pagada; no se crea una fuera de ciclo.
 4. **Dos pagos del mismo servicio en un mes.** El segundo se registra como
@@ -621,35 +633,84 @@ debe subir.
 ## 20. Criterios de aceptación
 
 - `AC-REC-01` — Una detección crea un candidato, nunca una regla activa.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-11`: el detector devuelve
+  `candidate`/`ready_to_suggest` y la pantalla solo llama a la activación
+  después de una confirmación explícita (`src/core/recurring/recurring-detector.test.ts`,
+  `src/features/upcoming/upcoming-screen.test.tsx`).
 - `AC-REC-02` — Un pago esperado no modifica el saldo de ninguna cuenta.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-11`: las lecturas de
+  ocurrencias no escriben y el Core conserva el saldo cuando un
+  `pago_recurrente` no tiene cuenta; ambos caminos están cubiertos por
+  `src/data/repositories/recurring.repository.test.ts` y
+  `src/core/finance/command-dispatcher.test.ts`.
 - `AC-REC-03` — Un pago cubierto por caja no descuenta del dinero libre; la
-  cobertura parcial descuenta solo la diferencia. Evidencia: `TEST`.
+  cobertura parcial descuenta solo la diferencia. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-11`: `src/core/finance/money-layers.test.ts` prueba
+  cobertura completa, parcial (caja S/60 y compromiso S/89 → S/29) y consumo
+  único de la caja.
 - `AC-REC-04` — Marcar pagado crea un movimiento real vía Core y el dinero
-  libre no cambia por ello. Evidencia: `TEST`.
+  libre no cambia por ello. Evidencia: `TEST`. Clase: `integracion`. Cierra
+  la parte de ruta/Core en `W-11`: `mark-paid/route.test.ts` cubre camino
+  feliz, 401, 404, validación, retry idempotente y fecha futura; el
+  `CommandDispatcher` prueba el efecto de `pago_recurrente` sobre la cuenta.
+  No cierra la creación feliz contra Postgres real: no existe todavía una
+  prueba RLS que ejecute el `commit_recurring_payment` desde una ocurrencia
+  esperada y verifique el saldo completo (limitación declarada).
 - `AC-REC-05` — Eliminar el movimiento devuelve la ocurrencia a esperada.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-11`:
+  `tests/rls/w11-specialized-payment-reversal.test.ts` comprueba en Postgres
+  la reversión del movimiento, la reapertura de la ocurrencia y la regla,
+  con idempotencia y outbox.
 - `AC-REC-06` — Un cambio de monto se muestra explícitamente y nunca se
-  actualiza el esperado en silencio. Evidencia: `TEST` + `USER`.
+  actualiza el esperado en silencio. Evidencia: `TEST` + `USER`. Clase:
+  `unidad`. Cierra la parte `TEST` en `W-11`: `upcoming-screen.test.tsx`
+  exige elegir entre actualizar el esperado o tratarlo como puntual y
+  conserva el pago si falla la actualización descriptiva. `USER` no cierra:
+  no hay sesión de navegador real disponible.
 - `AC-REC-07` — Una cuota vinculada a deuda cuenta **una sola vez** en los
-  compromisos. Evidencia: `TEST`.
+  compromisos. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-11`:
+  `src/core/recurring/upcoming-commitments.test.ts` y
+  `src/app/api/v1/upcoming/route.test.ts` excluyen la recurrencia ligada y
+  dejan una sola cuota de deuda.
 - `AC-REC-08` — La regla de "vencido" vs "pendiente" se aplica según
-  `RUL-REC-10`. Evidencia: `TEST` + `USER`.
+  `RUL-REC-10`. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la
+  parte `TEST` en `W-11`: `recurring-occurrence-scheduler.test.ts` y
+  `upcoming-view-model.test.ts` prueban el umbral de 0–2/3+ días, fechas
+  aproximadas y deudas informales. `USER` no cierra sin sesión real.
 - `AC-REC-09` — El umbral de detección exige 3 repeticiones con intervalo y
-  monto estables. Evidencia: `TEST`.
+  monto estables. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-11`:
+  `src/core/recurring/recurring-detector.test.ts` convierte los ejemplos de
+  Netflix, variación de 12 % y variación mayor a 15 % en pruebas.
 - `AC-REC-10` — Una sugerencia muestra su evidencia concreta, nunca un
-  porcentaje. Evidencia: `TEST` + `USER`.
+  porcentaje. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la parte
+  `TEST` en `W-11`: `recurring-candidate-enricher.test.ts` conserva fechas,
+  montos y cadencia deterministas, y `upcoming-screen.test.tsx` muestra las
+  tres fechas y el monto sin `confidence`. `USER` no cierra sin navegador.
 - `AC-REC-11` — El detector no sugiere comercios con regla activa ni
-  movimientos vinculados a deudas. Evidencia: `TEST`.
+  movimientos vinculados a deudas. Evidencia: `TEST`. Clase: `unidad`.
+  Cierra en `W-11`: `recurring-detector.test.ts` cubre exclusión de regla
+  activa y de movimientos con `debt_id`.
 - `AC-REC-12` — Las ocurrencias las genera un trabajo programado, no una
-  petición. Evidencia: `CODE`.
+  petición. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-11`:
+  `recurring.repository.test.ts` verifica que alta/edición no insertan
+  ocurrencias, `recurring-occurrence-scheduler.test.ts` prueba la
+  generación idempotente del horizonte, y la ruta del worker/RLS prueba que
+  el cron enumera todos los usuarios activos sin límite implícito.
 - `AC-REC-13` — `requires_confirmation_for_payment` no se puede desactivar
-  desde ninguna superficie en V1. Evidencia: `TEST`.
+  desde ninguna superficie en V1. Evidencia: `TEST`. Clase: `integracion`.
+  Cierra en `W-11`: `tests/rls/w11-specialized-payment-reversal.test.ts`
+  confirma que Postgres rechaza `false`, y las rutas no exponen ese campo
+  como escritura.
 - `AC-REC-14` — El correo nunca activa una regla ni marca una ocurrencia como
-  pagada. Evidencia: `TEST`.
-- `AC-REC-15` — `GET /upcoming` unifica recurrentes y cuotas sin duplicar, en
-  una sola consulta. Evidencia: `TEST`.
+  pagada. Evidencia: `TEST`. No cierra: hay pruebas generales de email que
+  crean `pending_items`, pero no una prueba dedicada que conecte una
+  detección recurrente por correo con la garantía “candidato, nunca regla” y
+  “nunca pagada”; queda pendiente esa prueba de integración.
+- `AC-REC-15` — `GET /upcoming` unifica recurrentes y cuotas sin duplicar,
+  con un número fijo de lecturas y sin N+1 (`WEB-D206`). Evidencia: `TEST`.
+  Clase: `integracion`. Cierra en `W-11`: `src/app/api/v1/upcoming/route.test.ts`
+  verifica 200/401, validación, aislamiento por usuario, horizonte de 30 días,
+  unión sin doble conteo e igual número de lecturas en retries.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

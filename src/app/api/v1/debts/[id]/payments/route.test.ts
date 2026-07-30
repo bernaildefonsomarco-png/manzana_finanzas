@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const mocks = vi.hoisted(() => ({
   commitDebtPayment: vi.fn(),
@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   refreshDebtLifecycle: vi.fn(),
   findDebtPaymentByIdempotencyKey: vi.fn(),
   listDebtInstallments: vi.fn(),
+  listDebtPaymentsForDebt: vi.fn(),
 }));
 
 vi.mock("@/app/api/_lib/auth", () => ({
@@ -23,6 +24,7 @@ vi.mock("@/data/repositories/accounts.repository", () => ({
 vi.mock("@/data/repositories/debts.repository", () => ({
   commitDebtPayment: mocks.commitDebtPayment,
   getDebtById: mocks.getDebtById,
+  listDebtPaymentsForDebt: mocks.listDebtPaymentsForDebt,
 }));
 
 vi.mock("@/data/supabase/server", () => ({
@@ -75,6 +77,7 @@ beforeEach(() => {
   });
   mocks.findDebtPaymentByIdempotencyKey.mockResolvedValue(null);
   mocks.listDebtInstallments.mockResolvedValue([]);
+  mocks.listDebtPaymentsForDebt.mockResolvedValue([]);
 });
 
 describe("debt payment route", () => {
@@ -143,9 +146,112 @@ describe("debt payment route", () => {
     expect(payload.error.code).toBe("CORE_REJECTED");
     expect(mocks.commitDebtPayment).not.toHaveBeenCalled();
   });
+
+  it("sin sesión: 401", async () => {
+    mocks.getApiAuth.mockResolvedValue(null);
+    expect((await POST(paymentRequest(30), routeContext())).status).toBe(401);
+  });
+
+  it("deuda de otro usuario: 404, nunca 403", async () => {
+    mocks.getApiAuth.mockResolvedValue({
+      client: {},
+      userId: "22222222-2222-4222-8222-222222222222",
+    });
+    mocks.getDebtById.mockResolvedValue(null);
+    expect((await POST(paymentRequest(30), routeContext())).status).toBe(404);
+  });
+
+  it("validación: rechaza una fecha futura", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "u1" });
+    const request = paymentRequest(30, { paid_at: "2999-01-01T00:00:00.000Z" });
+    const response = await POST(request, routeContext());
+    expect(response.status).toBe(400);
+    expect(mocks.commitDebtPayment).not.toHaveBeenCalled();
+  });
+
+  it("idempotencia: devuelve el pago previo sin repetir el commit", async () => {
+    const existingDebt = debtFixture();
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: existingDebt.user_id });
+    mocks.findDebtPaymentByIdempotencyKey.mockResolvedValue({
+      movement: {
+        id: "33333333-3333-4333-8333-333333333333",
+        debt_id: existingDebt.id,
+        type: "pago_deuda",
+        account_origin_id: null,
+        account_destination_id: null,
+      },
+      debt: existingDebt,
+      payment: {
+        id: "44444444-4444-4444-8444-444444444444",
+        debt_id: existingDebt.id,
+        amount: 30,
+        currency: "PEN",
+        paid_at: "2026-06-30T12:00:00.000Z",
+        source: "dashboard_manual",
+        metadata: {
+          note: null,
+          installment_id: null,
+          installment_number: null,
+        },
+      },
+      installment_allocations: [],
+      allocation_policy: "oldest_open_due_date_first_v1",
+      idempotent: true,
+    });
+    const response = await POST(paymentRequest(30), routeContext());
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.data.idempotent).toBe(true);
+    expect(mocks.commitDebtPayment).not.toHaveBeenCalled();
+  });
 });
 
-function paymentRequest(amount: number) {
+describe("GET /api/v1/debts/[id]/payments", () => {
+  it("camino feliz: devuelve historial con asignaciones", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "u1" });
+    mocks.getDebtById.mockResolvedValue(debtFixture());
+    mocks.listDebtPaymentsForDebt.mockResolvedValue([
+      { id: "p1", allocations: [{ allocated_amount: 30 }] },
+    ]);
+    const response = await GET(paymentGetRequest(), routeContext());
+    const body = await response.json();
+    expect(response.status).toBe(200);
+    expect(body.data.payments[0].allocations[0].allocated_amount).toBe(30);
+  });
+
+  it("sin sesión: 401", async () => {
+    mocks.getApiAuth.mockResolvedValue(null);
+    expect((await GET(paymentGetRequest(), routeContext())).status).toBe(401);
+  });
+
+  it("deuda ajena: 404", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "u1" });
+    mocks.getDebtById.mockResolvedValue(null);
+    expect((await GET(paymentGetRequest(), routeContext())).status).toBe(404);
+  });
+
+  it("validación: id inválido devuelve 400", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "u1" });
+    expect(
+      (
+        await GET(paymentGetRequest(), {
+          params: Promise.resolve({ id: "no-uuid" }),
+        })
+      ).status
+    ).toBe(400);
+  });
+
+  it("idempotencia de lectura: repetir GET no registra pagos", async () => {
+    mocks.getApiAuth.mockResolvedValue({ client: {}, userId: "u1" });
+    mocks.getDebtById.mockResolvedValue(debtFixture());
+    await GET(paymentGetRequest(), routeContext());
+    await GET(paymentGetRequest(), routeContext());
+    expect(mocks.listDebtPaymentsForDebt).toHaveBeenCalledTimes(2);
+    expect(mocks.commitDebtPayment).not.toHaveBeenCalled();
+  });
+});
+
+function paymentRequest(amount: number, overrides: Record<string, unknown> = {}) {
   return new Request(
     "http://localhost/api/v1/debts/11111111-1111-4111-8111-111111111111/payments",
     {
@@ -157,8 +263,15 @@ function paymentRequest(amount: number) {
       body: JSON.stringify({
         amount,
         paid_at: "2026-06-30T12:00:00.000Z",
+        ...overrides,
       }),
     }
+  );
+}
+
+function paymentGetRequest() {
+  return new Request(
+    "http://localhost/api/v1/debts/11111111-1111-4111-8111-111111111111/payments"
   );
 }
 

@@ -89,6 +89,7 @@ export function coreError(error: CoreError, meta: ApiMeta) {
     "MOVEMENT_NOT_FOUND",
     "DEBT_NOT_FOUND",
     "DEBT_PAYMENT_ACCOUNT_NOT_FOUND",
+    "DEBT_CREATION_ACCOUNT_NOT_FOUND",
     "DEBT_INSTALLMENT_NOT_FOUND",
   ]);
   const conflictCodes = new Set([
@@ -97,6 +98,8 @@ export function coreError(error: CoreError, meta: ApiMeta) {
     "MOVEMENT_REVERSED_NOT_RESTORABLE",
     "DEBT_NOT_ACTIVE",
     "DEBT_PAYMENT_IDEMPOTENCY_CONFLICT",
+    "DEBT_REVERSAL_CLOSED_DEBT_REOPEN_REQUIRED",
+    "DEBT_CREATION_IDEMPOTENCY_CONFLICT",
   ]);
   const status = notFoundCodes.has(error.code)
     ? 404

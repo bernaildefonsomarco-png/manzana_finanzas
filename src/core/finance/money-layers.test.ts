@@ -61,6 +61,48 @@ describe("calculateMoneyLayers", () => {
     expect(result.operational_free_money).toBe(500 - 120 - 60);
   });
 
+  it("AC-REC-03 (RUL-REC-04): caja 60 y pago 89 dejan exactamente 29 sin cubrir", () => {
+    const result = calculateMoneyLayers({
+      accounts: [{ current_balance: 200 }],
+      boxes: [{ id: "internet", current_balance: 60 }],
+      commitments: [
+        {
+          id: "internet-julio",
+          amount: 89,
+          linked_box_id: "internet",
+          due_at: "2026-07-31",
+        },
+      ],
+    });
+
+    expect(result.upcoming_uncovered_commitments).toBe(29);
+    expect(result.operational_free_money).toBe(111);
+  });
+
+  it("WEB-D206: una misma caja se consume una sola vez por vencimiento", () => {
+    const result = calculateMoneyLayers({
+      accounts: [{ current_balance: 300 }],
+      boxes: [{ id: "servicios", current_balance: 100 }],
+      commitments: [
+        {
+          id: "segundo",
+          amount: 100,
+          linked_box_id: "servicios",
+          due_at: "2026-08-20",
+        },
+        {
+          id: "primero",
+          amount: 100,
+          linked_box_id: "servicios",
+          due_at: "2026-08-10",
+        },
+      ],
+    });
+
+    expect(result.upcoming_uncovered_commitments).toBe(100);
+    expect(result.operational_free_money).toBe(100);
+  });
+
   it("un compromiso vinculado a una caja que ya no existe en la lista cuenta como no cubierto", () => {
     const result = calculateMoneyLayers({
       accounts: [{ current_balance: 100 }],

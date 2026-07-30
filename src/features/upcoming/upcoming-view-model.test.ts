@@ -1,318 +1,466 @@
 import { describe, expect, it } from "vitest";
-import type { RecurringCandidate } from "@/shared/types/domain";
 import type {
-  DebtInstallmentCommitment,
+  RecurringCandidate,
+  RecurringOccurrence,
+  RecurringRule,
+} from "@/shared/types/domain";
+import type {
   RecurringRuleWithOccurrences,
+  UpcomingApiResponse,
+  UpcomingCommitment,
 } from "./upcoming-types";
 import {
-  filterRulesCoveredByDebtInstallments,
+  buildUpcomingViewModel,
   formatUpcomingMoney,
-  summarizeUpcoming,
-  toDebtInstallmentViewItem,
-  toDebtInstallmentViewItems,
-  toRecurringDetailViewModel,
+  frequencyLabels,
   toSuggestedCandidateViewModel,
-  toUpcomingViewItem,
-  toUpcomingViewItems,
 } from "./upcoming-view-model";
 
-describe("upcoming view model", () => {
-  it("marca como vencido un pago activo con fecha pasada sin tocar su regla", () => {
-    const item = toUpcomingViewItem(
-      recurringRule({
-        next_expected_date: "2026-06-10",
-        occurrences: [
-          {
-            ...occurrence("2026-06-10"),
-            status: "expected",
-          },
-        ],
-      }),
-      new Date("2026-06-29T12:00:00Z")
-    );
+const TODAY = "2026-07-29";
 
-    expect(item.group).toBe("overdue");
-    expect(item.status_label).toBe("Vencido");
-    expect(item.can_mark_paid).toBe(true);
-  });
-
-  it("calcula el estimado mensual equivalente por frecuencia", () => {
-    const summary = summarizeUpcoming({
-      rules: [
-        recurringRule({ expected_amount: 100, frequency: "monthly" }),
-        recurringRule({ expected_amount: 10, frequency: "weekly" }),
-        recurringRule({ expected_amount: 120, frequency: "yearly" }),
-        recurringRule({ expected_amount: 200, status: "paused" }),
-      ],
-      candidates: [],
-      today: new Date("2026-06-30T12:00:00Z"),
-    });
-
-    expect(summary.active_count).toBe(3);
-    expect(summary.paused_count).toBe(1);
-    expect(summary.monthly_estimate).toBe(153.3);
-  });
-
-  it("suma cuotas de deuda a compromisos y evita duplicar una regla vinculada", () => {
-    const debtInstallment = installmentCommitment();
-    const linkedRule = recurringRule({
-      id: "99999999-9999-4999-8999-999999999999",
-      linked_debt_id: debtInstallment.debt_id,
-      expected_amount: 100,
-    });
-    const rules = [recurringRule({ expected_amount: 80 }), linkedRule];
-
-    const visibleRules = filterRulesCoveredByDebtInstallments(rules, [
-      debtInstallment,
-    ]);
-    const summary = summarizeUpcoming({
-      rules,
-      candidates: [],
-      debt_installments: [debtInstallment],
-      today: new Date("2026-06-30T12:00:00Z"),
-    });
-
-    expect(visibleRules.map((rule) => rule.id)).toEqual([
-      "11111111-1111-4111-8111-111111111111",
-    ]);
-    expect(summary.active_count).toBe(2);
-    expect(summary.monthly_estimate).toBe(180);
-  });
-
-  it("presenta una cuota vencida como lectura y no como pago directo", () => {
-    const item = toDebtInstallmentViewItem(
-      installmentCommitment({ due_at: "2026-06-29" }),
-      new Date("2026-06-30T12:00:00Z")
-    );
-
-    expect(item.title).toBe("Cuota 1: Juan");
-    expect(item.status_label).toBe("Vencida");
-    expect(item.status_tone).toBe("warning");
-    expect(item.due_label).toBe("Ayer");
-    expect(item.debt_id).toBe("66666666-6666-4666-8666-666666666666");
-    expect(item.can_register_payment).toBe(false);
-    expect(item.payment_action_label).toBe("Registrar pago");
-    expect(
-      toDebtInstallmentViewItem(
-        installmentCommitment({ direction: "they_owe_me" })
-      ).payment_action_label
-    ).toBe("Registrar cobro");
-  });
-
-  it("solo permite registrar pago en la cuota abierta mas antigua de cada deuda", () => {
-    const items = toDebtInstallmentViewItems([
-      installmentCommitment({
-        id: "installment-2",
-        installment_id: "installment-2",
-        due_at: "2026-08-15",
-        title: "Cuota 2: Juan",
-      }),
-      installmentCommitment({
-        id: "installment-1",
-        installment_id: "installment-1",
-        due_at: "2026-07-15",
-        title: "Cuota 1: Juan",
-      }),
-    ]);
-
-    expect(items.map((item) => item.installment_id)).toEqual([
-      "installment-1",
-      "installment-2",
-    ]);
-    expect(items.map((item) => item.can_register_payment)).toEqual([
-      true,
-      false,
-    ]);
-  });
-
-  it("muestra una ocurrencia pagada y conserva la proxima abierta", () => {
-    const items = toUpcomingViewItems(
-      recurringRule({
-        next_expected_date: "2026-07-29",
-        occurrences: [
-          {
-            ...occurrence("2026-06-29"),
-            status: "paid",
-            paid_at: "2026-06-29T15:00:00.000Z",
-            paid_movement_id: "44444444-4444-4444-8444-444444444444",
-          },
-          occurrence("2026-07-29"),
-        ],
-      }),
-      new Date("2026-06-29T16:00:00Z")
-    );
-
-    expect(items.map((item) => item.group)).toEqual(["paid", "active"]);
-    expect(items[0].status_label).toBe("Pagado");
-    expect(items[0].can_mark_paid).toBe(false);
-    expect(items[0].payment_action_label).toBe("Pagado");
-    expect(items[1].due_at).toBe("2026-07-29");
-    expect(items[1].is_future).toBe(true);
-    expect(items[1].can_mark_paid).toBe(true);
-    expect(items[1].payment_action_label).toBe("Pagar adelantado");
-  });
-
-  it("prepara detalle con proxima ocurrencia e historial pagado", () => {
-    const detail = toRecurringDetailViewModel(
-      recurringRule({
-        next_expected_date: "2026-07-29",
-        occurrences: [
-          {
-            ...occurrence("2026-06-29"),
-            status: "paid",
-            paid_at: "2026-06-29T15:00:00.000Z",
-            paid_movement_id: "44444444-4444-4444-8444-444444444444",
-          },
-          {
-            ...occurrence("2026-07-29"),
-            id: "77777777-7777-4777-8777-777777777777",
-            status: "expected",
-          },
-        ],
-      }),
-      new Date("2026-06-29T16:00:00Z")
-    );
-
-    expect(detail.title).toBe("Internet");
-    expect(detail.status_label).toBe("Activo");
-    expect(detail.next_due_at).toBe("2026-07-29");
-    expect(detail.last_paid_label).toBe("Pagado hoy");
-    expect(detail.timeline.map((item) => item.status_label)).toEqual([
-      "Esperado",
-      "Pagado",
-    ]);
-    expect(detail.timeline[0].can_mark_paid).toBe(true);
-    expect(detail.timeline[1].can_mark_paid).toBe(false);
-  });
-
-  it("bloquea pago desde recurrentes cuando la regla esta ligada a deuda", () => {
-    const item = toUpcomingViewItem(
-      recurringRule({
-        linked_debt_id: "88888888-8888-4888-8888-888888888888",
-      }),
-      new Date("2026-06-29T16:00:00Z")
-    );
-    const detail = toRecurringDetailViewModel(
-      item.rule,
-      new Date("2026-06-29T16:00:00Z")
-    );
-
-    expect(item.can_mark_paid).toBe(false);
-    expect(detail.linked_debt).toBe(true);
-    expect(detail.timeline[0].can_mark_paid).toBe(false);
-  });
-
-  it("formatea montos con simbolo local", () => {
-    expect(formatUpcomingMoney(45, "PEN")).toBe("S/ 45");
-    expect(formatUpcomingMoney(12.5, "USD")).toBe("$ 12.50");
-  });
-
-  it("prepara una sugerencia desde evidence del detector", () => {
-    const view = toSuggestedCandidateViewModel(
-      recurringCandidate(),
-      new Date("2026-06-29T12:00:00Z")
-    );
-
-    expect(view.title).toBe("Netflix");
-    expect(view.amount_label).toBe("S/ 15");
-    expect(view.frequency_label).toBe("Cada mes");
-    expect(view.next_expected_date).toBe("2026-07-05");
-    expect(view.category_label).toBe("Servicios / Suscripciones");
-    expect(view.confidence_label).toBe("Coincidencia sólida");
-  });
-});
-
-function recurringRule(
-  overrides: Partial<RecurringRuleWithOccurrences> = {}
-): RecurringRuleWithOccurrences {
+function occurrence(
+  overrides: Partial<RecurringOccurrence> = {}
+): RecurringOccurrence {
   return {
-    id: overrides.id ?? "11111111-1111-4111-8111-111111111111",
-    user_id: "22222222-2222-4222-8222-222222222222",
-    status: overrides.status ?? "active",
-    name: overrides.name ?? "Internet",
-    merchant_pattern: null,
-    expected_amount: overrides.expected_amount ?? 80,
-    amount_variability: overrides.amount_variability ?? "fixed",
-    currency: overrides.currency ?? "PEN",
-    frequency: overrides.frequency ?? "monthly",
-    day_of_month: 15,
+    id: "occ-1",
+    user_id: "user-1",
+    recurring_rule_id: "rule-1",
+    expected_date: "2026-07-30",
+    expected_amount: 49.9,
+    status: "due_soon",
+    paid_at: null,
+    paid_movement_id: null,
+    metadata: {},
+    created_at: "2026-07-01T05:00:00.000Z",
+    updated_at: "2026-07-01T05:00:00.000Z",
+    ...overrides,
+  };
+}
+
+function rule(
+  overrides: Partial<RecurringRule> & {
+    occurrences?: RecurringOccurrence[];
+  } = {}
+): RecurringRuleWithOccurrences {
+  const { occurrences = [occurrence()], ...ruleOverrides } = overrides;
+  return {
+    id: "rule-1",
+    user_id: "user-1",
+    status: "active",
+    name: "Internet hogar",
+    merchant_pattern: "internet",
+    expected_amount: 49.9,
+    amount_variability: "fixed",
+    currency: "PEN",
+    frequency: "monthly",
+    day_of_month: 30,
     date_window_start_day: null,
     date_window_end_day: null,
-    next_expected_date: overrides.next_expected_date ?? "2026-07-15",
-    category_id: overrides.category_id ?? "servicios_suscripciones",
+    next_expected_date: "2026-07-30",
+    category_id: "servicios_suscripciones",
     subcategory_id: null,
-    default_account_id: null,
-    linked_box_id: overrides.linked_box_id ?? null,
-    linked_debt_id: overrides.linked_debt_id ?? null,
-    source: "dashboard_manual",
-    confidence: 1,
+    default_account_id: "account-1",
+    linked_box_id: null,
+    linked_debt_id: null,
+    source: "manual",
+    confidence: null,
     requires_confirmation_for_payment: true,
     last_paid_at: null,
     last_paid_amount: null,
     metadata: {},
-    created_at: "2026-06-01T00:00:00Z",
-    updated_at: "2026-06-01T00:00:00Z",
+    created_at: "2026-07-01T05:00:00.000Z",
+    updated_at: "2026-07-01T05:00:00.000Z",
     deleted_at: null,
     cancelled_at: null,
-    occurrences: overrides.occurrences ?? [occurrence(overrides.next_expected_date ?? "2026-07-15")],
+    ...ruleOverrides,
+    occurrences,
   };
 }
 
-function occurrence(expectedDate: string) {
+function commitment(
+  overrides: Partial<UpcomingCommitment> = {}
+): UpcomingCommitment {
   return {
-    id: "33333333-3333-4333-8333-333333333333",
-    user_id: "22222222-2222-4222-8222-222222222222",
-    recurring_rule_id: "11111111-1111-4111-8111-111111111111",
-    expected_date: expectedDate,
-    expected_amount: 80,
-    status: "expected" as const,
-    paid_at: null,
-    paid_movement_id: null,
-    metadata: {},
-    created_at: "2026-06-01T00:00:00Z",
-    updated_at: "2026-06-01T00:00:00Z",
+    id: "commitment-1",
+    title: "Internet hogar",
+    amount: 49.9,
+    currency: "PEN",
+    due_at: "2026-07-30",
+    kind: "recurring",
+    linked_box_id: null,
+    recurring_rule_id: "rule-1",
+    occurrence_id: "occ-1",
+    presentation_state: "upcoming",
+    presentation_label: "Próximo",
+    days_late: -1,
+    ...overrides,
   };
 }
 
-function recurringCandidate(): RecurringCandidate {
+function candidate(
+  overrides: Partial<RecurringCandidate> = {}
+): RecurringCandidate {
   return {
-    id: "55555555-5555-4555-8555-555555555555",
-    user_id: "22222222-2222-4222-8222-222222222222",
+    id: "candidate-1",
+    user_id: "user-1",
     merchant_key: "netflix",
     category_id: "servicios_suscripciones",
     evidence: {
       display_name: "Netflix",
-      inferred_amount: 15,
-      currency: "PEN",
+      movement_count: 3,
+      dates: ["2026-05-12", "2026-06-12", "2026-07-12"],
+      amounts: [44.9, 44.9, 44.9],
+      inferred_amount: 44.9,
       inferred_frequency: "monthly",
       amount_variability: "fixed",
-      next_expected_date: "2026-07-05",
-      movement_count: 3,
-      category_id: "servicios_suscripciones",
+      currency: "PEN",
+      next_expected_date: "2026-08-12",
     },
-    confidence: 0.9,
+    confidence: 0.97,
     status: "ready_to_suggest",
     metadata: {},
-    created_at: "2026-06-01T00:00:00Z",
-    updated_at: "2026-06-01T00:00:00Z",
+    created_at: "2026-07-29T05:00:00.000Z",
+    updated_at: "2026-07-29T05:00:00.000Z",
+    ...overrides,
   };
 }
 
-function installmentCommitment(
-  overrides: Partial<DebtInstallmentCommitment> = {}
-): DebtInstallmentCommitment {
+function response(
+  overrides: Partial<UpcomingApiResponse> = {}
+): UpcomingApiResponse {
   return {
-    id: overrides.id ?? "77777777-7777-4777-8777-777777777777",
-    title: overrides.title ?? "Cuota 1: Juan",
-    amount: overrides.amount ?? 100,
-    currency: overrides.currency ?? "PEN",
-    direction: overrides.direction ?? "i_owe",
-    due_at: overrides.due_at ?? "2026-07-15",
-    kind: "debt",
-    linked_box_id: null,
-    debt_id:
-      overrides.debt_id ?? "66666666-6666-4666-8666-666666666666",
-    installment_id:
-      overrides.installment_id ?? "77777777-7777-4777-8777-777777777777",
+    commitments: [commitment()],
+    recurring_rules: [rule()],
+    candidates: [],
+    horizon_days: 30,
+    timezone: "America/Lima",
+    ...overrides,
   };
 }
+
+describe("buildUpcomingViewModel", () => {
+  it("agrupa los próximos siete días en Esta semana y el resto en Más adelante", () => {
+    const view = buildUpcomingViewModel(
+      response({
+        commitments: [
+          commitment({ id: "tomorrow", due_at: "2026-07-30" }),
+          commitment({
+            id: "later",
+            due_at: "2026-08-10",
+            occurrence_id: "occ-2",
+          }),
+        ],
+      }),
+      TODAY
+    );
+
+    expect(view.sections.this_week.map((item) => item.id)).toEqual([
+      "tomorrow",
+    ]);
+    expect(view.sections.later.map((item) => item.id)).toEqual(["later"]);
+  });
+
+  it("mantiene 0–2 días de atraso como Pendiente y alerta recién desde el día 3", () => {
+    const view = buildUpcomingViewModel(
+      response({
+        commitments: [
+          commitment({
+            id: "two-days",
+            due_at: "2026-07-27",
+            presentation_state: "pending_confirmation",
+          }),
+          commitment({
+            id: "three-days",
+            due_at: "2026-07-26",
+            occurrence_id: "occ-2",
+            presentation_state: "overdue",
+          }),
+        ],
+      }),
+      TODAY
+    );
+
+    expect(view.sections.pending).toEqual([
+      expect.objectContaining({
+        id: "three-days",
+        status_label: "Vencido",
+        alert: true,
+      }),
+      expect.objectContaining({
+        id: "two-days",
+        status_label: "Pendiente",
+        alert: false,
+      }),
+    ]);
+  });
+
+  it("no llama vencida a una fecha aproximada aunque lleve tres días", () => {
+    const approximateRule = rule({
+      metadata: { date_is_approximate: true },
+    });
+    const view = buildUpcomingViewModel(
+      response({
+        recurring_rules: [approximateRule],
+        commitments: [
+          commitment({
+            due_at: "2026-07-20",
+            presentation_state: "overdue",
+          }),
+        ],
+      }),
+      TODAY
+    );
+
+    expect(view.sections.pending[0]).toMatchObject({
+      status_label: "Pendiente",
+      alert: false,
+    });
+  });
+
+  it("usa lenguaje prudente para deuda y excluye they_owe_me defensivamente", () => {
+    const view = buildUpcomingViewModel(
+      response({
+        recurring_rules: [],
+        commitments: [
+          commitment({
+            id: "debt-i-owe",
+            title: "Cuota préstamo",
+            kind: "debt",
+            direction: "i_owe",
+            debt_id: "debt-1",
+            installment_id: "installment-1",
+            recurring_rule_id: undefined,
+            occurrence_id: undefined,
+            due_at: "2026-07-01",
+          }),
+          commitment({
+            id: "debt-they-owe",
+            kind: "debt",
+            direction: "they_owe_me",
+            debt_id: "debt-2",
+            recurring_rule_id: undefined,
+            occurrence_id: undefined,
+          }),
+        ],
+      }),
+      TODAY
+    );
+
+    expect(view.sections.pending).toEqual([
+      expect.objectContaining({
+        id: "debt-i-owe",
+        status_label: "Pendiente",
+        alert: false,
+        can_mark_paid: false,
+      }),
+    ]);
+    expect(view.calendar_items).toHaveLength(1);
+  });
+
+  it("WEB-D207: deuda bancaria vence al día 3, pero acuerdo personal o fecha aproximada siguen pendientes", () => {
+    const view = buildUpcomingViewModel(
+      response({
+        recurring_rules: [],
+        commitments: [
+          commitment({
+            id: "bank-two-days",
+            kind: "debt",
+            direction: "i_owe",
+            debt_id: "debt-bank-two",
+            installment_id: "installment-bank-two",
+            recurring_rule_id: undefined,
+            occurrence_id: undefined,
+            due_at: "2026-07-27",
+            debt_kind: "bank_loan",
+            date_is_approximate: false,
+          } as Partial<UpcomingCommitment>),
+          commitment({
+            id: "bank-three-days",
+            kind: "debt",
+            direction: "i_owe",
+            debt_id: "debt-bank-three",
+            installment_id: "installment-bank-three",
+            recurring_rule_id: undefined,
+            occurrence_id: undefined,
+            due_at: "2026-07-26",
+            debt_kind: "bank_loan",
+            date_is_approximate: false,
+          } as Partial<UpcomingCommitment>),
+          commitment({
+            id: "personal-nine-days",
+            kind: "debt",
+            direction: "i_owe",
+            debt_id: "debt-personal",
+            installment_id: "installment-personal",
+            recurring_rule_id: undefined,
+            occurrence_id: undefined,
+            due_at: "2026-07-20",
+            debt_kind: "personal",
+            date_is_approximate: false,
+          } as Partial<UpcomingCommitment>),
+          commitment({
+            id: "approximate-nine-days",
+            kind: "debt",
+            direction: "i_owe",
+            debt_id: "debt-approximate",
+            installment_id: "installment-approximate",
+            recurring_rule_id: undefined,
+            occurrence_id: undefined,
+            due_at: "2026-07-20",
+            debt_kind: "installment_purchase",
+            date_is_approximate: true,
+          } as Partial<UpcomingCommitment>),
+        ],
+      }),
+      TODAY
+    );
+
+    expect(view.sections.pending).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "bank-two-days",
+          status_label: "Pendiente",
+          alert: false,
+        }),
+        expect.objectContaining({
+          id: "bank-three-days",
+          status_label: "Vencido",
+          alert: true,
+        }),
+        expect.objectContaining({
+          id: "personal-nine-days",
+          status_label: "Pendiente",
+          alert: false,
+        }),
+        expect.objectContaining({
+          id: "approximate-nine-days",
+          status_label: "Pendiente",
+          alert: false,
+        }),
+      ])
+    );
+  });
+
+  it("muestra la vinculación a caja sin inventar cobertura", () => {
+    const view = buildUpcomingViewModel(
+      response({
+        commitments: [
+          commitment({ linked_box_id: "box-1", amount: 100 }),
+        ],
+      }),
+      TODAY
+    );
+
+    expect(view.sections.this_week[0].linked_box_label).toBe(
+      "Vinculado a una caja"
+    );
+    expect(
+      JSON.stringify(view.sections.this_week[0]).toLowerCase()
+    ).not.toContain("cubiert");
+    expect(view.summary.linked_box_count).toBe(1);
+  });
+
+  it("mantiene visibles las reglas pausadas sin volverlas pendientes", () => {
+    const paused = rule({
+      id: "rule-paused",
+      name: "Gimnasio",
+      status: "paused",
+      occurrences: [
+        occurrence({
+          id: "occ-paused",
+          recurring_rule_id: "rule-paused",
+        }),
+      ],
+    });
+    const view = buildUpcomingViewModel(
+      response({
+        commitments: [],
+        recurring_rules: [paused],
+      }),
+      TODAY
+    );
+
+    expect(view.sections.later[0]).toMatchObject({
+      title: "Gimnasio",
+      status_label: "Pausado",
+      can_resume: true,
+      can_mark_paid: false,
+    });
+  });
+
+  it("muestra un pago variable sin estimación sin descontarlo ni inventar monto", () => {
+    const variableRule = rule({
+      id: "rule-variable",
+      name: "Luz",
+      expected_amount: null,
+      amount_variability: "variable",
+      next_expected_date: "2026-08-02",
+      occurrences: [
+        occurrence({
+          id: "occ-variable",
+          recurring_rule_id: "rule-variable",
+          expected_date: "2026-08-02",
+          expected_amount: null,
+        }),
+      ],
+    });
+    const view = buildUpcomingViewModel(
+      response({
+        commitments: [],
+        recurring_rules: [variableRule],
+      }),
+      TODAY
+    );
+
+    expect(view.sections.this_week[0]).toMatchObject({
+      title: "Luz",
+      amount: null,
+      status_label: "Monto por revisar",
+      can_mark_paid: true,
+    });
+    expect(view.summary.month_totals.PEN).toBe(0);
+  });
+
+  it("no suma dólares y soles como si fueran la misma moneda", () => {
+    const view = buildUpcomingViewModel(
+      response({
+        commitments: [
+          commitment({ id: "pen", amount: 100, currency: "PEN" }),
+          commitment({
+            id: "usd",
+            amount: 20,
+            currency: "USD",
+            occurrence_id: "occ-usd",
+          }),
+        ],
+      }),
+      TODAY
+    );
+
+    expect(view.summary.month_totals).toEqual({ PEN: 100, USD: 20 });
+  });
+});
+
+describe("sugerencias recurrentes", () => {
+  it("explica fechas y montos concretos sin exponer confidence", () => {
+    const view = toSuggestedCandidateViewModel(candidate(), TODAY);
+
+    expect(view.evidence_label).toContain("12 may");
+    expect(view.evidence_label).toContain("12 jun");
+    expect(view.evidence_label).toContain("12 jul");
+    expect(view.evidence_label).toContain("S/44.90");
+    expect(JSON.stringify(view)).not.toContain("confidence");
+    expect(JSON.stringify(view)).not.toContain("0.97");
+  });
+
+  it("presenta biweekly como una cadencia exacta de 14 días", () => {
+    expect(frequencyLabels.biweekly).toBe("Cada 14 días");
+  });
+});
+
+describe("formato monetario", () => {
+  it("formatea PEN y USD desde montos decimales", () => {
+    expect(formatUpcomingMoney(1250.5, "PEN")).toBe("S/1,250.50");
+    expect(formatUpcomingMoney(12.5, "USD")).toBe("$12.50");
+  });
+});

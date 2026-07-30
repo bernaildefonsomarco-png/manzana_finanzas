@@ -196,6 +196,13 @@ describe("migrations hardening", () => {
     expect(sql).toContain("insert_transactional_outbox_events");
     expect(sql).toContain("recurring_rule_linked_debt_requires_debt_flow");
     expect(sql).toContain("grant execute on function public.commit_recurring_payment");
+    const commitFunction = sql.slice(
+      sql.indexOf("create or replace function manzana.commit_recurring_payment"),
+      sql.indexOf("create or replace function public.commit_recurring_payment")
+    );
+    expect(commitFunction).not.toContain(
+      "insert into public.recurring_occurrences"
+    );
     expect(sql).not.toMatch(/add\s+constraint\s+if\s+not\s+exists/);
     expect(sql).not.toMatch(/grant\s+insert\s+on\s+public\.recurring_rules\s+to\s+authenticated/);
     expect(sql).not.toMatch(/grant\s+update\s+on\s+public\.recurring_rules\s+to\s+authenticated/);
@@ -641,6 +648,77 @@ describe("migrations hardening", () => {
     expect(sql).toContain("extensions.digest");
     expect(sql).not.toMatch(
       /grant\s+execute[^;]+(record_learning_evidence|decide_learning_candidate|promote_learning_candidate|manage_financial_memory)[^;]+authenticated/,
+    );
+  });
+
+  it("revierte pagos especializados sin borrar evidencia ni abrir el RPC al cliente", () => {
+    const sql = migration(
+      "056_w11_specialized_payment_reversal.sql"
+    ).toLowerCase();
+
+    expect(sql).toContain("reverse_debt_payment");
+    expect(sql).toContain("reverse_recurring_payment");
+    expect(sql).toContain("reversed_at");
+    expect(sql).toContain("core_commit_movement_update");
+    expect(sql).toContain("v_audit");
+    expect(sql).toContain("v_events");
+    expect(sql).not.toMatch(
+      /grant\s+execute[^;]+reverse_(debt|recurring)_payment[^;]+authenticated/
+    );
+  });
+
+  it("lleva lifecycle de deuda por un RPC atomico, idempotente y con outbox", () => {
+    const sql = migration(
+      "057_w11_debt_operations_core.sql"
+    ).toLowerCase();
+    const debtLock = sql.indexOf("from public.debts");
+    const installmentLock = sql.indexOf(
+      "from public.debt_installments",
+      debtLock
+    );
+
+    expect(sql).toContain("commit_debt_operation");
+    expect(sql).toContain("debt_operation_receipts_user_key_unique");
+    expect(sql).toContain("pg_advisory_xact_lock");
+    expect(sql).toContain("debt_operation_idempotency_conflict");
+    expect(sql).toContain("insert into public.transactional_outbox");
+    expect(debtLock).toBeGreaterThan(-1);
+    expect(installmentLock).toBeGreaterThan(debtLock);
+    expect(sql).not.toMatch(
+      /grant\s+execute[^;]+commit_debt_operation[^;]+authenticated/
+    );
+  });
+
+  it("impone creación recurrente idempotente y permite variable sin estimación", () => {
+    const sql = migration(
+      "058_w11_recurring_creation_contract.sql"
+    ).toLowerCase();
+
+    expect(sql).toContain("creation_idempotency_key");
+    expect(sql).toContain("creation_request_hash");
+    expect(sql).toContain("recurring_rules_user_creation_key_unique");
+    expect(sql).toContain("recurring_rules_fixed_amount_required");
+    expect(sql).toContain("amount_variability <> 'fixed'");
+    expect(sql).toContain("recurring_rules_name_length");
+  });
+
+  it("salta ocurrencia y avanza la regla en un solo RPC especializado", () => {
+    const sql = migration(
+      "059_w11_recurring_skip_core.sql"
+    ).toLowerCase();
+    const ruleLock = sql.indexOf("from public.recurring_rules");
+    const occurrenceLock = sql.indexOf(
+      "from public.recurring_occurrences",
+      ruleLock
+    );
+
+    expect(sql).toContain("commit_recurring_occurrence_skip");
+    expect(sql).toContain("recurring_occurrence_skipped");
+    expect(sql).toContain("insert into public.transactional_outbox");
+    expect(ruleLock).toBeGreaterThan(-1);
+    expect(occurrenceLock).toBeGreaterThan(ruleLock);
+    expect(sql).not.toMatch(
+      /grant\s+execute[^;]+commit_recurring_occurrence_skip[^;]+authenticated/
     );
   });
 });

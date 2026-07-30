@@ -1,7 +1,7 @@
 import type {
   CategoryId,
-  RecurringCandidate,
   RecurringAmountVariability,
+  RecurringCandidate,
   RecurringFrequency,
   RecurringOccurrence,
   RecurringOccurrenceStatus,
@@ -12,15 +12,18 @@ import {
   RECURRING_FREQUENCIES,
 } from "@/shared/types/domain";
 import type {
-  DebtInstallmentCommitment,
-  DebtInstallmentViewItem,
+  RecurringHistoryViewItem,
   RecurringRuleWithOccurrences,
-  RecurringDetailViewModel,
+  SuggestedCandidateViewModel,
+  UpcomingApiResponse,
+  UpcomingCommitment,
+  UpcomingSections,
+  UpcomingStatusTone,
   UpcomingSummary,
   UpcomingViewItem,
 } from "./upcoming-types";
 
-const payableOccurrenceStatuses: RecurringOccurrenceStatus[] = [
+const openStatuses: RecurringOccurrenceStatus[] = [
   "expected",
   "due_soon",
   "pending_confirmation",
@@ -29,464 +32,530 @@ const payableOccurrenceStatuses: RecurringOccurrenceStatus[] = [
 
 export const frequencyLabels: Record<RecurringFrequency, string> = {
   weekly: "Cada semana",
-  biweekly: "Cada dos semanas",
+  biweekly: "Cada 14 días",
   monthly: "Cada mes",
-  yearly: "Cada ano",
+  yearly: "Cada año",
   custom_window: "Ventana mensual",
 };
 
-export const categoryLabels = {
-  alimentacion: "Alimentacion",
-  transporte: "Transporte",
-  vivienda_hogar: "Vivienda / Hogar",
-  servicios_suscripciones: "Servicios / Suscripciones",
-  salud: "Salud",
-  educacion: "Educacion",
-  ocio_salidas: "Ocio / Salidas",
-  compras_personales: "Compras personales",
-  familia_apoyo: "Familia / Apoyo",
-  deudas: "Deudas",
-  trabajo_productividad: "Trabajo / Productividad",
-  otros: "Otros",
-} as const;
-
-export type SuggestedCandidateViewModel = {
-  id: string;
-  title: string;
-  evidence_label: string;
-  amount: number | null;
-  amount_label: string;
-  currency: "PEN" | "USD";
-  frequency: RecurringFrequency;
-  frequency_label: string;
-  amount_variability: RecurringAmountVariability;
-  next_expected_date: string | null;
-  next_label: string;
-  category_id: CategoryId | null;
-  category_label: string | null;
-  confidence_label: string;
+export const amountVariabilityLabels: Record<
+  RecurringAmountVariability,
+  string
+> = {
+  fixed: "Monto fijo",
+  estimated: "Monto estimado",
+  variable: "Monto variable",
 };
 
-export function summarizeUpcoming(input: {
-  rules: RecurringRuleWithOccurrences[];
-  candidates: RecurringCandidate[];
-  debt_installments?: DebtInstallmentCommitment[];
-  today?: Date;
-}): UpcomingSummary {
-  const debtInstallments = input.debt_installments ?? [];
-  const visibleRules = filterRulesCoveredByDebtInstallments(
-    input.rules,
-    debtInstallments
+export const categoryLabels: Record<CategoryId, string> = {
+  alimentacion: "Alimentación",
+  transporte: "Transporte",
+  vivienda_hogar: "Vivienda y hogar",
+  servicios_suscripciones: "Servicios y suscripciones",
+  salud: "Salud",
+  educacion: "Educación",
+  ocio_salidas: "Ocio y salidas",
+  compras_personales: "Compras personales",
+  familia_apoyo: "Familia y apoyo",
+  deudas: "Deudas",
+  trabajo_productividad: "Trabajo y productividad",
+  otros: "Otros",
+};
+
+export type UpcomingViewModel = {
+  sections: UpcomingSections;
+  summary: UpcomingSummary;
+  candidates: SuggestedCandidateViewModel[];
+  calendar_items: UpcomingViewItem[];
+  has_commitments: boolean;
+  has_only_suggestions: boolean;
+};
+
+export function buildUpcomingViewModel(
+  data: UpcomingApiResponse,
+  todayIso: string
+): UpcomingViewModel {
+  const rulesById = new Map(
+    data.recurring_rules.map((rule) => [rule.id, rule])
   );
-  const items = visibleRules.flatMap((rule) => toUpcomingViewItems(rule, input.today));
-  const debtItems = debtInstallments.map((installment) =>
-    toDebtInstallmentViewItem(installment, input.today)
+  const commitments = data.commitments
+    .filter(
+      (commitment) =>
+        commitment.kind !== "debt" || commitment.direction !== "they_owe_me"
+    )
+    .map((commitment) =>
+      toUpcomingViewItem(commitment, rulesById, todayIso)
+    );
+  const commitmentRuleIds = new Set(
+    commitments
+      .map((item) => item.recurring_rule_id)
+      .filter((id): id is string => Boolean(id))
   );
+  const unpriced = data.recurring_rules
+    .filter(
+      (rule) =>
+        rule.status === "active" &&
+        !rule.linked_debt_id &&
+        !commitmentRuleIds.has(rule.id) &&
+        Boolean(rule.next_expected_date) &&
+        differenceInDays(rule.next_expected_date ?? todayIso, todayIso) <=
+          data.horizon_days
+    )
+    .map((rule) => toRuleFallbackViewItem(rule, todayIso));
+  const paused = data.recurring_rules
+    .filter(
+      (rule) => rule.status === "paused" && !commitmentRuleIds.has(rule.id)
+    )
+    .map((rule) => toPausedViewItem(rule, todayIso));
+  const financialItems = [...commitments, ...unpriced];
+  const allItems = [...financialItems, ...paused].sort(compareItems);
+  const sections: UpcomingSections = {
+    this_week: allItems.filter((item) => item.section === "this_week"),
+    later: allItems.filter((item) => item.section === "later"),
+    pending: allItems.filter((item) => item.section === "pending"),
+  };
+  const monthPrefix = todayIso.slice(0, 7);
+  const monthCommitments = financialItems.filter((item) =>
+    item.due_at.startsWith(monthPrefix)
+  );
+  const summary: UpcomingSummary = {
+    month_totals: {
+      PEN: sumCurrency(monthCommitments, "PEN"),
+      USD: sumCurrency(monthCommitments, "USD"),
+    },
+    month_count: monthCommitments.length,
+    linked_box_count: financialItems.filter((item) => item.linked_box_id).length,
+    pending_count: sections.pending.length,
+  };
+  const candidates = data.candidates
+    .map((candidate) => toSuggestedCandidateViewModel(candidate, todayIso))
+    .sort((left, right) => left.title.localeCompare(right.title, "es"));
 
   return {
-    active_count:
-      items.filter((item) => item.group === "active").length +
-      debtItems.filter((item) => !item.is_overdue).length,
-    overdue_count:
-      items.filter((item) => item.group === "overdue").length +
-      debtItems.filter((item) => item.is_overdue).length,
-    paused_count: items.filter((item) => item.group === "paused").length,
-    suggested_count: input.candidates.length + items.filter((item) => item.group === "suggested").length,
-    monthly_estimate: roundMoney(
-      visibleRules
-        .filter((rule) => rule.status === "active")
-        .reduce((sum, rule) => sum + monthlyEquivalent(rule), 0) +
-        debtInstallments.reduce(
-          (sum, installment) => sum + installment.amount,
-          0
-        )
-    ),
+    sections,
+    summary,
+    candidates,
+    calendar_items: allItems,
+    has_commitments: allItems.length > 0,
+    has_only_suggestions: allItems.length === 0 && candidates.length > 0,
   };
-}
-
-export function filterRulesCoveredByDebtInstallments(
-  rules: RecurringRuleWithOccurrences[],
-  debtInstallments: DebtInstallmentCommitment[]
-): RecurringRuleWithOccurrences[] {
-  const visibleDebtIds = new Set(
-    debtInstallments.map((installment) => installment.debt_id)
-  );
-
-  return rules.filter(
-    (rule) => !rule.linked_debt_id || !visibleDebtIds.has(rule.linked_debt_id)
-  );
-}
-
-export function toDebtInstallmentViewItem(
-  installment: DebtInstallmentCommitment,
-  today = new Date(),
-  canRegisterPayment = false
-): DebtInstallmentViewItem {
-  const isOverdue =
-    startOfDay(installment.due_at).getTime() < startOfToday(today).getTime();
-
-  return {
-    id: installment.id,
-    debt_id: installment.debt_id,
-    installment_id: installment.installment_id,
-    title: installment.title,
-    amount: installment.amount,
-    currency: installment.currency,
-    direction: installment.direction,
-    due_at: installment.due_at,
-    due_label: formatDueLabel(installment.due_at, today),
-    status_label: isOverdue ? "Vencida" : "Proxima",
-    status_tone: isOverdue ? "warning" : "info",
-    is_overdue: isOverdue,
-    can_register_payment: canRegisterPayment,
-    payment_action_label:
-      installment.direction === "i_owe"
-        ? "Registrar pago"
-        : "Registrar cobro",
-  };
-}
-
-export function toDebtInstallmentViewItems(
-  installments: DebtInstallmentCommitment[],
-  today = new Date()
-): DebtInstallmentViewItem[] {
-  const seenDebtIds = new Set<string>();
-
-  return installments
-    .slice()
-    .sort((left, right) => {
-      const dueComparison = left.due_at.localeCompare(right.due_at);
-      return dueComparison !== 0 ? dueComparison : left.id.localeCompare(right.id);
-    })
-    .map((installment) => {
-      const canRegisterPayment = !seenDebtIds.has(installment.debt_id);
-      seenDebtIds.add(installment.debt_id);
-      return toDebtInstallmentViewItem(
-        installment,
-        today,
-        canRegisterPayment
-      );
-    });
 }
 
 export function toSuggestedCandidateViewModel(
   candidate: RecurringCandidate,
-  today = new Date()
+  todayIso: string
 ): SuggestedCandidateViewModel {
   const evidence = asRecord(candidate.evidence);
   const title =
-    getString(evidence, "display_name") ?? toDisplayName(candidate.merchant_key);
+    getString(evidence, "display_name") ??
+    toDisplayName(candidate.merchant_key);
   const amount = getNumber(evidence, "inferred_amount");
   const currency = asCurrency(getString(evidence, "currency")) ?? "PEN";
   const frequency =
     asFrequency(getString(evidence, "inferred_frequency")) ?? "monthly";
   const amountVariability =
-    asAmountVariability(getString(evidence, "amount_variability")) ?? "estimated";
+    asAmountVariability(getString(evidence, "amount_variability")) ??
+    "estimated";
   const nextExpectedDate = getIsoDate(evidence, "next_expected_date");
   const categoryId =
     asCategory(getString(evidence, "category_id")) ?? candidate.category_id;
-  const movementCount = getNumber(evidence, "movement_count");
 
   return {
     id: candidate.id,
     title,
-    evidence_label: movementCount
-      ? `${movementCount} movimientos detectados`
-      : "Patron detectado",
+    discreet_title: "Sugerencia de pago",
+    evidence_label: buildEvidenceLabel(evidence, currency),
     amount,
-    amount_label: amount ? formatUpcomingMoney(amount, currency) : "Monto por revisar",
     currency,
+    amount_label:
+      amount === null ? "Monto por revisar" : formatUpcomingMoney(amount, currency),
     frequency,
     frequency_label: frequencyLabels[frequency],
     amount_variability: amountVariability,
     next_expected_date: nextExpectedDate,
     next_label: nextExpectedDate
-      ? formatDueLabel(nextExpectedDate, today)
+      ? formatDueLabel(nextExpectedDate, todayIso)
       : "Fecha por revisar",
     category_id: categoryId,
-    category_label: categoryId ? categoryLabels[categoryId] : null,
-    confidence_label:
-      candidate.confidence >= 0.9
-        ? "Coincidencia sólida"
-        : candidate.confidence >= 0.75
-          ? "Conviene revisar"
-          : "Necesita confirmación",
   };
 }
 
-export function toUpcomingViewItems(
+export function toRecurringHistoryView(
+  occurrences: RecurringOccurrence[],
   rule: RecurringRuleWithOccurrences,
-  today = new Date()
-): UpcomingViewItem[] {
-  const paidItems = rule.occurrences
-    .filter((occurrence) => occurrence.status === "paid")
-    .sort((left, right) => right.expected_date.localeCompare(left.expected_date))
-    .slice(0, 2)
-    .map((occurrence) => toUpcomingViewItem(rule, today, occurrence));
-  const nextOpen = pickNextOpenOccurrence(rule.occurrences);
-  const nextItem = toUpcomingViewItem(rule, today, nextOpen);
-
-  return [...paidItems, nextItem];
-}
-
-export function toUpcomingViewItem(
-  rule: RecurringRuleWithOccurrences,
-  today = new Date(),
-  occurrenceOverride?: RecurringOccurrence | null
-): UpcomingViewItem {
-  const occurrence = occurrenceOverride ?? pickNextOpenOccurrence(rule.occurrences);
-  const dueAt = occurrence?.expected_date ?? rule.next_expected_date;
-  const amount = occurrence?.expected_amount ?? rule.expected_amount ?? 0;
-  const isPaid = occurrence?.status === "paid";
-  const dueDate = dueAt ? startOfDay(dueAt) : null;
-  const todayDate = startOfToday(today);
-  const isFuture = !isPaid && Boolean(dueDate) && dueDate!.getTime() > todayDate.getTime();
-  const isOverdue =
-    !isPaid &&
-    rule.status === "active" &&
-    Boolean(dueAt) &&
-    dueDate!.getTime() < todayDate.getTime();
-  const group =
-    isPaid
-      ? "paid"
-      : rule.status === "suggested"
-      ? "suggested"
-      : rule.status === "paused"
-      ? "paused"
-      : isOverdue
-      ? "overdue"
-      : "active";
-
-  return {
-    id: rule.id,
-    occurrence_id: occurrence?.id ?? null,
-    title: rule.name,
-    amount: roundMoney(Number(amount)),
-    currency: rule.currency,
-    frequency: rule.frequency,
-    cadence_label: frequencyLabels[rule.frequency],
-    due_at: dueAt,
-    due_label: isPaid ? formatPaidLabel(occurrence?.paid_at ?? dueAt, today) : formatDueLabel(dueAt, today),
-    is_future: isFuture,
-    status: rule.status,
-    group,
-    status_label: getStatusLabel(rule.status, isOverdue, isPaid),
-    status_tone: getStatusTone(rule.status, isOverdue, isPaid),
-    category_id: rule.category_id,
-    account_id: rule.default_account_id,
-    can_mark_paid:
-      !isPaid &&
-      rule.status === "active" &&
-      !rule.linked_debt_id &&
-      Boolean(occurrence?.id),
-    payment_action_label: getPaymentActionLabel(isPaid, isFuture),
-    rule,
-  };
-}
-
-export function groupUpcomingItems(items: UpcomingViewItem[]) {
-  return {
-    overdue: items.filter((item) => item.group === "overdue"),
-    paid: items.filter((item) => item.group === "paid"),
-    active: items.filter((item) => item.group === "active"),
-    paused: items.filter((item) => item.group === "paused"),
-    suggested: items.filter((item) => item.group === "suggested"),
-  };
-}
-
-export function toRecurringDetailViewModel(
-  rule: RecurringRuleWithOccurrences,
-  today = new Date()
-): RecurringDetailViewModel {
-  const nextItem = toUpcomingViewItem(rule, today);
-  const paidOccurrences = rule.occurrences
-    .filter((occurrence) => occurrence.status === "paid")
-    .sort((left, right) => right.expected_date.localeCompare(left.expected_date));
-  const lastPaid = paidOccurrences[0] ?? null;
-  const timeline = rule.occurrences
+  todayIso: string
+): RecurringHistoryViewItem[] {
+  return occurrences
     .slice()
-    .sort(compareOccurrencesForTimeline)
-    .map((occurrence) => {
-      const paidLabel =
-        occurrence.status === "paid"
-          ? formatPaidLabel(occurrence.paid_at ?? occurrence.expected_date, today)
-          : null;
-
-      return {
-        id: occurrence.id,
-        expected_date: occurrence.expected_date,
-        date_label: formatDueLabel(occurrence.expected_date, today),
-        amount_label: formatUpcomingMoney(
-          Number(occurrence.expected_amount ?? rule.expected_amount ?? 0),
-          rule.currency
-        ),
-        status: occurrence.status,
-        status_label: getOccurrenceStatusLabel(occurrence.status),
-        status_tone: getOccurrenceStatusTone(occurrence.status),
-        paid_label: paidLabel,
-        paid_movement_id: occurrence.paid_movement_id,
-        can_mark_paid:
-          rule.status === "active" &&
-          !rule.linked_debt_id &&
-          payableOccurrenceStatuses.includes(occurrence.status),
-      };
-    });
-
-  return {
-    id: rule.id,
-    title: rule.name,
-    amount_label: formatUpcomingMoney(Number(rule.expected_amount ?? 0), rule.currency),
-    cadence_label: frequencyLabels[rule.frequency],
-    status_label: nextItem.status_label,
-    status_tone: nextItem.status_tone,
-    category_label: rule.category_id ? categoryLabels[rule.category_id] : null,
-    account_id: rule.default_account_id,
-    next_due_label: nextItem.due_label,
-    next_due_at: nextItem.due_at,
-    last_paid_label: lastPaid
-      ? formatPaidLabel(lastPaid.paid_at ?? lastPaid.expected_date, today)
-      : null,
-    linked_debt: Boolean(rule.linked_debt_id),
-    timeline,
-  };
+    .sort((left, right) =>
+      right.expected_date.localeCompare(left.expected_date)
+    )
+    .map((occurrence) => ({
+      id: occurrence.id,
+      expected_date: occurrence.expected_date,
+      date_label: formatDueLabel(occurrence.expected_date, todayIso),
+      amount: occurrence.expected_amount ?? rule.expected_amount,
+      status: occurrence.status,
+      status_label: occurrenceStatusLabel(occurrence.status),
+      status_tone: occurrenceStatusTone(occurrence.status),
+      paid_at: occurrence.paid_at,
+      paid_movement_id: occurrence.paid_movement_id,
+    }));
 }
 
 export function formatUpcomingMoney(
   amount: number,
   currency: "PEN" | "USD" = "PEN"
 ): string {
-  const symbol = currency === "USD" ? "$" : "S/";
-  return `${symbol} ${amount.toLocaleString("es-PE", {
-    minimumFractionDigits: amount % 1 === 0 ? 0 : 2,
+  return new Intl.NumberFormat("es-PE", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  })}`;
+  })
+    .format(amount)
+    .replace(/^S\/\s*/, "S/")
+    .replace(/^(?:US\$|USD)\s*/, "$");
 }
 
-function monthlyEquivalent(rule: RecurringRuleWithOccurrences): number {
-  const amount = Number(rule.expected_amount ?? 0);
-
-  if (rule.frequency === "weekly") return amount * 4.33;
-  if (rule.frequency === "biweekly") return amount * 2.17;
-  if (rule.frequency === "yearly") return amount / 12;
-  return amount;
-}
-
-function getStatusLabel(status: string, isOverdue: boolean, isPaid: boolean): string {
-  if (isPaid) return "Pagado";
-  if (isOverdue) return "Vencido";
-  if (status === "active") return "Activo";
-  if (status === "paused") return "Pausado";
-  if (status === "suggested") return "Sugerido";
-  return "Cerrado";
-}
-
-function getStatusTone(status: string, isOverdue: boolean, isPaid: boolean) {
-  if (isPaid) return "success" as const;
-  if (isOverdue) return "warning" as const;
-  if (status === "active") return "success" as const;
-  if (status === "paused") return "neutral" as const;
-  if (status === "suggested") return "info" as const;
-  return "neutral" as const;
-}
-
-function getPaymentActionLabel(isPaid: boolean, isFuture: boolean): string {
-  if (isPaid) return "Pagado";
-  if (isFuture) return "Pagar adelantado";
-  return "Marcar pagado";
-}
-
-function formatPaidLabel(value: string | null, today: Date): string {
-  if (!value) return "Pagado";
-
-  const date = value.includes("T") ? new Date(value) : startOfDay(value);
-  if (Number.isNaN(date.getTime())) return "Pagado";
-
-  const diffDays = Math.round(
-    (startOfToday(today).getTime() -
-      new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()) /
-      86_400_000
-  );
-
-  if (diffDays === 0) return "Pagado hoy";
-  if (diffDays === 1) return "Pagado ayer";
-
+export function formatFullDate(value: string): string {
+  const date = parseIsoDate(value);
   return new Intl.DateTimeFormat("es-PE", {
+    timeZone: "UTC",
     day: "numeric",
-    month: "short",
+    month: "long",
+    year: "numeric",
   }).format(date);
 }
 
-function pickNextOpenOccurrence(
-  occurrences: RecurringOccurrence[]
-): RecurringOccurrence | null {
-  return (
-    occurrences
-      .filter((occurrence) => payableOccurrenceStatuses.includes(occurrence.status))
-      .sort((left, right) => left.expected_date.localeCompare(right.expected_date))[0] ??
-    null
+function toUpcomingViewItem(
+  commitment: UpcomingCommitment,
+  rulesById: Map<string, RecurringRuleWithOccurrences>,
+  todayIso: string
+): UpcomingViewItem {
+  const rule = commitment.recurring_rule_id
+    ? rulesById.get(commitment.recurring_rule_id) ?? null
+    : null;
+  const timing = commitmentTiming(commitment, rule, todayIso);
+  const section =
+    timing.state !== "upcoming"
+      ? "pending"
+      : differenceInDays(commitment.due_at, todayIso) <= 7
+        ? "this_week"
+        : "later";
+  const recurring = commitment.kind === "recurring";
+
+  return {
+    key: `${commitment.kind}:${commitment.id}`,
+    id: commitment.id,
+    title: commitment.title,
+    discreet_title:
+      section === "pending"
+        ? "Tienes un compromiso pendiente"
+        : "Tienes un compromiso próximo",
+    amount:
+      typeof commitment.amount === "number"
+        ? roundMoney(commitment.amount)
+        : null,
+    currency: commitment.currency,
+    due_at: commitment.due_at,
+    due_label: formatDueLabel(commitment.due_at, todayIso),
+    section,
+    status_label: timing.label,
+    status_tone: timing.tone,
+    alert: timing.alert,
+    kind: commitment.kind,
+    linked_box_id: commitment.linked_box_id,
+    linked_box_label: commitment.linked_box_id
+      ? "Vinculado a una caja"
+      : null,
+    recurring_rule_id: commitment.recurring_rule_id ?? null,
+    occurrence_id: commitment.occurrence_id ?? null,
+    debt_id: commitment.debt_id ?? null,
+    installment_id: commitment.installment_id ?? null,
+    debt_kind: commitment.debt_kind,
+    date_is_approximate: commitment.date_is_approximate,
+    informal_agreement: commitment.informal_agreement,
+    can_mark_paid:
+      recurring &&
+      rule?.status === "active" &&
+      Boolean(commitment.occurrence_id),
+    can_skip:
+      recurring &&
+      rule?.status === "active" &&
+      Boolean(commitment.occurrence_id),
+    can_pause: recurring && rule?.status === "active",
+    can_resume: recurring && rule?.status === "paused",
+    rule,
+  };
+}
+
+function toRuleFallbackViewItem(
+  rule: RecurringRuleWithOccurrences,
+  todayIso: string
+): UpcomingViewItem {
+  const occurrence = pickOpenOccurrence(rule.occurrences);
+  const dueAt = occurrence?.expected_date ?? rule.next_expected_date ?? todayIso;
+  const amount = occurrence?.expected_amount ?? rule.expected_amount;
+  const timing = commitmentTiming(
+    {
+      id: occurrence?.id ?? rule.id,
+      title: rule.name,
+      amount,
+      currency: rule.currency,
+      due_at: dueAt,
+      kind: "recurring",
+      linked_box_id: rule.linked_box_id,
+      recurring_rule_id: rule.id,
+      occurrence_id: occurrence?.id ?? null,
+    },
+    rule,
+    todayIso
   );
+  const section =
+    timing.state !== "upcoming"
+      ? "pending"
+      : differenceInDays(dueAt, todayIso) <= 7
+        ? "this_week"
+        : "later";
+
+  return {
+    key: `rule-fallback:${rule.id}:${dueAt}`,
+    id: occurrence?.id ?? rule.id,
+    title: rule.name,
+    discreet_title:
+      section === "pending"
+        ? "Tienes un compromiso pendiente"
+        : "Tienes un compromiso próximo",
+    amount: typeof amount === "number" ? roundMoney(amount) : null,
+    currency: rule.currency,
+    due_at: dueAt,
+    due_label: formatDueLabel(dueAt, todayIso),
+    section,
+    status_label:
+      amount === null && timing.state === "upcoming"
+        ? "Monto por revisar"
+        : timing.label,
+    status_tone: timing.tone,
+    alert: timing.alert,
+    kind: "recurring",
+    linked_box_id: rule.linked_box_id,
+    linked_box_label: rule.linked_box_id ? "Vinculado a una caja" : null,
+    recurring_rule_id: rule.id,
+    occurrence_id: occurrence?.id ?? null,
+    debt_id: null,
+    installment_id: null,
+    can_mark_paid: Boolean(occurrence),
+    can_skip: Boolean(occurrence),
+    can_pause: true,
+    can_resume: false,
+    rule,
+  };
 }
 
-function compareOccurrencesForTimeline(
-  left: RecurringOccurrence,
-  right: RecurringOccurrence
-): number {
-  if (left.status === "paid" && right.status !== "paid") return 1;
-  if (left.status !== "paid" && right.status === "paid") return -1;
-  if (left.status === "paid" && right.status === "paid") {
-    return right.expected_date.localeCompare(left.expected_date);
+function toPausedViewItem(
+  rule: RecurringRuleWithOccurrences,
+  todayIso: string
+): UpcomingViewItem {
+  const occurrence = pickOpenOccurrence(rule.occurrences);
+  const dueAt = occurrence?.expected_date ?? rule.next_expected_date ?? todayIso;
+  return {
+    key: `paused:${rule.id}`,
+    id: rule.id,
+    title: rule.name,
+    discreet_title: "Tienes un pago pausado",
+    amount: roundMoney(
+      Number(occurrence?.expected_amount ?? rule.expected_amount ?? 0)
+    ),
+    currency: rule.currency,
+    due_at: dueAt,
+    due_label: formatDueLabel(dueAt, todayIso),
+    section: "later",
+    status_label: "Pausado",
+    status_tone: "neutral",
+    alert: false,
+    kind: "recurring",
+    linked_box_id: rule.linked_box_id,
+    linked_box_label: rule.linked_box_id ? "Vinculado a una caja" : null,
+    recurring_rule_id: rule.id,
+    occurrence_id: occurrence?.id ?? null,
+    debt_id: null,
+    installment_id: null,
+    can_mark_paid: false,
+    can_skip: false,
+    can_pause: false,
+    can_resume: true,
+    rule,
+  };
+}
+
+function commitmentTiming(
+  commitment: UpcomingCommitment,
+  rule: RecurringRuleWithOccurrences | null,
+  todayIso: string
+): {
+  state: "upcoming" | "pending" | "overdue";
+  label: string;
+  tone: UpcomingStatusTone;
+  alert: boolean;
+} {
+  const daysLate = differenceInDays(todayIso, commitment.due_at);
+  if (daysLate < 0) {
+    return {
+      state: "upcoming",
+      label: "Próximo",
+      tone: commitment.kind === "debt" ? "debt" : "info",
+      alert: false,
+    };
   }
-  return left.expected_date.localeCompare(right.expected_date);
+
+  if (commitment.kind === "debt") {
+    const approximate =
+      !commitment.debt_kind ||
+      commitment.debt_kind === "personal" ||
+      commitment.date_is_approximate === true ||
+      commitment.informal_agreement === true;
+    const explicitlyOverdue =
+      commitment.presentation_state === "overdue" || daysLate >= 3;
+    if (explicitlyOverdue && !approximate) {
+      return {
+        state: "overdue",
+        label: "Vencido",
+        tone: "warning",
+        alert: true,
+      };
+    }
+    return {
+      state: "pending",
+      label: "Pendiente",
+      tone: "warning",
+      alert: false,
+    };
+  }
+
+  const approximate =
+    getBoolean(asRecord(rule?.metadata), "date_is_approximate") ||
+    getBoolean(asRecord(rule?.metadata), "informal_agreement");
+  const explicitlyOverdue =
+    commitment.presentation_state === "overdue" ||
+    (!commitment.presentation_state && daysLate >= 3);
+  if (explicitlyOverdue && !approximate) {
+    return {
+      state: "overdue",
+      label: "Vencido",
+      tone: "warning",
+      alert: true,
+    };
+  }
+
+  return {
+    state: "pending",
+    label: "Pendiente",
+    tone: "warning",
+    alert: false,
+  };
 }
 
-function getOccurrenceStatusLabel(status: RecurringOccurrenceStatus): string {
+function buildEvidenceLabel(
+  evidence: Record<string, unknown>,
+  currency: "PEN" | "USD"
+): string {
+  const dates = getStringArray(evidence, "dates").slice(-3);
+  const amounts = getNumberArray(evidence, "amounts").slice(-3);
+  const movementCount = getNumber(evidence, "movement_count");
+  const datePart =
+    dates.length > 0
+      ? `Lo vi ${joinNatural(
+          dates.map((date) => formatEvidenceDate(date))
+        )}.`
+      : movementCount
+        ? `Lo vi en ${movementCount} movimientos confirmados.`
+        : "Hay movimientos confirmados que se repiten.";
+  if (amounts.length === 0) return datePart;
+
+  const uniqueAmounts = [...new Set(amounts.map(roundMoney))];
+  const amountPart =
+    uniqueAmounts.length === 1
+      ? ` El monto fue ${formatUpcomingMoney(uniqueAmounts[0], currency)} cada vez.`
+      : ` Los montos fueron ${joinNatural(
+          amounts.map((amount) => formatUpcomingMoney(amount, currency))
+        )}.`;
+  return `${datePart}${amountPart}`;
+}
+
+function formatEvidenceDate(value: string): string {
+  const date = parseIsoDate(value);
+  return new Intl.DateTimeFormat("es-PE", {
+    timeZone: "UTC",
+    day: "numeric",
+    month: "short",
+  })
+    .format(date)
+    .replace(".", "");
+}
+
+function formatDueLabel(value: string, todayIso: string): string {
+  const difference = differenceInDays(value, todayIso);
+  if (difference === 0) return "Hoy";
+  if (difference === 1) return "Mañana";
+  if (difference === -1) return "Ayer";
+  if (difference > 1 && difference <= 7) return `En ${difference} días`;
+  if (difference < -1) return `Hace ${Math.abs(difference)} días`;
+  return formatFullDate(value);
+}
+
+function occurrenceStatusLabel(status: RecurringOccurrenceStatus): string {
   if (status === "paid") return "Pagado";
-  if (status === "overdue") return "Vencido";
-  if (status === "due_soon") return "Por vencer";
-  if (status === "pending_confirmation") return "Por confirmar";
   if (status === "skipped") return "Saltado";
+  if (status === "overdue") return "Vencido";
+  if (status === "pending_confirmation") return "Pendiente";
+  if (status === "due_soon") return "Próximo";
   if (status === "rejected") return "Rechazado";
   return "Esperado";
 }
 
-function getOccurrenceStatusTone(status: RecurringOccurrenceStatus) {
-  if (status === "paid") return "success" as const;
-  if (status === "overdue") return "warning" as const;
-  if (status === "rejected") return "error" as const;
-  if (status === "due_soon" || status === "pending_confirmation") {
-    return "info" as const;
+function occurrenceStatusTone(
+  status: RecurringOccurrenceStatus
+): UpcomingStatusTone {
+  if (status === "paid") return "success";
+  if (status === "overdue" || status === "pending_confirmation") {
+    return "warning";
   }
-  return "neutral" as const;
+  if (status === "rejected") return "error";
+  if (status === "due_soon") return "info";
+  return "neutral";
 }
 
-function formatDueLabel(value: string | null, today: Date): string {
-  if (!value) return "Sin fecha proxima";
-
-  const date = startOfDay(value);
-  const diffDays = Math.round(
-    (date.getTime() - startOfToday(today).getTime()) / 86_400_000
+function pickOpenOccurrence(
+  occurrences: RecurringOccurrence[]
+): RecurringOccurrence | null {
+  return (
+    occurrences
+      .filter((occurrence) => openStatuses.includes(occurrence.status))
+      .sort((left, right) =>
+        left.expected_date.localeCompare(right.expected_date)
+      )[0] ?? null
   );
-
-  if (diffDays === 0) return "Hoy";
-  if (diffDays === 1) return "Manana";
-  if (diffDays === -1) return "Ayer";
-  if (diffDays < -1) return `Hace ${Math.abs(diffDays)} dias`;
-  if (diffDays < 7) return `En ${diffDays} dias`;
-
-  return new Intl.DateTimeFormat("es-PE", {
-    day: "numeric",
-    month: "short",
-  }).format(date);
 }
 
-function startOfDay(value: string): Date {
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return new Date(0);
-  return date;
+function compareItems(left: UpcomingViewItem, right: UpcomingViewItem) {
+  const byDate = left.due_at.localeCompare(right.due_at);
+  return byDate === 0 ? left.key.localeCompare(right.key) : byDate;
 }
 
-function startOfToday(today: Date): Date {
-  return new Date(today.getFullYear(), today.getMonth(), today.getDate());
+function parseIsoDate(value: string): Date {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return new Date(0);
+  return new Date(
+    Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  );
+}
+
+function differenceInDays(left: string, right: string): number {
+  return Math.round(
+    (parseIsoDate(left).getTime() - parseIsoDate(right).getTime()) /
+      86_400_000
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -503,6 +572,33 @@ function getString(record: Record<string, unknown>, key: string): string | null 
 function getNumber(record: Record<string, unknown>, key: string): number | null {
   const value = record[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function getBoolean(record: Record<string, unknown>, key: string): boolean {
+  return record[key] === true;
+}
+
+function getStringArray(
+  record: Record<string, unknown>,
+  key: string
+): string[] {
+  const value = record[key];
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function getNumberArray(
+  record: Record<string, unknown>,
+  key: string
+): number[] {
+  const value = record[key];
+  return Array.isArray(value)
+    ? value.filter(
+        (item): item is number =>
+          typeof item === "number" && Number.isFinite(item)
+      )
+    : [];
 }
 
 function getIsoDate(
@@ -548,6 +644,26 @@ function toDisplayName(value: string): string {
     .join(" ");
 }
 
+function joinNatural(values: string[]): string {
+  if (values.length <= 1) return values[0] ?? "";
+  return `${values.slice(0, -1).join(", ")} y ${values.at(-1)}`;
+}
+
 function roundMoney(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function sumCurrency(
+  items: UpcomingViewItem[],
+  currency: "PEN" | "USD"
+): number {
+  return roundMoney(
+    items.reduce(
+      (sum, item) =>
+        item.currency === currency && typeof item.amount === "number"
+          ? sum + item.amount
+          : sum,
+      0
+    )
+  );
 }

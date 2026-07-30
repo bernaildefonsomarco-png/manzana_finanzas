@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  addCalendarDays,
   addMonthsClamped,
   daysInMonth,
   firstWeekdayOfMonth,
   formatRelativeLimaDate,
+  isoDateInLima,
   limaLocalInputToUtcIso,
   parseIsoDate,
   toIsoDate,
@@ -20,6 +22,12 @@ describe("date-lima (módulo único de fecha, AC-PAT-09)", () => {
     expect(parseIsoDate("14/07/2026")).toBeNull();
     expect(parseIsoDate("no es fecha")).toBeNull();
     expect(parseIsoDate("20260714")).toBeNull();
+  });
+
+  it("calcula fecha de Lima y horizonte sin depender de la zona del proceso", () => {
+    const instant = new Date("2026-07-30T03:30:00.000Z");
+    expect(isoDateInLima(instant)).toBe("2026-07-29");
+    expect(addCalendarDays("2026-07-29", 30)).toBe("2026-08-28");
   });
 
   it("daysInMonth cuenta febrero bisiesto correctamente", () => {
