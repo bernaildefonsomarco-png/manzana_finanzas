@@ -1243,8 +1243,7 @@ hasta que `W-11` extienda `RecordDebtPaymentCommand` (`WEB-D195`).
 **Cerrado:** 2026-07-29
 **Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
 **Matriz regenerada:** 2026-07-29, con `npm run matriz:generar`, posterior
-al commit `PENDIENTE` (`AC-TRAZ-12`; hash real registrado en el commit de
-seguimiento de este cierre).
+al commit `b2ce397` (`AC-TRAZ-12`).
 
 ### Qué se entregó
 
