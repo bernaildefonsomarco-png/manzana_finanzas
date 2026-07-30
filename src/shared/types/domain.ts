@@ -46,6 +46,7 @@ export const PENDING_STATUSES = [
   "user_edited",
   "discarded",
   "auto_resolved_duplicate",
+  "already_registered",
   "expired",
   "archived",
 ] as const;
@@ -671,6 +672,9 @@ export type PendingItem = {
   };
   dedup_status: string | null;
   risk_level: RiskLevel;
+  /** RUL-PEND-01: calculado al crear/completar, nunca en el cliente. */
+  confirmable: boolean;
+  confirm_command: Record<string, unknown> | null;
   expires_at: string | null;
   sent_for_confirmation_at: string | null;
   resolved_at: string | null;

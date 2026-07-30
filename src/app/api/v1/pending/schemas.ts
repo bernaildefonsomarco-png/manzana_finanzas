@@ -72,7 +72,23 @@ export const DiscardPendingRequestSchema = z
   })
   .strict();
 
+/** RUL-PEND-05: distinguir "ya lo registré" de "no era eso" (discard). */
+export const AlreadyRegisteredRequestSchema = z
+  .object({
+    movement_id: z.string().uuid().nullable().optional(),
+  })
+  .strict();
+
+/** RUL-EMAIL-11/ACT-PEND-09: máximo 280 caracteres (`28` §7). */
+export const PendingContextRequestSchema = z
+  .object({
+    context: z.string().trim().min(1).max(280),
+  })
+  .strict();
+
 export type ListPendingQuery = z.infer<typeof ListPendingQuerySchema>;
 export type PendingSummaryPatch = z.infer<typeof PendingSummaryPatchSchema>;
 export type UpdatePendingRequest = z.infer<typeof UpdatePendingRequestSchema>;
 export type DiscardPendingRequest = z.infer<typeof DiscardPendingRequestSchema>;
+export type AlreadyRegisteredRequest = z.infer<typeof AlreadyRegisteredRequestSchema>;
+export type PendingContextRequest = z.infer<typeof PendingContextRequestSchema>;

@@ -13,17 +13,20 @@ describe("AC-SEG-01: service-role solo con justificación registrada", () => {
     expect(resultado.entradasObsoletas).toEqual([]);
   });
 
-  it("la lista de excepciones temporales tiene 47 rutas: las 48 de 15 §1 menos las dos que 15 §4 ya declaraba permanentes, más la nueva de restaurar cuenta (W-08)", () => {
+  it("la lista de excepciones temporales tiene 54 rutas: las 48 de 15 §1 menos las dos que 15 §4 ya declaraba permanentes, más las siete de W-08/W-10", () => {
     // /api/v1/onboarding y /api/v1/privacy/account están entre las 48 que
     // 15 §1 mide como "usan createServiceClient", pero 15 §4 ya las
     // justifica como categoría permanente (registro sin sesión completa,
     // borrado de todas las tablas). No son pendientes de migrar: no
     // deberían estar en la lista que AC-SEG-07 quiere vaciar.
-    // `v1/accounts/*/restore` es una ruta nueva de W-08 (ACT-CUENTAS-04):
-    // no estaba entre las 48 originales, pero necesita el mismo
-    // service-role que el resto de `v1/accounts/*` por la misma razón de
-    // RLS (15 §9), así que entra a la lista temporal, no a la permanente.
-    expect(EXCEPCIONES_TEMPORALES.length).toBe(47);
+    // `v1/accounts/*/restore` es una ruta nueva de W-08 (ACT-CUENTAS-04),
+    // y W-10 sumó siete más sobre `pending`/`email` que comparten la misma
+    // razón de RLS (15 §9): `pending/*/already-registered`,
+    // `pending/*/context`, `pending/batch/*/undo`, `email/suggestions`,
+    // `email/suggestions/*/accept`, `.../reject`, `.../silence`.
+    // (`templates` y `capture/parse` de W-10 NO están aquí: AC-CAP-15 exige
+    // cero service-role en ese módulo, y su RLS ya lo permite sin él.)
+    expect(EXCEPCIONES_TEMPORALES.length).toBe(54);
   });
 
   it("AC-SEG-07 (agregado): la lista temporal no está vacía todavía — no cierra en W-02 (WEB-D168)", () => {

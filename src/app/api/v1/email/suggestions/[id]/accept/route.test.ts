@@ -1,0 +1,92 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  getApiAuth: vi.fn(),
+  createServiceClient: vi.fn(() => ({})),
+  getSenderSuggestionById: vi.fn(),
+  upsertUserEmailSource: vi.fn(),
+  resolveSenderSuggestion: vi.fn(),
+}));
+
+vi.mock("@/app/api/_lib/auth", () => ({ getApiAuth: mocks.getApiAuth }));
+vi.mock("@/data/supabase/server", () => ({ createServiceClient: mocks.createServiceClient }));
+vi.mock("@/data/repositories/email.repository", () => ({
+  getSenderSuggestionById: mocks.getSenderSuggestionById,
+  upsertUserEmailSource: mocks.upsertUserEmailSource,
+  resolveSenderSuggestion: mocks.resolveSenderSuggestion,
+}));
+
+import { POST } from "./route";
+
+const SUGGESTION_ID = "22222222-2222-4222-8222-222222222222";
+
+function request(body: unknown) {
+  return new Request(`http://localhost/api/v1/email/suggestions/${SUGGESTION_ID}/accept`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+function context() {
+  return { params: Promise.resolve({ id: SUGGESTION_ID }) };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.getApiAuth.mockResolvedValue({ userId: "11111111-1111-4111-8111-111111111111", client: {} });
+});
+
+describe("POST /api/v1/email/suggestions/[id]/accept", () => {
+  it("camino feliz: crea la fuente y resuelve la sugerencia", async () => {
+    mocks.getSenderSuggestionById.mockResolvedValue({
+      id: SUGGESTION_ID,
+      email_connection_id: "conn-1",
+      sender: "notificaciones@bcp.com.pe",
+    });
+    mocks.upsertUserEmailSource.mockResolvedValue({ id: "source-1", status: "shadow" });
+    mocks.resolveSenderSuggestion.mockResolvedValue({ id: SUGGESTION_ID, status: "accepted" });
+
+    const response = await POST(request({ institution_key: "bcp" }), context());
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.data.source.status).toBe("shadow");
+  });
+
+  it("sin sesion: 401", async () => {
+    mocks.getApiAuth.mockResolvedValue(null);
+
+    const response = await POST(request({ institution_key: "bcp" }), context());
+
+    expect(response.status).toBe(401);
+  });
+
+  it("sugerencia de otro usuario: 404, nunca 403", async () => {
+    mocks.getSenderSuggestionById.mockResolvedValue(null);
+
+    const response = await POST(request({ institution_key: "bcp" }), context());
+
+    expect(response.status).toBe(404);
+  });
+
+  it("validacion: institution_key ausente devuelve VALIDATION_ERROR", async () => {
+    const response = await POST(request({}), context());
+
+    expect(response.status).toBe(400);
+  });
+
+  it("idempotencia: aceptar una sugerencia ya resuelta devuelve CONFLICT, no duplica la fuente", async () => {
+    mocks.getSenderSuggestionById.mockResolvedValue({
+      id: SUGGESTION_ID,
+      email_connection_id: "conn-1",
+      sender: "notificaciones@bcp.com.pe",
+    });
+    mocks.upsertUserEmailSource.mockResolvedValue({ id: "source-1", status: "shadow" });
+    mocks.resolveSenderSuggestion.mockResolvedValue(null);
+
+    const response = await POST(request({ institution_key: "bcp" }), context());
+
+    expect(response.status).toBe(409);
+  });
+});

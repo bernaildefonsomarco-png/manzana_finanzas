@@ -25,6 +25,7 @@ const TERMINAL_PENDING_STATUSES = new Set<PendingStatus>([
   "user_confirmed",
   "discarded",
   "auto_resolved_duplicate",
+  "already_registered",
   "expired",
   "archived",
 ]);
@@ -371,6 +372,13 @@ export async function updatePendingSummary(
   normalizedSummary: PendingSummary,
   traceId?: string,
   proposedAction?: Record<string, unknown>,
+  /** RUL-PEND-01: recalculada por quien llama (computeConfirmability) —
+   * este repositorio no decide confirmabilidad, solo la persiste. */
+  confirmability?: {
+    confirmable: boolean;
+    confirmCommand: Record<string, unknown> | null;
+    missingFields: string[];
+  },
 ): Promise<PendingItem> {
   const existing = await requireEditablePending(client, userId, pendingItemId);
   const metadata = withoutDuplicateConfirmationMetadata(existing.metadata);
@@ -383,9 +391,18 @@ export async function updatePendingSummary(
         ? { proposed_action: proposedAction as Json }
         : {}),
       status: "user_edited",
+      ...(confirmability
+        ? {
+            confirmable: confirmability.confirmable,
+            confirm_command: confirmability.confirmCommand as Json | null,
+          }
+        : {}),
       metadata: {
         ...metadata,
         last_user_edit_at: new Date().toISOString(),
+        ...(confirmability
+          ? { missing_fields: confirmability.missingFields }
+          : {}),
       } as Json,
     })
     .eq("user_id", userId)
@@ -545,6 +562,242 @@ export async function markPendingDuplicateConfirmationRequested(
   return pendingItem;
 }
 
+/**
+ * RUL-PEND-05: "ya lo registré" (el hecho es real, ya está en el sistema)
+ * es distinto de "no era eso" (`markPendingDiscarded`) — alimenta la
+ * deduplicación, no evidencia negativa de la deteccion.
+ */
+export async function markPendingAlreadyRegistered(
+  client: Client,
+  userId: string,
+  pendingItemId: string,
+  actorId: string,
+  matchedMovementId: string | null,
+  traceId?: string
+): Promise<PendingItem> {
+  const existing = await requireEditablePending(client, userId, pendingItemId);
+  const now = new Date().toISOString();
+
+  const { data, error } = await client
+    .from("pending_items")
+    .update({
+      status: "already_registered",
+      resolved_at: now,
+      resolved_by: actorId,
+      metadata: {
+        ...existing.metadata,
+        already_registered_at: now,
+        linked_movement_id: matchedMovementId,
+      } as Json,
+    })
+    .eq("user_id", userId)
+    .eq("id", pendingItemId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    logger.error("pending_items.mark_already_registered_failed", {
+      error,
+      user_id: userId,
+      pending_item_id: pendingItemId,
+    });
+    throw new PendingRepositoryError(
+      "PENDING_REPOSITORY_ERROR",
+      "No se pudo marcar el pendiente como ya registrado"
+    );
+  }
+
+  const pendingItem = data as PendingItem;
+  await appendOutboxEvent(
+    client,
+    buildPendingOutboxEvent({
+      pendingItem,
+      eventType: "pending_already_registered",
+      traceId,
+      payload: {
+        linked_movement_id: matchedMovementId,
+      },
+    })
+  );
+
+  return pendingItem;
+}
+
+/** RUL-EMAIL-11/ACT-PEND-09: contexto libre, aportado antes o al confirmar. */
+export async function addPendingContext(
+  client: Client,
+  userId: string,
+  pendingItemId: string,
+  context: string,
+  traceId?: string
+): Promise<PendingItem> {
+  const existing = await requireEditablePending(client, userId, pendingItemId);
+
+  const { data, error } = await client
+    .from("pending_items")
+    .update({
+      metadata: {
+        ...existing.metadata,
+        user_context: context,
+        user_context_at: new Date().toISOString(),
+      } as Json,
+    })
+    .eq("user_id", userId)
+    .eq("id", pendingItemId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    logger.error("pending_items.add_context_failed", {
+      error,
+      user_id: userId,
+      pending_item_id: pendingItemId,
+    });
+    throw new PendingRepositoryError(
+      "PENDING_REPOSITORY_ERROR",
+      "No se pudo guardar el contexto"
+    );
+  }
+
+  const pendingItem = data as PendingItem;
+  await appendOutboxEvent(
+    client,
+    buildPendingOutboxEvent({
+      pendingItem,
+      eventType: "pending_context_added",
+      traceId,
+      payload: {},
+    })
+  );
+
+  return pendingItem;
+}
+
+/**
+ * RUL-PEND-07/ACT-PEND-07: etiqueta un pendiente ya confirmado con el
+ * lote al que perteneció, para que el deshacer de 24h sepa qué revertir.
+ * No cambia estado ni dispara eventos — es solo metadata de trazabilidad.
+ */
+export async function markPendingBatchConfirmId(
+  client: Client,
+  userId: string,
+  pendingItemId: string,
+  batchId: string
+): Promise<void> {
+  const existing = await getPendingItemById(client, userId, pendingItemId);
+  if (!existing) return;
+  const { error } = await client
+    .from("pending_items")
+    .update({
+      metadata: {
+        ...existing.metadata,
+        batch_confirm_id: batchId,
+      } as Json,
+    })
+    .eq("user_id", userId)
+    .eq("id", pendingItemId);
+  if (error) {
+    logger.error("pending_items.mark_batch_confirm_id_failed", {
+      error,
+      user_id: userId,
+      pending_item_id: pendingItemId,
+      batch_id: batchId,
+    });
+  }
+}
+
+/**
+ * Lista los pendientes de un lote confirmado, para el deshacer
+ * (`POST /pending/batch/[batch_id]/undo`).
+ */
+export async function listPendingItemsByBatchId(
+  client: Client,
+  userId: string,
+  batchId: string
+): Promise<PendingItem[]> {
+  const { data, error } = await client
+    .from("pending_items")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("status", "user_confirmed")
+    .eq("metadata->>batch_confirm_id", batchId);
+
+  if (error) {
+    logger.error("pending_items.list_by_batch_failed", {
+      error,
+      user_id: userId,
+      batch_id: batchId,
+    });
+    throw new PendingRepositoryError(
+      "PENDING_REPOSITORY_ERROR",
+      "No se pudo leer el lote"
+    );
+  }
+
+  return (data ?? []) as PendingItem[];
+}
+
+/**
+ * Deshace el lado del pendiente al deshacer un lote: vuelve a `pending`
+ * (no es un estado terminal nuevo, es reabrir lo que el lote cerro), sin
+ * pasar por `requireEditablePending` porque el estado actual SI es
+ * terminal (`user_confirmed`) a proposito.
+ */
+export async function reopenPendingAfterBatchUndo(
+  client: Client,
+  userId: string,
+  pendingItemId: string,
+  traceId?: string
+): Promise<PendingItem> {
+  const existing = await getPendingItemById(client, userId, pendingItemId);
+  if (!existing) {
+    throw new PendingRepositoryError(
+      "PENDING_ITEM_NOT_FOUND",
+      "Pendiente no encontrado"
+    );
+  }
+  const { data, error } = await client
+    .from("pending_items")
+    .update({
+      status: "pending",
+      resolved_at: null,
+      resolved_by: null,
+      metadata: {
+        ...existing.metadata,
+        batch_undone_at: new Date().toISOString(),
+      } as Json,
+    })
+    .eq("user_id", userId)
+    .eq("id", pendingItemId)
+    .select("*")
+    .single();
+
+  if (error || !data) {
+    logger.error("pending_items.reopen_after_batch_undo_failed", {
+      error,
+      user_id: userId,
+      pending_item_id: pendingItemId,
+    });
+    throw new PendingRepositoryError(
+      "PENDING_REPOSITORY_ERROR",
+      "No se pudo reabrir el pendiente"
+    );
+  }
+
+  const pendingItem = data as PendingItem;
+  await appendOutboxEvent(
+    client,
+    buildPendingOutboxEvent({
+      pendingItem,
+      eventType: "pending_batch_undone",
+      traceId,
+      payload: {},
+    })
+  );
+
+  return pendingItem;
+}
+
 export async function markPendingAutoResolvedDuplicate(
   client: Client,
   userId: string,
@@ -600,6 +853,41 @@ export async function markPendingAutoResolvedDuplicate(
   );
 
   return pendingItem;
+}
+
+const ACTIVE_NON_TERMINAL_STATUSES: PendingStatus[] = [
+  "pending",
+  "sent_for_confirmation",
+  "user_edited",
+];
+
+/**
+ * RUL-PEND-08: un pendiente sin resolver caduca a los 60 dias. No borra
+ * nada — su evidencia sigue sirviendo para deduplicacion (27 S6).
+ * Ejecutado por un trabajo programado, no en cada lectura (27 S17).
+ */
+export async function expireOverduePendingItems(
+  client: Client,
+  asOf?: string
+): Promise<{ expired_count: number; pending_item_ids: string[] }> {
+  const cutoff = asOf ?? new Date().toISOString();
+  const { data, error } = await client
+    .from("pending_items")
+    .update({ status: "expired", resolved_at: cutoff })
+    .in("status", ACTIVE_NON_TERMINAL_STATUSES)
+    .lt("expires_at", cutoff)
+    .select("id");
+
+  if (error) {
+    logger.error("pending_items.expire_overdue_failed", { error });
+    throw new PendingRepositoryError(
+      "PENDING_REPOSITORY_ERROR",
+      "No se pudo caducar los pendientes vencidos"
+    );
+  }
+
+  const ids = (data ?? []).map((row) => (row as { id: string }).id);
+  return { expired_count: ids.length, pending_item_ids: ids };
 }
 
 export function hasPendingDuplicateConfirmation(

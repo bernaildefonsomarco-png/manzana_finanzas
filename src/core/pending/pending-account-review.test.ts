@@ -266,6 +266,8 @@ function pending(): PendingItem {
     },
     dedup_status: null,
     risk_level: "low",
+    confirmable: false,
+    confirm_command: null,
     expires_at: null,
     sent_for_confirmation_at: "2026-07-23T12:01:00.000Z",
     resolved_at: null,

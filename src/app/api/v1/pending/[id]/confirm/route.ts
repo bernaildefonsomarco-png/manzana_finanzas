@@ -7,6 +7,8 @@ import {
 } from "@/core/pending/confirm-pending";
 import { assertSystemActionAllowed } from "@/core/risk/system-action-gate";
 import {
+  getPendingItemById,
+  isTerminalPendingStatus,
   PendingRepositoryError,
 } from "@/data/repositories/pending.repository";
 import { createServiceClient } from "@/data/supabase/server";
@@ -67,6 +69,29 @@ export async function POST(request: Request, context: RouteContext) {
       reversible: true,
     });
     const serviceClient = createServiceClient();
+
+    // RUL-PEND-01/AC-PEND-02 (ERR-PEND-02): nunca se intenta ejecutar un
+    // comando inexistente. Un pendiente ya resuelto (incluido
+    // user_confirmed, el camino idempotente) sigue su flujo normal abajo.
+    const currentPending = await getPendingItemById(
+      serviceClient,
+      auth.userId,
+      params.id
+    );
+    if (
+      currentPending &&
+      !isTerminalPendingStatus(currentPending.status) &&
+      !currentPending.confirmable
+    ) {
+      return errorJson(
+        "CORE_REJECTED",
+        "Me falta un dato para poder registrarlo.",
+        meta,
+        422,
+        { reason: "not_confirmable", missing_fields: currentPending.metadata.missing_fields ?? [] }
+      );
+    }
+
     const result = await confirmPendingItemWithCore({
       client: serviceClient,
       userId: auth.userId,

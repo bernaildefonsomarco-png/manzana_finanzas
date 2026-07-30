@@ -16,6 +16,12 @@ const mocks = vi.hoisted(() => ({
   getActiveAccounts: vi.fn(),
   listDebts: vi.fn(),
   listRecurringDashboard: vi.fn(),
+  touchUserEmailSourceLastMatched: vi.fn(),
+  isSenderSilenced: vi.fn(),
+  bumpOrCreateSenderSuggestion: vi.fn(),
+  countRecentSenderSuggestions: vi.fn(),
+  getPendingSenderSuggestion: vi.fn(),
+  computeConfirmability: vi.fn(),
 }));
 
 vi.mock("@/data/repositories/email.repository", async (original) => ({
@@ -27,6 +33,16 @@ vi.mock("@/data/repositories/email.repository", async (original) => ({
     mocks.listEnabledEmailTemplatesForInstitution,
   updateEmailConnectionState: mocks.updateEmailConnectionState,
   updateEmailSyncCheckpoint: mocks.updateEmailSyncCheckpoint,
+  touchUserEmailSourceLastMatched: mocks.touchUserEmailSourceLastMatched,
+  isSenderSilenced: mocks.isSenderSilenced,
+  bumpOrCreateSenderSuggestion: mocks.bumpOrCreateSenderSuggestion,
+  countRecentSenderSuggestions: mocks.countRecentSenderSuggestions,
+  getPendingSenderSuggestion: mocks.getPendingSenderSuggestion,
+}));
+// La confirmabilidad tiene su propia suite (compute-confirmability.test.ts);
+// aqui solo importa que email-ingestion.ts la llame y use el resultado.
+vi.mock("@/core/pending/compute-confirmability", () => ({
+  computeConfirmability: mocks.computeConfirmability,
 }));
 vi.mock("@/data/repositories/events.repository", async (original) => ({
   ...(await original()),
@@ -123,6 +139,19 @@ beforeEach(() => {
     rules: [],
     candidates: [],
   });
+  mocks.touchUserEmailSourceLastMatched.mockResolvedValue(undefined);
+  mocks.isSenderSilenced.mockResolvedValue(false);
+  mocks.bumpOrCreateSenderSuggestion.mockResolvedValue({
+    id: "suggestion-1",
+    signal: { seen_count: 1 },
+  });
+  mocks.countRecentSenderSuggestions.mockResolvedValue(0);
+  mocks.getPendingSenderSuggestion.mockResolvedValue(null);
+  mocks.computeConfirmability.mockResolvedValue({
+    confirmable: false,
+    confirmCommand: null,
+    missingFields: ["categoria"],
+  });
 });
 
 afterEach(() => {
@@ -191,6 +220,51 @@ describe("Gmail ingestion", () => {
       {},
       expect.objectContaining({ historyId: "200" }),
     );
+  });
+
+  it("RUL-EMAIL-05: un remitente no vigilado que parece financiero por metadatos genera una sugerencia, sin descargar el cuerpo", async () => {
+    const adapter = fakeAdapter();
+    vi.mocked(adapter.listHistory).mockResolvedValue({
+      messageIds: [{ id: "unknown", threadId: null }],
+      historyId: "200",
+      nextPageToken: null,
+    });
+    vi.mocked(adapter.getMessageMetadata).mockResolvedValue(
+      gmailMessage("unknown", "notificaciones@bcp.com.pe", ""),
+    );
+
+    await processGmailHistoryNotification({
+      client: {} as never,
+      connectionId: "connection-1",
+      externalEventId: "event-1",
+      traceId: "trace-1",
+      adapter,
+      configuration,
+    });
+
+    expect(adapter.getMessageContent).not.toHaveBeenCalled();
+    expect(mocks.bumpOrCreateSenderSuggestion).toHaveBeenCalledWith(
+      {},
+      expect.objectContaining({
+        connectionId: "connection-1",
+        sender: "notificaciones@bcp.com.pe",
+      }),
+    );
+  });
+
+  it("RUL-EMAIL-09: cada deteccion real actualiza last_matched_at de la fuente", async () => {
+    const adapter = fakeAdapterWithTrustedHistory();
+
+    await processGmailHistoryNotification({
+      client: {} as never,
+      connectionId: "connection-1",
+      externalEventId: "event-1",
+      traceId: "trace-1",
+      adapter,
+      configuration,
+    });
+
+    expect(mocks.touchUserEmailSourceLastMatched).toHaveBeenCalledWith({}, "source-1");
   });
 
   it("rechaza sender sin autenticacion Gmail antes de descargar el cuerpo", async () => {

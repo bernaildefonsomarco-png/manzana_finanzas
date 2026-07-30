@@ -52,6 +52,8 @@ function pendingItem(overrides: Partial<PendingItem> = {}): PendingItem {
     },
     dedup_status: null,
     risk_level: "medium",
+    confirmable: true,
+    confirm_command: {},
     expires_at: null,
     sent_for_confirmation_at: null,
     resolved_at: null,

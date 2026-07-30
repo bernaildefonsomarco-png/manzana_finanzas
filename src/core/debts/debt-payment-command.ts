@@ -347,7 +347,7 @@ function buildDebtPaymentOutboxEvents(params: {
   return events;
 }
 
-function isActiveDebt(debt: Debt): boolean {
+export function isActiveDebt(debt: Debt): boolean {
   return ["active", "due_soon", "overdue"].includes(debt.status);
 }
 

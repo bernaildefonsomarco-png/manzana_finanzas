@@ -70,6 +70,7 @@ describe("PendingStatus", () => {
       "user_edited",
       "discarded",
       "auto_resolved_duplicate",
+      "already_registered",
       "expired",
       "archived",
     ]);

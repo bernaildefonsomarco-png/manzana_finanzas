@@ -590,35 +590,88 @@ Métricas clave de este módulo:
 ## 20. Criterios de aceptación
 
 - `AC-CAP-01` — Un registro rápido típico se completa en menos de 10
-  segundos. Evidencia: `USER` + `METRIC`.
+  segundos. Evidencia: `USER` + `METRIC`. No cierra: sin interfaz de barra
+  de registro rápido (`SCR-CAP-01` diferida por `WEB-D203`) no hay nada que
+  cronometrar todavía; ninguna de las dos mitades puede cerrar sin ella.
 - `AC-CAP-02` — `taxi 15` se resuelve **solo con reglas**, sin llamada al
-  modelo. Evidencia: `TEST`.
+  modelo. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-10`:
+  `src/core/capture/quick-add-parser.ts` es 100% regex, sin dependencia de
+  ningún modelo; probado en `quick-add-parser.test.ts` ("AC-CAP-02: 'taxi
+  15' se resuelve solo con reglas").
 - `AC-CAP-03` — Nada se guarda sin previsualización.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra: es enteramente de interfaz (la
+  previsualización es una pantalla), diferida por `WEB-D203`. El backend
+  que la previsualización consumiría (`POST /capture/parse`) ya devuelve el
+  resultado sin escribir nada, lo cual es la precondición correcta, pero el
+  criterio en sí describe un comportamiento de UI que no existe.
 - `AC-CAP-04` — Un campo no determinado queda vacío o marcado como supuesto,
-  con su razón visible. Nunca se inventa. Evidencia: `TEST` + `USER`.
+  con su razón visible. Nunca se inventa. Evidencia: `TEST` + `USER`. Clase:
+  `unidad`. Cierra la parte `TEST` en `W-10`: `FieldProvenance`
+  (`"dicho"`/`"supuesto"`) y una `reason` legible se calculan por campo en
+  `quick-add-parser.ts`, cubierto en la mayoría de `quick-add-parser.test.ts`.
+  `USER` no cierra: sin interfaz que muestre esa razón (`WEB-D203`).
 - `AC-CAP-05` — Todos los campos de la previsualización son editables sin
-  cambiar de superficie. Evidencia: `TEST`.
+  cambiar de superficie. Evidencia: `TEST`. No cierra: de interfaz, diferido
+  por `WEB-D203` — no hay previsualización que editar todavía.
 - `AC-CAP-06` — Si nada se entiende, se abre el formulario con el texto
-  conservado. Nunca un callejón sin salida. Evidencia: `TEST`.
+  conservado. Nunca un callejón sin salida. Evidencia: `TEST`. No cierra
+  completo: la precondición del backend sí está — `resolved_by: "parcial"`
+  y `unresolved: [...]` se calculan en `quick-add-parser.ts` para que una
+  futura interfaz sepa cuándo caer al formulario completo — pero el
+  comportamiento de abrir el formulario con el texto conservado es de
+  interfaz y no existe (`WEB-D203`).
 - `AC-CAP-07` — Con el modelo caído, las reglas siguen funcionando.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra tal como está redactado: `RUL-CAP-01` prevé
+  una segunda capa de modelo para cuando las reglas no alcanzan (`WEB-D202`
+  la difirió explícitamente de este corte), así que hoy no existe ningún
+  modelo del que depender — el criterio es válido por ausencia, no porque
+  se haya probado una caída real de un modelo que todavía no existe en este
+  módulo.
 - `AC-CAP-08` — El registro rápido pasa por la misma detección de duplicados
-  que el formulario. Evidencia: `TEST`.
+  que el formulario. Evidencia: `TEST`. No cierra: `POST /capture/parse`
+  (`src/app/api/v1/capture/parse/route.ts`) solo interpreta el texto y
+  devuelve el resultado — no crea ningún movimiento ni llama a
+  `POST /api/v1/movements`, así que no hay ningún punto en el que la
+  detección de duplicados pueda ejercerse todavía.
 - `AC-CAP-09` — Un movimiento creado aquí es idéntico a uno del formulario y
-  se puede editar, eliminar y restaurar igual. Evidencia: `TEST`.
+  se puede editar, eliminar y restaurar igual. Evidencia: `TEST`. No cierra
+  — mismo motivo que `AC-CAP-08`: no existe ningún movimiento creado desde
+  este módulo con qué comparar.
 - `AC-CAP-10` — La escritura usa `POST /api/v1/movements`, sin endpoint
-  privilegiado. Evidencia: `TEST`.
+  privilegiado. Evidencia: `TEST`. No cierra: `capture/parse` no llama a
+  `POST /api/v1/movements` ni a ningún comando de escritura — solo analiza y
+  devuelve; sin una interfaz que tome ese resultado y lo envíe al endpoint
+  real de movimientos (`WEB-D203`), esta ruta de escritura no existe
+  todavía, aunque la intención arquitectónica (ningún endpoint propio de
+  escritura en este módulo) sí se respeta por lo que no se construyó.
 - `AC-CAP-11` — Una plantilla se sugiere tras 3 repeticiones, una sola vez, y
-  se respeta el rechazo 90 días. Evidencia: `TEST`.
+  se respeta el rechazo 90 días. Evidencia: `TEST`. No cierra: solo existe
+  CRUD manual de plantillas
+  (`src/data/repositories/movement-templates.repository.ts`,
+  `src/app/api/v1/templates/*`); no hay ninguna lógica que detecte 3
+  repeticiones de un movimiento similar y sugiera crear una plantilla, ni
+  un mecanismo de "respetar el rechazo 90 días" — ninguna de las tres partes
+  está construida.
 - `AC-CAP-12` — Las fechas relativas se resuelven en `America/Lima`.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-10`:
+  `resolveRelativeDate` en `quick-add-parser.ts` recibe `todayInLima()` como
+  ancla (nunca el reloj del proceso), probado en `quick-add-parser.test.ts`
+  incluido el caso límite del día de la semana nombrado que coincide con
+  hoy (verificado con `RUL-HECHO-02`: el `<=` en vez de `<` en
+  `mostRecentPastWeekday` se confirmó necesario revirtiéndolo y viendo
+  fallar la prueba nueva).
 - `AC-CAP-13` — Todos los atajos tienen alternativa por interfaz.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra: de interfaz, diferido por `WEB-D203` — no
+  hay atajos de teclado que auditar sin la barra de registro rápido.
 - `AC-CAP-14` — Tras guardar, el foco vuelve a la barra y se anuncia el
-  resultado. Evidencia: `TEST`.
+  resultado. Evidencia: `TEST`. No cierra: de interfaz, diferido por
+  `WEB-D203` — no hay barra ni guardado desde este módulo todavía.
 - `AC-CAP-15` — Ninguna ruta de este módulo usa service-role.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `lint`. Cierra en `W-10`:
+  `scripts/gates/service-role-lista.ts` no lista ninguna ruta de
+  `templates` ni `capture/parse` (ambas usan el cliente `authenticated` bajo
+  RLS), y `tests/lint/service-role-en-rutas.test.ts` lo confirma con un
+  escaneo real de código, no solo con las listas declaradas.
 
 ## 21. Fuera de alcance y puente
 

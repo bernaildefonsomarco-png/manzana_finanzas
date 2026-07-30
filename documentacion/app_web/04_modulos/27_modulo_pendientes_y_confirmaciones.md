@@ -610,37 +610,108 @@ pendientes incompletos está mal implementado.
 
 - `AC-PEND-01` — No existe ningún pendiente activo con `confirmable = true` y
   sin `confirm_command`. **Impuesto por la base de datos.**
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-10`:
+  `tests/rls/pending-confirmable-constraint.test.ts` prueba el `check` de la
+  migración `053` contra los tres estados activos
+  (`pending`/`sent_for_confirmation`/`user_edited`, no solo `pending` — un
+  primer borrador del `check` solo cubría `pending` y el propio test lo
+  detectó via `RUL-HECHO-02`, corregido antes de cerrar) y confirma que un
+  estado terminal sí admite `confirmable=true` sin comando.
 - `AC-PEND-02` — Confirmar un pendiente no confirmable devuelve `422` y nunca
-  intenta ejecutar. Evidencia: `TEST`.
+  intenta ejecutar. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-10`: `src/app/api/v1/pending/[id]/confirm/route.test.ts`
+  ("AC-PEND-02 (ERR-PEND-02)") verifica el `422` y que
+  `confirmPendingItemWithCore` nunca se invoca.
 - `AC-PEND-03` — Un pendiente no afecta saldos, presupuestos ni dinero libre
-  en ningún estado. Evidencia: `TEST`.
+  en ningún estado. Evidencia: `TEST`. No cierra con prueba dedicada — se
+  sostiene por construcción desde `W-01`/`007_pending_items.sql`
+  (`pending_items` es una tabla separada de `movements`, sin trigger que
+  toque saldos), sin cambios en `W-10`; mismo tratamiento que `AC-MOV-04` en
+  `26`.
 - `AC-PEND-04` — En búsqueda, los pendientes aparecen separados y marcados,
-  nunca mezclados con confirmados. Evidencia: `TEST` + `USER`.
+  nunca mezclados con confirmados. Evidencia: `TEST` + `USER`. No cierra:
+  diferido explícitamente por `WEB-D202` — depende de `38` (Búsqueda), sin
+  corte asignado todavía.
 - `AC-PEND-05` — Confirmar dos veces no crea dos movimientos.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. La réplica idempotente a nivel de
+  ruta se prueba en `route.test.ts` ("repetir la confirmacion devuelve 200
+  con idempotent_replay:true"); el mecanismo atómico real vive en el RPC
+  `confirm_pending_item` (`009_pending_confirmation_atomic.sql`, anterior a
+  `W-10`) sin test dedicado propio — cierra por el mismo criterio que
+  `AC-MOV-08` en `26`.
 - `AC-PEND-06` — "Ya lo registré" y "No era eso" producen aprendizaje
-  distinto. Evidencia: `TEST`.
+  distinto. Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-10`:
+  `markPendingAlreadyRegistered` escribe `linked_movement_id` (evidencia
+  positiva de deduplicación) y `markPendingDiscarded` escribe
+  `discard_reason` (evidencia negativa) — campos estructuralmente distintos,
+  no un mismo flag con dos valores. Ambos caminos tienen prueba: la mitad
+  "ya lo registré" en `already-registered/route.test.ts` (construida este
+  corte); la mitad "no era eso" en `discard/route.test.ts` (ruta preexistente
+  de un corte anterior sin prueba hasta ahora — se le agregó el mismo
+  paquete de cinco casos de `51§6.2` al detectar el vacío al cerrar `W-10`).
 - `AC-PEND-07` — El duplicado se advierte antes de las acciones de
   confirmación, también en el orden de lectura. Evidencia: `TEST` + `USER`.
+  No cierra: diferido por `WEB-D202` — la mitad `USER` (orden de lectura
+  real en pantalla) no cierra sin sesión de navegador disponible; la mitad
+  de detección de duplicado (`evaluateCrossChannelDedup`) es preexistente a
+  `W-10` y ya tiene prueba, pero el criterio completo exige ambas mitades.
 - `AC-PEND-08` — Un lote nunca incluye pendientes de riesgo alto, y dice
-  cuáles excluyó. Evidencia: `TEST`.
+  cuáles excluyó. Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-10`:
+  `batch-confirm/route.test.ts` ("RUL-PEND-11/AC-PEND-08: excluye
+  automaticamente el riesgo alto sin intentar confirmarlo") verifica que
+  `risk_level` alto/sensible se excluye con `reason:"high_risk"` antes de
+  ejecutar nada.
 - `AC-PEND-09` — Con más de 10 pendientes se agrupan por origen y similitud.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. No cierra: no existe ninguna lógica de
+  agrupación por origen/similitud en el backend (lo único que agrupa
+  pendientes hoy es el evaluador de nudges, para el recordatorio del
+  dashboard, no la bandeja) — diferido junto con la interfaz de la bandeja
+  por `WEB-D203`.
 - `AC-PEND-10` — Editar antes de confirmar genera evidencia positiva de lo
-  corregido y negativa de lo propuesto. Evidencia: `TEST`.
+  corregido y negativa de lo propuesto. Evidencia: `TEST`. No cierra:
+  diferido explícitamente por `WEB-D202` — depende del módulo `36`
+  (memoria), propiedad de `W-13`. `PATCH /pending/[id]` sí recalcula
+  `confirmable` tras la edición (`computeConfirmability`), pero no escribe
+  todavía la evidencia de aprendizaje distinguida que este criterio exige.
 - `AC-PEND-11` — Un pendiente caduca a los 60 días sin crear nada y sigue
-  consultable. Evidencia: `TEST`.
+  consultable. Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-10`:
+  `src/app/api/internal/jobs/pending-expiry/route.test.ts` (4 casos,
+  incluida la idempotencia de correr el trabajo dos veces) prueba el
+  `expireOverduePendingItems` a nivel de ruta; sin test unitario propio del
+  repositorio (mismo tratamiento que el resto de repositorios de este
+  módulo, probados a través de sus rutas).
 - `AC-PEND-12` — Nunca hay dos pendientes activos para el mismo hecho.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra completo: el índice único de la base
+  (`pending_items_user_source_ref_idx`, `007`) bloquea el duplicado exacto
+  de la misma fuente, pero un duplicado probable entre canales
+  (`src/core/dedup/dedup-engine.ts`) pide confirmación del usuario en vez de
+  bloquear — dos pendientes activos para el mismo hecho real pueden coexistir
+  hasta que se resuelvan. Mecanismo preexistente a `W-10`, sin cambios este
+  corte; el criterio tal como está escrito no cierra íntegro.
 - `AC-PEND-13` — La bandeja vacía se presenta como estado bueno, no como
-  fracaso. Evidencia: `USER`.
+  fracaso. Evidencia: `USER`. No cierra: es puramente de interfaz, sin
+  sesión de navegador disponible en este entorno; además la bandeja
+  actualizada de `SCR-PEND-01` queda diferida por `WEB-D203`.
 - `AC-PEND-14` — La única excepción de service-role de este módulo es la
-  creación por workers, declarada en la lista blanca. Evidencia: `TEST`.
+  creación por workers, declarada en la lista blanca. Evidencia: `TEST`. No
+  cierra — **falso tal como está construido hoy**: casi todo el módulo
+  (`v1/pending/*`, `.../confirm`, `.../discard`, `.../already-registered`,
+  `.../context`, `batch-confirm`, `batch-discard`, `batch/*/undo`) sigue en
+  `EXCEPCIONES_TEMPORALES` de `scripts/gates/service-role-lista.ts`, no solo
+  la creación por workers — diferido a `AC-SEG-07` igual que `AC-MOV-18` en
+  `26` y `AC-CUENTAS-*` en `24`.
 - `AC-PEND-15` — Un pendiente no confirmable comunica por texto qué le falta.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `integracion`. Cierra la parte `TEST`
+  en `W-10`: el `422` de `confirm/route.ts` devuelve tanto el mensaje
+  ("Me falta un dato para poder registrarlo.") como
+  `details.missing_fields`, probado en `route.test.ts`. `USER` no cierra —
+  sin sesión de navegador disponible.
 - `AC-PEND-16` — La suma de pendientes nunca se presenta junto al gasto real
-  sin distinguirse. Evidencia: `TEST` + `USER`.
+  sin distinguirse. Evidencia: `TEST` + `USER`. No cierra: no existe ninguna
+  suma monetaria de pendientes en ninguna superficie hoy —
+  `buildPendingSummary` (`GET /dashboard/home`) solo devuelve conteos, nunca
+  un monto — así que tampoco hay riesgo de mezcla, pero tampoco hay
+  construcción del criterio; diferido junto con `WEB-D203`.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

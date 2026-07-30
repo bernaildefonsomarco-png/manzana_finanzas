@@ -92,8 +92,11 @@ export const EXCEPCIONES_TEMPORALES: EntradaLista[] = [
   "v1/pending/*",
   "v1/pending/*/confirm",
   "v1/pending/*/discard",
+  "v1/pending/*/already-registered",
+  "v1/pending/*/context",
   "v1/pending/batch-confirm",
   "v1/pending/batch-discard",
+  "v1/pending/batch/*/undo",
   // Email y detección bancaria (28)
   "v1/email/ai-consent",
   "v1/email/disconnect",
@@ -101,6 +104,10 @@ export const EXCEPCIONES_TEMPORALES: EntradaLista[] = [
   "v1/email/oauth/callback",
   "v1/email/sources",
   "v1/email/status",
+  "v1/email/suggestions",
+  "v1/email/suggestions/*/accept",
+  "v1/email/suggestions/*/reject",
+  "v1/email/suggestions/*/silence",
   // Recurrentes (30)
   "v1/recurring",
   "v1/recurring/*",

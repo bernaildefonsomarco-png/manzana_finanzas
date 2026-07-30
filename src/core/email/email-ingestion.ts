@@ -45,7 +45,84 @@ import {
 import { updateExternalEventStatus } from "@/data/repositories/events.repository";
 import { listRecurringDashboard } from "@/data/repositories/recurring.repository";
 import type { Database } from "@/data/supabase/types";
+import { computeConfirmability } from "@/core/pending/compute-confirmability";
+import {
+  bumpOrCreateSenderSuggestion,
+  countRecentSenderSuggestions,
+  getPendingSenderSuggestion,
+  isSenderSilenced,
+  touchUserEmailSourceLastMatched,
+} from "@/data/repositories/email.repository";
 import type { MovementInput } from "@/shared/schemas/money";
+import type { PendingItem } from "@/shared/types/domain";
+
+// RUL-EMAIL-05: solo remitente y patron de asunto — nunca el cuerpo, que
+// en esta rama ni siquiera se descarga.
+const FINANCIAL_SENDER_KEYWORDS = [
+  "bcp", "interbank", "bbva", "scotiabank", "yape", "plin",
+  "notificaciones", "alertas", "avisos", "banco", "tarjeta",
+];
+const FINANCIAL_SUBJECT_KEYWORDS = [
+  "movimiento", "cargo", "abono", "pago", "compra", "retiro", "transferencia",
+];
+
+export function looksFinancialByMetadata(sender: string, subject: string | null): boolean {
+  const senderLower = sender.toLowerCase();
+  if (FINANCIAL_SENDER_KEYWORDS.some((word) => senderLower.includes(word))) return true;
+  const subjectLower = subject?.toLowerCase() ?? "";
+  return FINANCIAL_SUBJECT_KEYWORDS.some((word) => subjectLower.includes(word));
+}
+
+const SUGGESTION_MAX_PER_WEEK = 1;
+
+/**
+ * RUL-EMAIL-05: sugiere vigilar un remitente no reconocido tras al menos
+ * dos correos que parecen financieros por metadatos, con tope de una
+ * sugerencia nueva por semana por buzon. "No preguntar por este
+ * remitente" (silenced) se respeta indefinidamente.
+ */
+async function maybeSuggestSender(
+  client: Client,
+  input: { userId: string; connectionId: string; sender: string; subject: string | null },
+): Promise<void> {
+  if (!looksFinancialByMetadata(input.sender, input.subject)) return;
+  if (
+    await isSenderSilenced(client, {
+      userId: input.userId,
+      connectionId: input.connectionId,
+      sender: input.sender,
+    })
+  ) {
+    return;
+  }
+
+  const existing = await getPendingSenderSuggestion(client, {
+    userId: input.userId,
+    connectionId: input.connectionId,
+    sender: input.sender,
+  });
+
+  // RUL-EMAIL-06: el tope semanal limita sugerencias NUEVAS — seguir
+  // contando una que ya esta en curso no cuenta contra el tope.
+  if (!existing) {
+    const recentCount = await countRecentSenderSuggestions(client, {
+      userId: input.userId,
+      connectionId: input.connectionId,
+      sinceDays: 7,
+    });
+    if (recentCount >= SUGGESTION_MAX_PER_WEEK) return;
+  }
+
+  // Se persiste desde el primer correo (para poder contar), pero
+  // `listSenderSuggestions` solo la muestra al usuario desde
+  // SUGGESTION_MIN_OCCURRENCES — "se sugiere tras al menos 2 correos".
+  await bumpOrCreateSenderSuggestion(client, {
+    userId: input.userId,
+    connectionId: input.connectionId,
+    sender: input.sender,
+    suggestedInstitution: null,
+  });
+}
 
 type Client = SupabaseClient<Database>;
 
@@ -361,11 +438,19 @@ async function processMessageIds(input: {
       connectionId: input.connection.id,
       sender,
     });
-    if (
-      !emailSource ||
-      emailSource.status === "paused" ||
-      emailSource.status === "disabled"
-    ) {
+    if (!emailSource) {
+      // RUL-EMAIL-05: remitente no vigilado — solo metadatos (remitente y
+      // patron del asunto), nunca el cuerpo. El cuerpo no se descarga en
+      // esta rama en absoluto (RUL-EMAIL-02).
+      await maybeSuggestSender(input.client, {
+        userId: input.connection.user_id,
+        connectionId: input.connection.id,
+        sender,
+        subject: getGmailHeader(metadata, "Subject"),
+      });
+      continue;
+    }
+    if (emailSource.status === "paused" || emailSource.status === "disabled") {
       continue;
     }
     const institutionTemplates =
@@ -729,6 +814,30 @@ async function processMessageIds(input: {
       },
     });
     const exactDuplicate = dedup.decision?.status === "exact_duplicate";
+    const pendingPayload = exactDuplicate
+      ? null
+      : buildPendingPayload(
+          parsed,
+          movementInput,
+          enrichment,
+          dedup.decision?.status ?? null,
+        );
+    // RUL-PEND-01: se calcula antes de crear el pendiente, nunca despues.
+    if (pendingPayload) {
+      const confirmability = await computeConfirmability({
+        client: input.client,
+        userId: input.connection.user_id,
+        proposedAction: pendingPayload.proposed_action,
+        normalizedSummary:
+          pendingPayload.normalized_summary as PendingItem["normalized_summary"],
+      });
+      pendingPayload.confirmable = confirmability.confirmable;
+      pendingPayload.confirm_command = confirmability.confirmCommand;
+      pendingPayload.metadata = {
+        ...pendingPayload.metadata,
+        missing_fields: confirmability.missingFields,
+      };
+    }
     const outcome = await commitEmailMessageOutcome(input.client, {
       userId: input.connection.user_id,
       connectionId: input.connection.id,
@@ -739,14 +848,7 @@ async function processMessageIds(input: {
       subjectHash: parsed.subjectHash,
       contentHash: parsed.contentHash,
       parsedStatus: exactDuplicate ? "deduplicated" : "parsed",
-      pending: exactDuplicate
-        ? null
-        : buildPendingPayload(
-            parsed,
-            movementInput,
-            enrichment,
-            dedup.decision?.status ?? null,
-          ),
+      pending: pendingPayload,
       metadata: {
         content_persisted: false,
         template_id: parsed.templateId,
@@ -824,7 +926,13 @@ async function processMessageIds(input: {
     });
     if (exactDuplicate || outcome.dedup_reason === "content_hash_24h") {
       input.result.deduplicated += 1;
-    } else if (outcome.pending_item_id) input.result.pendingCreated += 1;
+    } else if (outcome.pending_item_id) {
+      input.result.pendingCreated += 1;
+      // RUL-EMAIL-09: "lleva mas de 21 dias sin producir detecciones" se
+      // mide contra esto — se toca en toda deteccion real, no solo al
+      // verificar la fuente.
+      await touchUserEmailSourceLastMatched(input.client, emailSource.id);
+    }
   }
 }
 
@@ -1100,6 +1208,11 @@ function buildPendingPayload(
     },
     dedup_status: dedupStatus,
     risk_level: "low",
+    // RUL-PEND-01: se sobreescriben con computeConfirmability antes de
+    // llamar commitEmailMessageOutcome; nunca queda un pendiente
+    // "confirmable" por omision.
+    confirmable: false as boolean,
+    confirm_command: null as Record<string, unknown> | null,
     metadata: {
       money_sign: parsed.direction === "in" ? "positive" : "negative",
       template_id: parsed.templateId,
@@ -1117,6 +1230,7 @@ function buildPendingPayload(
       specialized_engine_required: enrichment.requiresSpecializedEngine,
       ambiguity_reasons: enrichment.ambiguityReasons,
       content_persisted: false,
+      missing_fields: [] as string[],
     },
   };
 }

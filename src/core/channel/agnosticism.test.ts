@@ -172,6 +172,8 @@ describe("AC-CANAL-01/02: el nucleo produce los mismos bloques sin importar el c
         },
         dedup_status: null,
         risk_level: "medium",
+        confirmable: true,
+        confirm_command: {},
         expires_at: null,
         sent_for_confirmation_at: null,
         resolved_at: null,

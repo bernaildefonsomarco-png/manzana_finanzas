@@ -775,41 +775,117 @@ La última es la que avisa de que un banco cambió su formato de correo.
 ## 20. Criterios de aceptación
 
 - `AC-EMAIL-01` — Ninguna detección crea un movimiento; todas crean
-  pendientes. Evidencia: `TEST` + `LIVE`.
+  pendientes. Evidencia: `TEST` + `LIVE`. Clase: `integracion`. Cierra la
+  parte `TEST` — preexistente a `W-10`:
+  `src/core/email/email-ingestion.test.ts` ("filtra metadata antes del
+  cuerpo y solo crea Pendiente") prueba que `commitEmailMessageOutcome`
+  nunca escribe en `movements`. `LIVE` no cierra: exige observación contra
+  un buzón Gmail real.
 - `AC-EMAIL-02` — El cuerpo de un correo de remitente no vigilado nunca se
-  descarga. Evidencia: `TEST`.
+  descarga. Evidencia: `TEST`. Clase: `integracion`. Preexistente a `W-10`:
+  `email-ingestion.test.ts` ("RUL-EMAIL-05: un remitente no vigilado...
+  genera una sugerencia, sin descargar el cuerpo") verifica
+  `adapter.getMessageContent` no invocado.
 - `AC-EMAIL-03` — Un usuario puede conectar varios buzones y vigilar la misma
-  institución en más de uno. Evidencia: `TEST` + `USER`.
+  institución en más de uno. Evidencia: `TEST` + `USER`. No cierra: el
+  esquema lo permite (`GET /email/status` devuelve `connections[]` con
+  `email_connection_id` por fuente), pero no existe una prueba dedicada que
+  ejercite dos conexiones vigilando la misma institución; ninguna de las dos
+  mitades cierra.
 - `AC-EMAIL-04` — El usuario puede editar el remitente de una fuente, y al
-  hacerlo vuelve a `shadow`. Evidencia: `TEST`.
+  hacerlo vuelve a `shadow`. Evidencia: `TEST`. Clase: `integracion`. Cierra
+  en `W-10`: `upsert_user_email_source` (migración `054`) fija
+  `status='shadow'` en la ruta de edición (ya lo hacía desde `041`; `054`
+  solo sumó `origin='usuario'`), probado en
+  `src/app/api/v1/email/sources/route.test.ts`.
 - `AC-EMAIL-05` — La sugerencia de remitente usa solo metadatos y lo declara
-  al usuario. Evidencia: `TEST` + `USER`.
+  al usuario. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la parte
+  `TEST` en `W-10`: `looks-financial-by-metadata.test.ts` y
+  `email-ingestion.test.ts` prueban que la heurística usa solo remitente y
+  asunto, nunca el cuerpo. No cierra "lo declara al usuario": no hay
+  interfaz para la bandeja de sugerencias todavía (`WEB-D203`), así que la
+  API no expone ningún campo de "esto es una sugerencia basada solo en
+  metadatos" para que una futura pantalla lo muestre — falta ese campo
+  además de la pantalla misma.
 - `AC-EMAIL-06` — Máximo una sugerencia por semana y por buzón; "no
-  preguntar" se respeta indefinidamente. Evidencia: `TEST`.
+  preguntar" se respeta indefinidamente. Evidencia: `TEST`. No cierra
+  completo: `SUGGESTION_MAX_PER_WEEK`/`countRecentSenderSuggestions` y
+  `isSenderSilenced` existen y se usan en `maybeSuggestSender`
+  (`email-ingestion.ts`), pero `email-ingestion.test.ts` solo mockea ambos
+  siempre en el caso permisivo (`countRecentSenderSuggestions` → 0,
+  `isSenderSilenced` → false) — no hay ningún caso que pruebe la supresión
+  real cuando el conteo ya llegó al máximo o cuando está silenciado. Falta
+  ese test antes de declarar esta mitad cerrada.
 - `AC-EMAIL-07` — Un campo extraído sin respaldo literal no se extrae, y el
-  pendiente nace no confirmable. Evidencia: `TEST`.
+  pendiente nace no confirmable. Evidencia: `TEST`. Clase: `unidad`.
+  Preexistente a `W-10` en su mitad de extracción
+  (`email-extraction-agent.test.ts`, "rechaza como no grounded un valor que
+  no aparece en la evidencia"); `W-10` cierra la mitad de "nace no
+  confirmable" con `compute-confirmability.test.ts` ("no confirmable cuando
+  falta la categoria — el bug real que motiva el módulo 27").
 - `AC-EMAIL-08` — El extractor no tiene herramientas ni acceso a datos del
-  usuario. Evidencia: `TEST`.
+  usuario. Evidencia: `TEST`. Clase: `unidad`. Preexistente a `W-10`:
+  `email-extraction-agent.ts` invoca el runtime con `tools: []`, probado en
+  `email-extraction-agent.test.ts` ("extrae una compra sin decidir ni
+  escribir").
 - `AC-EMAIL-09` — Un movimiento ya registrado a mano no genera un pendiente
-  duplicado. Evidencia: `TEST`.
+  duplicado. Evidencia: `TEST`. Clase: `integracion`. Preexistente a
+  `W-10`: `email-ingestion.test.ts` ("no crea Pendiente para duplicado
+  exacto") — cuando `evaluateCrossChannelDedup` detecta coincidencia exacta,
+  se commitea `pending: null` y se cuenta como deduplicado.
 - `AC-EMAIL-10` — El backfill es opcional, se ofrece al conectar y también
-  después, y se puede cancelar. Evidencia: `TEST` + `USER`.
+  después, y se puede cancelar. Evidencia: `TEST` + `USER`. No cierra:
+  `processGmailBackfill` existe y solo se dispara vía el evento de outbox
+  `gmail_backfill_requested`, pero ninguna ruta lo encola al conectar, no
+  hay superficie para ofrecerlo "después", y no existe ningún mecanismo de
+  cancelación en el código. Sin interfaz (`WEB-D203`) tampoco hay manera de
+  ejercer ninguna de las tres partes del criterio.
 - `AC-EMAIL-11` — Los pendientes de backfill se agrupan por mes y no generan
-  avisos. Evidencia: `TEST` + `USER`.
+  avisos. Evidencia: `TEST` + `USER`. No cierra completo: la mitad "no
+  generan avisos" sí cierra (`nudge-policy.test.ts`,
+  "mantiene backfill en Dashboard aunque exista consentimiento"), pero no
+  existe ninguna lógica de agrupación por mes en el backend ni en una
+  interfaz — la mitad de agrupación queda abierta.
 - `AC-EMAIL-12` — Desconectar borra el token, archiva pendientes abiertos y
-  conserva los movimientos confirmados. Evidencia: `TEST`.
+  conserva los movimientos confirmados. Evidencia: `TEST`. Clase:
+  `integracion`. Preexistente a `W-10`: `email-connection.test.ts` ("borra
+  el token local aunque falle la revocación remota") y el RPC
+  `disconnectGmailConnection` que archiva pendientes y no toca `movements`.
 - `AC-EMAIL-13` — Una fuente en silencio más de 21 días genera aviso.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra: no existe ningún consumidor de
+  `last_matched_at` que compare contra 21 días y produzca un aviso o nudge —
+  `touchUserEmailSourceLastMatched` (nuevo en `W-10`) solo escribe la marca
+  de tiempo; no hay trabajo interno, nudge ni ruta que la lea todavía. No
+  construido en ningún corte anterior tampoco.
 - `AC-EMAIL-14` — El token cifrado nunca se devuelve por la API.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra con prueba dedicada: `GET /email/status`
+  construye la respuesta con una lista explícita de campos que nunca
+  incluye `encrypted_refresh_token` (allowlist manual, no un descarte), pero
+  no hay una prueba negativa que lo confirme directamente — mismo
+  tratamiento que otros criterios "por construcción" de docs anteriores.
 - `AC-EMAIL-15` — El consentimiento de IA es separado del de Gmail y
-  revocable. Evidencia: `TEST` + `USER`.
+  revocable. Evidencia: `TEST` + `USER`. Clase: `integracion`. Preexistente
+  a `W-10`: `PUT /email/ai-consent` es una ruta separada del flujo OAuth de
+  conexión, probado en su propio `route.test.ts` ("guarda consentimiento
+  explícito y versionado") y revocable con `enabled:false`.
 - `AC-EMAIL-16` — El contexto aportado al confirmar alimenta la memoria y es
-  visible y borrable desde ella. Evidencia: `TEST` + `USER`.
+  visible y borrable desde ella. Evidencia: `TEST` + `USER`. No cierra:
+  diferido explícitamente por `WEB-D202` — depende del módulo `36`
+  (memoria), propiedad de `W-13`. `addPendingContext` (nuevo en `W-10`)
+  solo escribe `pending_items.metadata.user_context`, sin ningún escritura
+  hacia un repositorio de memoria todavía.
 - `AC-EMAIL-17` — Ningún registro ni evento contiene direcciones de correo,
-  asuntos, montos ni comercios. Evidencia: `TEST`.
+  asuntos, montos ni comercios. Evidencia: `TEST`. No cierra: la disciplina
+  está declarada como convención en un comentario de
+  `src/shared/telemetry/logger.ts`, pero no hay ninguna prueba que
+  verifique por código que un log o evento real del módulo de email
+  cumple esto — abierto desde antes de `W-10`, sin cambios este corte.
 - `AC-EMAIL-18` — Un correo con intento de inyección no produce ninguna
-  acción. Evidencia: `TEST`.
+  acción. Evidencia: `TEST`. No cierra: la mitigación es arquitectónica
+  (`tools: []` en el extractor, validación de grounding de `AC-EMAIL-07`),
+  pero no hay ninguna prueba con un intento de inyección real en el asunto
+  o cuerpo del correo que confirme que no produce efecto — abierto desde
+  antes de `W-10`, sin cambios este corte.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

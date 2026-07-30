@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { computeConfirmability } from "@/core/pending/compute-confirmability";
 import {
   getPendingItemById,
   PendingRepositoryError,
@@ -77,18 +78,34 @@ export async function PATCH(request: Request, context: RouteContext) {
       return errorJson("NOT_FOUND", "Pendiente no encontrado.", meta, 404);
     }
 
+    const mergedSummary = {
+      ...current.normalized_summary,
+      ...parsed.normalized_summary,
+    };
+    const mergedAction = parsed.proposed_action
+      ? mergeProposedAction(current.proposed_action, parsed.proposed_action)
+      : current.proposed_action;
+    // RUL-PEND-01: completar datos puede volver confirmable un pendiente
+    // que no lo era (SCR-PEND-04) — se recalcula en cada edicion, nunca se
+    // hereda el valor anterior.
+    const confirmability = await computeConfirmability({
+      client: serviceClient,
+      userId: auth.userId,
+      proposedAction: mergedAction,
+      normalizedSummary: mergedSummary,
+    });
     const pendingItem = await updatePendingSummary(
       serviceClient,
       auth.userId,
       params.id,
-      {
-        ...current.normalized_summary,
-        ...parsed.normalized_summary,
-      },
+      mergedSummary,
       trace_id,
-      parsed.proposed_action
-        ? mergeProposedAction(current.proposed_action, parsed.proposed_action)
-        : undefined,
+      parsed.proposed_action ? mergedAction : undefined,
+      {
+        confirmable: confirmability.confirmable,
+        confirmCommand: confirmability.confirmCommand,
+        missingFields: confirmability.missingFields,
+      },
     );
 
     return okJson({ pending_item: pendingItem }, meta);

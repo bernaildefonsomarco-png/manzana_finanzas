@@ -675,6 +675,7 @@ export type Database = {
         Row: {
           aliases: string[]
           created_at: string
+          default_senders: string[]
           display_name: string
           enabled: boolean
           institution_key: string
@@ -685,6 +686,7 @@ export type Database = {
         Insert: {
           aliases?: string[]
           created_at?: string
+          default_senders?: string[]
           display_name: string
           enabled?: boolean
           institution_key: string
@@ -695,6 +697,7 @@ export type Database = {
         Update: {
           aliases?: string[]
           created_at?: string
+          default_senders?: string[]
           display_name?: string
           enabled?: boolean
           institution_key?: string
@@ -1584,6 +1587,84 @@ export type Database = {
           },
         ]
       }
+      movement_templates: {
+        Row: {
+          account_id: string | null
+          amount: number | null
+          box_id: string | null
+          category_id: string | null
+          created_at: string
+          deleted_at: string | null
+          description: string | null
+          id: string
+          last_used_at: string | null
+          merchant: string | null
+          metadata: Json
+          name: string
+          origin: Database["public"]["Enums"]["template_origin"]
+          subcategory_id: string | null
+          type: Database["public"]["Enums"]["movement_type"]
+          updated_at: string
+          use_count: number
+          user_id: string
+        }
+        Insert: {
+          account_id?: string | null
+          amount?: number | null
+          box_id?: string | null
+          category_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          last_used_at?: string | null
+          merchant?: string | null
+          metadata?: Json
+          name: string
+          origin?: Database["public"]["Enums"]["template_origin"]
+          subcategory_id?: string | null
+          type: Database["public"]["Enums"]["movement_type"]
+          updated_at?: string
+          use_count?: number
+          user_id: string
+        }
+        Update: {
+          account_id?: string | null
+          amount?: number | null
+          box_id?: string | null
+          category_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          last_used_at?: string | null
+          merchant?: string | null
+          metadata?: Json
+          name?: string
+          origin?: Database["public"]["Enums"]["template_origin"]
+          subcategory_id?: string | null
+          type?: Database["public"]["Enums"]["movement_type"]
+          updated_at?: string
+          use_count?: number
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "movement_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "movement_templates_box_id_fkey"
+            columns: ["box_id"]
+            isOneToOne: false
+            referencedRelation: "boxes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       movements: {
         Row: {
           account_destination_id: string | null
@@ -1886,6 +1967,8 @@ export type Database = {
       }
       pending_items: {
         Row: {
+          confirm_command: Json | null
+          confirmable: boolean
           created_at: string
           dedup_status: string | null
           expires_at: string | null
@@ -1905,6 +1988,8 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          confirm_command?: Json | null
+          confirmable?: boolean
           created_at?: string
           dedup_status?: string | null
           expires_at?: string | null
@@ -1924,6 +2009,8 @@ export type Database = {
           user_id: string
         }
         Update: {
+          confirm_command?: Json | null
+          confirmable?: boolean
           created_at?: string
           dedup_status?: string | null
           expires_at?: string | null
@@ -2252,6 +2339,57 @@ export type Database = {
         }
         Relationships: []
       }
+      sender_suggestions: {
+        Row: {
+          created_at: string
+          email_connection_id: string
+          id: string
+          resolved_at: string | null
+          sender: string
+          signal: Json
+          status: string
+          suggested_institution: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          email_connection_id: string
+          id?: string
+          resolved_at?: string | null
+          sender: string
+          signal?: Json
+          status?: string
+          suggested_institution?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          email_connection_id?: string
+          id?: string
+          resolved_at?: string | null
+          sender?: string
+          signal?: Json
+          status?: string
+          suggested_institution?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sender_suggestions_email_connection_id_fkey"
+            columns: ["email_connection_id"]
+            isOneToOne: false
+            referencedRelation: "email_connections"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sender_suggestions_suggested_institution_fkey"
+            columns: ["suggested_institution"]
+            isOneToOne: false
+            referencedRelation: "email_institutions"
+            referencedColumns: ["institution_key"]
+          },
+        ]
+      }
       tags: {
         Row: {
           created_at: string
@@ -2361,8 +2499,10 @@ export type Database = {
           email_connection_id: string
           id: string
           institution_key: string
+          last_matched_at: string | null
           metadata: Json
           notification_sender: string
+          origin: string
           status: string
           updated_at: string
           user_id: string
@@ -2375,8 +2515,10 @@ export type Database = {
           email_connection_id: string
           id?: string
           institution_key: string
+          last_matched_at?: string | null
           metadata?: Json
           notification_sender: string
+          origin?: string
           status?: string
           updated_at?: string
           user_id: string
@@ -2389,8 +2531,10 @@ export type Database = {
           email_connection_id?: string
           id?: string
           institution_key?: string
+          last_matched_at?: string | null
           metadata?: Json
           notification_sender?: string
+          origin?: string
           status?: string
           updated_at?: string
           user_id?: string
@@ -3571,8 +3715,10 @@ export type Database = {
           email_connection_id: string
           id: string
           institution_key: string
+          last_matched_at: string | null
           metadata: Json
           notification_sender: string
+          origin: string
           status: string
           updated_at: string
           user_id: string
@@ -3713,6 +3859,7 @@ export type Database = {
         | "auto_resolved_duplicate"
         | "expired"
         | "archived"
+        | "already_registered"
       pending_type:
         | "email_detected"
         | "ambiguous_movement"
@@ -3742,6 +3889,7 @@ export type Database = {
         | "cancelled"
         | "archived"
       risk_level: "low" | "medium" | "high" | "sensitive"
+      template_origin: "usuario" | "sugerida"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -4009,6 +4157,7 @@ export const Constants = {
         "auto_resolved_duplicate",
         "expired",
         "archived",
+        "already_registered",
       ],
       pending_type: [
         "email_detected",
@@ -4043,6 +4192,7 @@ export const Constants = {
         "archived",
       ],
       risk_level: ["low", "medium", "high", "sensitive"],
+      template_origin: ["usuario", "sugerida"],
     },
   },
 } as const

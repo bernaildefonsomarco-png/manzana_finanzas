@@ -181,6 +181,8 @@ describe("buildPendingInputFromDataAction", () => {
         normalized_summary: { title: "otra compra" },
         dedup_status: null,
         risk_level: "medium",
+        confirmable: false,
+        confirm_command: null,
         expires_at: null,
         sent_for_confirmation_at: null,
         resolved_at: null,

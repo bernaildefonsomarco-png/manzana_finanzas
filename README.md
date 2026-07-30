@@ -48,8 +48,9 @@ src/
     recurring/       # Recurring Engine: detección y ocurrencias
     insights/       # Insight Engine
     nudges/         # Nudge Evaluator y Nudge Policy
-    pending/        # Confirmación de pendientes
-    email/          # Ingesta y normalización de email
+    pending/        # Confirmación de pendientes (27) — computeConfirmability, RUL-PEND-01
+    email/          # Ingesta y normalización de email (28)
+    capture/        # Parser por reglas del registro rápido (29), sin endpoint privilegiado propio
     classification/ # Clasificación de categorías/etiquetas
     dedup/          # Deduplicación cross-canal
     learning/       # Learning Engine y gobernanza de memoria

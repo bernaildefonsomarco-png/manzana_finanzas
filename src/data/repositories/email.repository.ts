@@ -852,6 +852,163 @@ function asNotificationResult(value: Json): GmailNotificationResult {
   };
 }
 
+export type SenderSuggestion =
+  Database["public"]["Tables"]["sender_suggestions"]["Row"];
+
+/** RUL-EMAIL-06: maximo una sugerencia por semana, por buzon. */
+export async function countRecentSenderSuggestions(
+  client: Client,
+  input: { userId: string; connectionId: string; sinceDays: number },
+): Promise<number> {
+  const since = new Date(Date.now() - input.sinceDays * 24 * 60 * 60 * 1000).toISOString();
+  const { count, error } = await client
+    .from("sender_suggestions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", input.userId)
+    .eq("email_connection_id", input.connectionId)
+    .gte("created_at", since);
+  if (error) throw repositoryError("contar sugerencias recientes", error);
+  return count ?? 0;
+}
+
+/** RUL-EMAIL-05: solo metadatos — nunca cuerpo ni asunto en claro. */
+export async function getPendingSenderSuggestion(
+  client: Client,
+  input: { userId: string; connectionId: string; sender: string },
+): Promise<SenderSuggestion | null> {
+  const { data, error } = await client
+    .from("sender_suggestions")
+    .select("*")
+    .eq("user_id", input.userId)
+    .eq("email_connection_id", input.connectionId)
+    .eq("sender", input.sender)
+    .eq("status", "pending")
+    .maybeSingle();
+  if (error) throw repositoryError("leer la sugerencia de remitente", error);
+  return data ?? null;
+}
+
+/** Un remitente "silenciado" (silenced) nunca se vuelve a sugerir (RUL-EMAIL-09). */
+export async function isSenderSilenced(
+  client: Client,
+  input: { userId: string; connectionId: string; sender: string },
+): Promise<boolean> {
+  const { count, error } = await client
+    .from("sender_suggestions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", input.userId)
+    .eq("email_connection_id", input.connectionId)
+    .eq("sender", input.sender)
+    .eq("status", "silenced");
+  if (error) throw repositoryError("comprobar si el remitente esta silenciado", error);
+  return (count ?? 0) > 0;
+}
+
+export async function bumpOrCreateSenderSuggestion(
+  client: Client,
+  input: {
+    userId: string;
+    connectionId: string;
+    sender: string;
+    suggestedInstitution: string | null;
+  },
+): Promise<SenderSuggestion> {
+  const existing = await getPendingSenderSuggestion(client, input);
+  if (existing) {
+    const signal = existing.signal as Record<string, unknown>;
+    const seenCount = typeof signal.seen_count === "number" ? signal.seen_count : 1;
+    const { data, error } = await client
+      .from("sender_suggestions")
+      .update({
+        signal: { ...signal, seen_count: seenCount + 1, last_seen_at: new Date().toISOString() } as Json,
+      })
+      .eq("id", existing.id)
+      .select("*")
+      .single();
+    if (error || !data) throw repositoryError("actualizar la sugerencia de remitente", error);
+    return data;
+  }
+
+  const { data, error } = await client
+    .from("sender_suggestions")
+    .insert({
+      user_id: input.userId,
+      email_connection_id: input.connectionId,
+      sender: input.sender,
+      suggested_institution: input.suggestedInstitution,
+      signal: { seen_count: 1, first_seen_at: new Date().toISOString() } as Json,
+    })
+    .select("*")
+    .single();
+  if (error || !data) throw repositoryError("crear la sugerencia de remitente", error);
+  return data;
+}
+
+/** RUL-EMAIL-05: solo se muestra al usuario tras al menos 2 correos. */
+export const SENDER_SUGGESTION_MIN_OCCURRENCES = 2;
+
+export async function getSenderSuggestionById(
+  client: Client,
+  userId: string,
+  suggestionId: string,
+): Promise<SenderSuggestion | null> {
+  const { data, error } = await client
+    .from("sender_suggestions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("id", suggestionId)
+    .eq("status", "pending")
+    .maybeSingle();
+  if (error) throw repositoryError("leer la sugerencia de remitente", error);
+  return data ?? null;
+}
+
+export async function listSenderSuggestions(
+  client: Client,
+  userId: string,
+): Promise<SenderSuggestion[]> {
+  const { data, error } = await client
+    .from("sender_suggestions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  if (error) throw repositoryError("leer las sugerencias de remitente", error);
+  return (data ?? []).filter((row) => {
+    const seenCount = (row.signal as Record<string, unknown>)?.seen_count;
+    return typeof seenCount === "number" && seenCount >= SENDER_SUGGESTION_MIN_OCCURRENCES;
+  });
+}
+
+export async function resolveSenderSuggestion(
+  client: Client,
+  input: { userId: string; suggestionId: string; status: "accepted" | "rejected" | "silenced" },
+): Promise<SenderSuggestion | null> {
+  const { data, error } = await client
+    .from("sender_suggestions")
+    .update({ status: input.status, resolved_at: new Date().toISOString() })
+    .eq("user_id", input.userId)
+    .eq("id", input.suggestionId)
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
+  if (error) throw repositoryError("resolver la sugerencia de remitente", error);
+  return data ?? null;
+}
+
+export async function touchUserEmailSourceLastMatched(
+  client: Client,
+  sourceId: string,
+): Promise<void> {
+  const { error } = await client
+    .from("user_email_sources")
+    .update({ last_matched_at: new Date().toISOString() })
+    .eq("id", sourceId);
+  if (error) {
+    logger.error("email.touch_last_matched_failed", { error, source_id: sourceId });
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)

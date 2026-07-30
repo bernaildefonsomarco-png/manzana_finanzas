@@ -201,13 +201,13 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-09` cerraron `G1` y `G2`. Ninguno
+**La construcción avanza.** `W-01` a `W-10` cerraron `G1` y `G2`. Ninguno
 tiene criterios de `G3` propios.
 
 | | |
 |---|---|
-| Cortes cerrados | 9 de 20 |
-| Criterios `verificado` | 89 de 708 |
+| Cortes cerrados | 10 de 20 |
+| Criterios `verificado` | 109 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -1235,6 +1235,177 @@ hasta que `W-11` extienda `RecordDebtPaymentCommand` (`WEB-D195`).
 - `tests/lint/seg-04-404-no-403.test.ts`: conteo de rutas actualizado a 60
   (`v1/movements/[id]/history`, nueva).
 - `03_decisiones_producto_web.md`: `WEB-D195` a `WEB-D201` (nuevas).
+
+---
+
+## W-10 — Nada se registra solo, y todo pendiente nace confirmable
+
+**Cerrado:** 2026-07-29
+**Portones:** G1 ✓ · G2 no aplica (el corte no declara criterios de `G2`) · G3 ninguno propio
+**Matriz regenerada:** 2026-07-29, con `npm run matriz:generar`, posterior
+al commit `PENDIENTE` (`AC-TRAZ-12`; hash real registrado en el commit de
+seguimiento de este cierre).
+
+### Qué se entregó
+
+`RUL-PEND-01` cierra su parte `TEST`: la migración `053` agrega
+`confirmable`/`confirm_command` a `pending_items` con un `check` que la
+propia base impone (`AC-PEND-01`), y `computeConfirmability`
+(`src/core/pending/compute-confirmability.ts`) recalcula ambos campos —
+nunca en el cliente — al crear un pendiente desde email y en cada `PATCH`
+de edición, replicando en modo simulación (sin ejecutar nada) la validación
+real de cada comando especializado (`record_generic_movement`,
+`record_transfer`, `record_recurring_payment`, `record_debt_payment`).
+`POST /pending/[id]/confirm` ahora rechaza con `422` antes de intentar
+ejecutar si el pendiente no es confirmable (`AC-PEND-02`/`15`), y comunica
+por texto qué falta. `already_registered` entra al enum `pending_status`
+como una resolución distinta de `discarded` (`RUL-PEND-05`/`AC-PEND-06`),
+con endpoints nuevos para marcarla y para aportar contexto libre
+(`POST /pending/[id]/already-registered`, `.../context`). El lote de
+confirmación (`AC-PEND-08`, diferido desde `W-09` por `WEB-D199`) ahora
+admite hasta 50 ids, excluye automáticamente riesgo alto y estados no
+confirmables con su razón, soporta un modo `preview` sin ejecutar nada, y
+etiqueta cada confirmación con un `batch_id` para deshacerla dentro de las
+24 horas (`POST /pending/batch/[batch_id]/undo`, deshace movimientos
+genéricos, no efectos especializados de deuda/recurrencia — real pero no
+completo, ver "qué sorprendió"). Un trabajo interno
+(`/api/internal/jobs/pending-expiry`) caduca pendientes a los 60 días sin
+crear nada, dejándolos consultables (`AC-PEND-11`).
+
+En `28`, la migración `054` agrega gestión de remitentes: editar el
+remitente de una fuente vuelve a `status='shadow'` y ahora registra
+`origin='usuario'` (`AC-EMAIL-04`); una tabla nueva `sender_suggestions`
+acumula ocurrencias de remitentes no vigilados que "parecen financieros"
+solo por metadatos de remitente/asunto, nunca por cuerpo
+(`looksFinancialByMetadata`, `AC-EMAIL-05`), con un límite de una
+sugerencia nueva por semana por buzón y silencio indefinido si el usuario
+lo pide (`AC-EMAIL-06`). En `29`, la migración `055` crea
+`movement_templates` (única tabla de este corte con RLS de escritura
+directa para `authenticated`, sin service-role — `AC-CAP-15`) y un parser
+por reglas (`src/core/capture/quick-add-parser.ts`) que resuelve
+`taxi 15`, montos con `s/`, fechas relativas en `America/Lima` y
+proveniencia por campo (`"dicho"`/`"supuesto"`) sin ningún modelo
+(`AC-CAP-02`/`04`/`12`); `POST /capture/parse` expone ese parser sin
+escribir nada.
+
+`tsc`, `eslint`, `npm run build` (con los gates de `prebuild` en verde) y
+`npm test` (252 ficheros, 1.459 pruebas) terminan sin errores, salvo el
+caso descrito abajo. `npm run test:rls` (69 pruebas, 6 ficheros) también en
+verde.
+
+### Qué sorprendió
+
+Cinco cosas.
+
+La primera y más seria: `email-ingestion.ts::buildPendingPayload` fijaba
+`normalized_summary.category_id: null` siempre, y el camino de confirmación
+genérico ya exigía `category_id` para confirmar — es decir, **todo
+pendiente detectado por correo era silenciosamente inconfirmable**, sin
+ninguna señal que lo dijera, reproduciendo exactamente la tesis del propio
+módulo `27` sobre pendientes que el sistema no puede confirmar. Esto no era
+un caso borde: era el estado normal de todo pendiente de email antes de
+este corte, y es la razón real por la que el contrato de confirmabilidad
+pasó de "criterio documentado" a la prioridad central del corte.
+
+La segunda: al escribir la prueba de cierre de `AC-PEND-01` (que no existía
+hasta ahora, ver más abajo), el `check` de la migración `053` resultó
+proteger solo `status='pending'`, no los otros dos estados "activos" que
+`pending.repository.ts` reconoce (`sent_for_confirmation`, `user_edited`)
+— un pendiente editado por `PATCH` podía en teoría quedar marcado
+confirmable sin `confirm_command` sin que la base lo impidiera. Se
+corrigió el `check` para cubrir los tres estados y se confirmó con
+`RUL-HECHO-02` (revertido, la prueba nueva falló exactamente en esos dos
+casos, restaurado). Ninguno de los caminos de escritura actuales llega a
+producir el caso que el `check` original dejaba pasar, pero la garantía
+"impuesta por la base de datos" que `27` promete no era literalmente
+cierta hasta corregirlo.
+
+La tercera: al escribir las anotaciones de cierre de este documento se
+encontró que `src/app/api/v1/pending/[id]/discard/route.ts` —una ruta
+preexistente de un corte anterior, no tocada en `W-10`— nunca había tenido
+un fichero de prueba. Se le agregó el mismo paquete de cinco casos de
+`51§6.2` que exige cada endpoint, cerrando la mitad que le faltaba a
+`AC-PEND-06`.
+
+La cuarta: fuera del alcance formal de este corte, verificar en navegador
+con la sesión real del usuario (tras que iniciara sesión) reveló que las
+migraciones `042` a `052` —de `W-05` a `W-09`, no solo las de este
+corte— nunca se habían aplicado al proyecto de Supabase de verdad, solo en
+local; `GET /subcategories` devolvía `500` en producción. El usuario
+ejecutó `supabase db push` (bloqueado para mí por el clasificador de modo
+automático incluso con autorización explícita en el chat, respetado sin
+intentar rodearlo) y quedó confirmado con `supabase migration list` y con
+verificación visual real de Mi Dinero, Categorías y el propio endpoint de
+subcategorías.
+
+La quinta, y la razón de `WEB-D203`: al auditar el riesgo de no construir
+interfaz nueva este corte, se encontró que la pantalla condenada
+`src/features/pending/pending-screen.tsx` (`WEB-D164`) ya calcula su
+propio `needsCompletion` en el cliente con una heurística que coincide en
+la práctica con lo que `computeConfirmability` ahora impone en el
+servidor — el riesgo de que la interfaz muestre "Confirmar" sobre un
+pendiente que el servidor rechazaría con `422` es bajo, no inexistente, lo
+que hizo defendible diferir la interfaz nueva completa a un corte de
+pulido en vez de construirla apurada en las horas finales de un corte ya
+extenso.
+
+### Qué quedó abierto
+
+`WEB-D203` (nueva) difiere completa la capa de interfaz de este corte:
+`SCR-CAP-01`/`02` (barra de registro rápido, plantillas), la gestión
+editable de remitentes de `SCR-EMAIL-01`, y las acciones nuevas de
+`SCR-PEND-01`/`02`. Esto deja sin cerrar, por ausencia de interfaz, la
+mitad `USER` de la mayoría de criterios nuevos y la totalidad de
+`AC-CAP-01`, `03`, `05`, `06`, `08`, `09`, `10`, `11`, `13`, `14` (los tres
+últimos, más `08`/`09`/`10`, exigen además que `capture/parse` deje de ser
+de solo lectura y llegue a `POST /api/v1/movements`, lo que tampoco se
+construyó). `AC-PEND-04` (búsqueda) y `AC-PEND-10`/`AC-EMAIL-16` (memoria)
+quedan diferidos por `WEB-D202` a los módulos `38`/`36`, sin corte
+asignado el primero y a `W-13` el segundo. `AC-PEND-09` (agrupación por
+origen/similitud) y `AC-PEND-16` (suma de pendientes) no tienen ninguna
+lógica construida, ni arriesgada ni segura. `AC-PEND-14` no cierra —es
+falso tal como está construido hoy: casi todo el módulo sigue en
+`EXCEPCIONES_TEMPORALES`, diferido a `AC-SEG-07` igual que `AC-MOV-18` en
+`W-09`. `AC-EMAIL-10`/`11`/`13` (backfill opcional/cancelable, agrupación
+por mes, aviso a los 21 días de silencio) no tienen ningún consumidor real
+del lado que falta, aunque parte de su plomería ya existe
+(`processGmailBackfill`, `touchUserEmailSourceLastMatched`). `AC-EMAIL-06`
+tiene la lógica de límite semanal y silencio construida pero sin ningún
+caso de prueba que ejercite la supresión real (solo se mockea el caso
+permisivo) — queda como trabajo de prueba pendiente, no de código.
+`AC-EMAIL-17`/`18` (higiene de PII en logs, resistencia a inyección) y
+`AC-PEND-03`/`12` quedan abiertos desde antes de `W-10`, sin cambios este
+corte.
+
+### Documentos corregidos
+
+- `27` §20: `Clase:` añadida a `AC-PEND-01`, `02`, `05`, `06`, `08`, `11`,
+  `15` (parte `TEST`); nota de por qué no cierran `03`, `04`, `07`, `09`,
+  `10`, `12`, `13`, `14`, `16`.
+- `28` §20: `Clase:` añadida a `AC-EMAIL-01`, `02`, `04`, `05` (parte
+  `TEST`), `07`, `08`, `09`, `12`, `15`; nota de por qué no cierran `03`,
+  `06`, `10`, `11`, `13`, `14`, `16`, `17`, `18`.
+- `29` §20: `Clase:` añadida a `AC-CAP-02`, `04` (parte `TEST`), `12`,
+  `15`; nota de por qué no cierran `01`, `03`, `05` a `11`, `13`, `14`.
+- `50` §3.1: censo de clases actualizado (191 con clase, no 171; `lint` 30,
+  no 29; `integracion` 34, no 21; `unidad` 56, no 50).
+- `tests/lint/seg-04-404-no-403.test.ts`: conteo de rutas actualizado a 71
+  (once nuevas de `W-10`).
+- `tests/lint/service-role-en-rutas.test.ts`: excepciones temporales
+  actualizadas a 54 (siete nuevas sobre `pending`/`email`; `templates` y
+  `capture/parse` no entran, `AC-CAP-15`).
+- `src/shared/types/domain.ts`/`.test.ts`: estado `already_registered`
+  agregado a `PENDING_STATUSES`.
+- `README.md`: `core/capture/` documentado en el árbol real.
+- `supabase/migrations/053_pending_confirmable_contract.sql`: el `check`
+  de `AC-PEND-01` corregido para cubrir los tres estados activos, no solo
+  `pending` (ver "qué sorprendió").
+- `tests/rls/pending-confirmable-constraint.test.ts` (nuevo): siete
+  pruebas del `check` de la migración `053`.
+- `src/app/api/v1/pending/[id]/discard/route.test.ts` (nuevo): los cinco
+  casos de `51§6.2` que le faltaban a una ruta preexistente.
+- `03_decisiones_producto_web.md`: `WEB-D202` (alcance de `27`/`28`/`29`),
+  `WEB-D203` (diferir la capa de interfaz) (nuevas).
 
 ---
 
