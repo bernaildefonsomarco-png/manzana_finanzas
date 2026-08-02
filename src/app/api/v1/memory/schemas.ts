@@ -1,31 +1,33 @@
 import { z } from "zod";
 
-export const ManageLearningSchema = z.discriminatedUnion("target", [
-  z.object({
-    target: z.literal("memory"),
-    target_id: z.string().uuid(),
-    action: z.enum(["forget", "correct", "suspend", "confirm"]),
-    summary: z.string().trim().min(3).max(500).optional(),
-    reason: z.string().trim().min(2).max(300).optional(),
-  }).superRefine((value, context) => {
-    if (value.action === "correct" && !value.summary) {
-      context.addIssue({
-        code: "custom",
-        path: ["summary"],
-        message: "La correccion necesita un resumen.",
-      });
-    }
-  }),
-  z.object({
-    target: z.literal("candidate"),
-    target_id: z.string().uuid(),
-    action: z.enum(["confirm", "reject"]),
-    reason: z.string().trim().min(2).max(300).optional(),
-  }),
+export const MemoryScopeSchema = z.enum([
+  "classification",
+  "profile",
+  "preference",
 ]);
 
-export const LearningPreferencesSchema = z.object({
-  enabled: z.boolean(),
-  allow_narrative_memory: z.boolean(),
-  allow_sensitive_memory: z.boolean(),
-});
+export const CorrectMemorySchema = z
+  .object({
+    scope: MemoryScopeSchema,
+    statement: z.string().trim().min(3).max(500).optional(),
+    value: z.unknown().optional(),
+    reason: z.string().trim().min(2).max(300).optional(),
+  })
+  .strict()
+  .superRefine((input, context) => {
+    if (input.scope === "preference" && input.value === undefined) {
+      context.addIssue({ code: "custom", path: ["value"], message: "Falta el valor corregido." });
+    }
+    if (input.scope !== "preference" && !input.statement) {
+      context.addIssue({ code: "custom", path: ["statement"], message: "Falta la corrección." });
+    }
+  });
+
+export const ScopedMemorySchema = z.object({ scope: MemoryScopeSchema }).strict();
+
+export const ForgetMemorySchema = z
+  .object({
+    scope: MemoryScopeSchema,
+    reason: z.string().trim().min(2).max(300).optional(),
+  })
+  .strict();

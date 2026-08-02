@@ -14,18 +14,19 @@ import type {
 const now = new Date("2026-07-18T17:00:00.000Z");
 
 describe("buildAdvancedInsightDrafts", () => {
-  it("no inventa insights con menos de cinco movimientos confirmados", () => {
+  it("RUL-DESC-01: un movimiento sin cuenta produce calidad de datos sin compuerta global", () => {
     const drafts = buildAdvancedInsightDrafts({
-      movements: [1, 2, 3, 4].map((day) => movement(day, 10, "alimentacion")),
+      movements: [movement(1, 10, "alimentacion")],
       now,
     });
 
-    expect(drafts).toEqual([]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0]).toMatchObject({ type: "data_quality", confidence: 1 });
   });
 
-  it("crea el primer learning_progress seguro al llegar a cinco", () => {
+  it("RUL-DESC-01: crea learning_progress seguro al llegar a tres", () => {
     const drafts = buildAdvancedInsightDrafts({
-      movements: [1, 2, 3, 4, 5].map((day) =>
+      movements: [1, 2, 3].map((day) =>
         movement(day, 10, day % 2 ? "alimentacion" : "transporte", {
           account_origin_id: "account-1",
         }),
@@ -39,7 +40,98 @@ describe("buildAdvancedInsightDrafts", () => {
       fingerprint: "learning_progress:first_value",
       riskLevel: "low",
     });
-    expect(drafts[0].evidence).toMatchObject({ movement_count: 5 });
+    expect(drafts[0].evidence).toMatchObject({ movement_count: 3 });
+  });
+
+  it("RUL-DESC-01: genera budget_risk con un presupuesto y tres gastos", () => {
+    const movements = [1, 8, 15].map((day) =>
+      movement(day, 100, "alimentacion", { account_origin_id: "account-1" }),
+    );
+    const budget = buildAdvancedInsightDrafts({
+      movements,
+      budgets: [{
+        id: "budget-1",
+        category_id: "alimentacion",
+        category_name: "Alimentacion",
+        period_start: "2026-07-01",
+        period_end: "2026-07-31",
+        amount: 400,
+        spent: 300,
+        status: "activo",
+      }],
+      now,
+    }).find((draft) => draft.type === "budget_risk");
+
+    expect(budget).toBeDefined();
+    expect(budget?.confidence).toBe(1);
+    expect(budget?.sourceFacts).toMatchObject({
+      movement_count: 3,
+      spent: 300,
+      budget_amount: 400,
+    });
+  });
+
+  it("RUL-DESC-01: genera goal_pace con dos aportes y una meta fechada", () => {
+    const contributions = [1, 10].map((day) =>
+      movement(day, 50, null, {
+        type: "asignacion_interna",
+        box_destination_id: "box-1",
+        account_origin_id: "account-1",
+      }),
+    );
+    const goal = buildAdvancedInsightDrafts({
+      movements: contributions,
+      goals: [{
+        id: "goal-1",
+        name: "Viaje",
+        target_amount: 500,
+        target_date: "2026-08-18",
+        box_id: "box-1",
+        current_balance: 100,
+        status: "activa",
+      }],
+      now,
+    }).find((draft) => draft.type === "goal_pace");
+
+    expect(goal).toBeDefined();
+    expect(goal?.sourceFacts).toMatchObject({ contribution_count: 2 });
+  });
+
+  it("WEB-D236: detecta comercio con cuatro movimientos en sesenta dias", () => {
+    const merchant = buildAdvancedInsightDrafts({
+      movements: [1, 5, 10, 15].map((day) =>
+        movement(day, 12, "alimentacion", {
+          account_origin_id: "account-1",
+          merchant: day % 2 ? "Tambo" : " tambo ",
+        }),
+      ),
+      now,
+    }).find((draft) => draft.type === "merchant_pattern");
+
+    expect(merchant?.sourceFacts).toMatchObject({
+      merchant: "Tambo",
+      movement_count: 4,
+      total_amount: 48,
+    });
+  });
+
+  it("RUL-DESC-03: sesenta movimientos no habilitan una categoria con una sola evidencia", () => {
+    const movements = [
+      movement(18, 10, "alimentacion", { account_origin_id: "account-1" }),
+      ...Array.from({ length: 59 }, (_, index) =>
+        movement(1 + (index % 18), 10, "transporte", {
+          account_origin_id: "account-1",
+        }),
+      ),
+    ];
+    const drafts = buildAdvancedInsightDrafts({ movements, now });
+    expect(
+      drafts.some(
+        (draft) =>
+          ["category_concentration", "anomaly"].includes(draft.type) &&
+          draft.sourceFacts.category_id === "alimentacion",
+      ),
+    ).toBe(false);
   });
 
   it("detecta concentracion solo con evidencia suficiente", () => {
@@ -85,6 +177,78 @@ describe("buildAdvancedInsightDrafts", () => {
       current_total: 80,
       baseline_total: 140,
       direction: "down",
+    });
+  });
+
+  it("RUL-DESC-01: compara con cinco gastos exactos en cada periodo", () => {
+    const current = [12, 13, 14, 15, 16].map((day) =>
+      movement(day, 20, "transporte", { account_origin_id: "a" }),
+    );
+    const previous = [5, 6, 7, 8, 9].map((day) =>
+      movement(day, 10, "transporte", { account_origin_id: "a" }),
+    );
+    const comparative = buildAdvancedInsightDrafts({ movements: [...current, ...previous], now })
+      .find((draft) => draft.type === "comparative");
+    expect(comparative?.sourceFacts).toMatchObject({
+      current_total: 100,
+      baseline_total: 50,
+    });
+  });
+
+  it("RUL-DESC-01: detecta una desviacion de dos veces la mediana con seis previos", () => {
+    const baseline = [20, 23, 26, 29, 2, 5].map((day, index) =>
+      movement(day, 10, "transporte", {
+        occurred_at: index < 4
+          ? `2026-06-${String(day).padStart(2, "0")}T15:00:00.000Z`
+          : `2026-07-${String(day).padStart(2, "0")}T15:00:00.000Z`,
+        account_origin_id: "a",
+      }),
+    );
+    const recent = movement(18, 30, "transporte", { account_origin_id: "a" });
+    const anomaly = buildAdvancedInsightDrafts({ movements: [...baseline, recent], now })
+      .find((draft) => draft.type === "anomaly");
+    expect(anomaly?.sourceFacts).toMatchObject({
+      amount: 30,
+      baseline_median: 10,
+      baseline_movement_count: 6,
+    });
+  });
+
+  it("RUL-DESC-01: cuatro semanas activas y tres ocurrencias sostienen el patron temporal", () => {
+    const movements = ["2026-06-22", "2026-06-29", "2026-07-06", "2026-07-13"]
+      .map((date) => movement(1, 10, "alimentacion", {
+        occurred_at: `${date}T15:00:00.000Z`,
+        account_origin_id: "a",
+      }));
+    const temporal = buildAdvancedInsightDrafts({ movements, now })
+      .find((draft) => draft.type === "temporal_pattern");
+    expect(temporal?.sourceFacts).toMatchObject({ matching_movement_count: 4 });
+  });
+
+  it("RUL-PROY-04: publica la proyeccion canonica solo con siete dias observados", () => {
+    const projection = buildAdvancedInsightDrafts({
+      movements: [],
+      projection: {
+        currency: "PEN",
+        period_start: "2026-07-01",
+        period_end: "2026-07-31",
+        as_of: "2026-07-18",
+        free_money_cents: 50_000,
+        uncovered_commitments_cents: 10_000,
+        observed_days: 7,
+        daily_pace_cents: 2_000,
+        days_remaining: 13,
+        sufficient_data: true,
+        projection_cents: 14_000,
+        range: null,
+        assumption_refs: ["commitment-1"],
+        movement_refs: ["movement-1"],
+      },
+      now,
+    }).find((draft) => draft.type === "projection");
+    expect(projection?.sourceFacts).toMatchObject({
+      observed_days: 7,
+      projection: 140,
     });
   });
 
@@ -275,6 +439,15 @@ describe("buildAdvancedInsightDrafts", () => {
       movements: contextualMovements,
       movementTags,
       tags: [tag],
+      profileFacts: [{
+        id: "profile-fact-work",
+        subject_key: "context:trabajo",
+        statement: "Tu horario de trabajo",
+        origin: "dicho",
+        status: "vigente",
+        expires_at: null,
+        positive_evidence_refs: [tag.id],
+      }],
       now,
     });
     const contextual = drafts.find((draft) => draft.type === "contextual");
@@ -284,7 +457,7 @@ describe("buildAdvancedInsightDrafts", () => {
     expect(contextual?.sourceFacts).toMatchObject({
       tag_label: "Trabajo",
       movement_count: 8,
-      top_weekday_label: "lunes",
+      profile_statement: "Tu horario de trabajo",
     });
   });
 

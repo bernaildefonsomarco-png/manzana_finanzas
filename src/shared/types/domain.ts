@@ -148,10 +148,14 @@ export type RecurringCandidateStatus =
 
 export const INSIGHT_TYPES = [
   "learning_progress",
+  "budget_risk",
+  "goal_pace",
+  "commitment_uncovered",
   "comparative",
   "category_concentration",
   "temporal_pattern",
   "anomaly",
+  "merchant_pattern",
   "projection",
   "free_money",
   "recurring",
@@ -570,6 +574,8 @@ export type InsightCandidate = {
   source_facts: Record<string, unknown>;
   source_entity_ids: string[];
   action: Record<string, unknown> | null;
+  feedback?: "util" | "no_util" | null;
+  feedback_at?: string | null;
   expires_at: string | null;
   narrated_at: string | null;
   displayed_at: string | null;

@@ -88,9 +88,9 @@ Incorrecto: Detectamos que eres un comprador impulsivo.
 
 | Clase | Tabla confirmada | Tabla de candidatos | Migración |
 |---|---|---|---|
-| **Clasificatorio** | `financial_memory_items` | `learning_candidates` | `044` |
-| **Hecho de perfil** | `user_profile_facts` | `user_profile_candidates` | `054` |
-| **Preferencia de uso** | `learned_preferences` | — (no hay candidatos) | `061`, nueva |
+| **Clasificatorio** | `financial_memory_items` | `learning_candidates` | `024`, `025`, `044` |
+| **Hecho de perfil** | `user_profile_facts` | `user_profile_candidates` | `062`, nueva |
+| **Preferencia de uso** | `learned_preferences` | — (no hay candidatos) | `062`, nueva |
 
 Las preferencias no tienen tabla de candidatos porque no se confirman: se
 observan y se aplican. Ver `RUL-MEM-01`.
@@ -151,7 +151,7 @@ Documentadas en `13` §7.5b. Lo que importa aquí:
 - `ask_count` en candidatos: si el usuario ignora dos veces, no se vuelve a
   preguntar (`20c` §3).
 
-### 4.5 Migración `061` — preferencias observadas, lápidas y auditoría
+### 4.5 Migración `062` — preferencias observadas, lápidas y auditoría
 
 **`learned_preferences`** — lo que el sistema observó sobre cómo usa la app:
 
@@ -723,6 +723,7 @@ afecta a las tres clases a la vez.
 |---|---|
 | `GET /memory` | Todo lo aprendido, agrupado por clase. Filtro `scope`, `include_inactive` |
 | `GET /memory/[id]` | Detalle con evidencia e historial |
+| `POST /memory/[id]/view` | Registra `memoria.evidencia_vista` sin convertir el `GET` en escritura. `Idempotency-Key` (`WEB-D244`) |
 | `PATCH /memory/[id]` | Corregir. Encadena, no sobrescribe. `Idempotency-Key` |
 | `DELETE /memory/[id]` | Olvidar. **Crea la lápida.** `Idempotency-Key` |
 | `POST /memory/[id]/undo` | Deshacer dentro de la ventana |
@@ -742,13 +743,13 @@ aprendizaje podría recrear lo que se acaba de borrar.
 ## 11. Permisos y RLS
 
 - Cliente autenticado en todas las rutas, sin excepción. RLS por `user_id` en
-  las seis tablas del módulo.
+  las siete familias canónicas del módulo (`WEB-D235`).
 - **Ninguna excepción de service-role.** El proceso de aprendizaje corre en el
   contexto del usuario cuyo dato lo disparó; no hay ningún trabajo que
   necesite leer la memoria de varios usuarios a la vez, y **que no lo haya es
   la garantía estructural de `RUL-MEM-12`**.
 - La memoria de otro usuario devuelve 404.
-- Eliminar la cuenta elimina las seis tablas, incluidas las lápidas y la
+- Eliminar la cuenta elimina las siete familias canónicas, incluidas las lápidas y la
   auditoría (`45`).
 
 La segunda viñeta es la más importante del módulo desde el punto de vista de
@@ -891,7 +892,7 @@ olvida nada.
 
 ## 17. Rendimiento
 
-- Índices nuevos en la migración `061`:
+- Índices nuevos en la migración `062`:
   `memory_tombstones (user_id, scope, subject_key) where lifted_at is null` —
   se consulta **en cada intento de aprendizaje**, así que es el índice más
   caliente del módulo;
@@ -966,55 +967,107 @@ confirmado no lo hace menos suyo.
 ## 20. Criterios de aceptación
 
 - `AC-MEM-01` — Todo aprendizaje activo de las tres clases es alcanzable desde
-  `/configuracion/memoria`. Evidencia: `TEST` + `USER`.
+  `/configuracion/memoria`. Evidencia: `TEST` + `USER`. Clase: `unidad`. No
+  cierra: el DOM agrupa perfil, clasificación y preferencia, pero no hubo
+  sesión `USER` en `W-13`.
 - `AC-MEM-02` — Las cuatro acciones —ver, corregir, deshacer, olvidar— existen
   y funcionan sobre cualquier aprendizaje. Cierra `C-08`.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `integracion`. No cierra: los tres RPC
+  por alcance cubren las cuatro acciones y la vista se audita por `WEB-D244`,
+  pero la corrección clasificatoria desde Memoria sigue siendo texto libre y
+  no selecciona un destino estructurado como Movimientos; tampoco hubo `USER`.
 - `AC-MEM-03` — Un hecho de perfil **nunca** pasa a vigente sin confirmación
-  explícita del usuario. Evidencia: `TEST`.
+  explícita del usuario. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-13`: un candidato no crea hecho y `confirm` autenticado crea el hecho con
+  `origin=observado_confirmado` y `last_confirmed_at`.
 - `AC-MEM-04` — Un hecho de perfil sin confirmar no entra en ninguna
-  proyección ni cálculo. Evidencia: `TEST`.
+  proyección ni cálculo. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-13`: lo observado vive en candidatos, no en `user_profile_facts`, y el
+  test real prueba que no existe fila consumible antes de confirmar.
 - `AC-MEM-05` — Cada aprendizaje guarda evidencia positiva **y negativa** con
-  referencias que resuelven. Evidencia: `TEST`.
+  referencias que resuelven. Evidencia: `TEST`. Clase: `integracion`. No
+  cierra: los tres modelos conservan arrays y conteos de ambas polaridades,
+  pero falta una prueba real que recorra y resuelva cada referencia de perfil
+  y preferencia hasta su entidad fuente.
 - `AC-MEM-06` — Tras el umbral de contradicción, el aprendizaje pasa a
   `suspended` y **deja de aplicarse**, conservando su historia.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. No cierra completo: para memoria
+  clasificatoria, 4 positivas + 2 negativas permanece vigente y la tercera
+  negativa consecutiva suspende sin borrar historia; falta automatizar y
+  probar la contradicción de perfil hacia `en_duda`.
 - `AC-MEM-07` — **Olvidar crea una lápida en la misma transacción**, y el
   proceso de aprendizaje no crea candidatos con lápida vigente.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-13`: el RPC hace ambos
+  cambios atómicamente y los triggers bloquean el alta automática.
 - `AC-MEM-08` — Un aprendizaje olvidado **no reaparece** tras un ciclo completo
-  de aprendizaje sobre los mismos datos. Evidencia: `TEST`.
+  de aprendizaje sobre los mismos datos. Evidencia: `TEST`. Clase:
+  `integracion`. Cierra en `W-13`: la misma evidencia repetida recibe
+  `MEMORY_TOMBSTONED` y no recrea candidato.
 - `AC-MEM-09` — La lápida se levanta con una acción explícita del usuario sobre
-  la misma clave, y solo así. Evidencia: `TEST`.
+  la misma clave, y solo así. Evidencia: `TEST`. Clase: `integracion`. Cierra
+  en `W-13`: `repeated_behavior` falla y `confirmed_correction` levanta la
+  lápida en Postgres real.
 - `AC-MEM-10` — Olvidar o corregir **no reescribe el pasado**: los movimientos
-  ya clasificados no cambian. Evidencia: `TEST`.
+  ya clasificados no cambian. Evidencia: `TEST`. Clase: `integracion`. No
+  cierra: los RPC de memoria no escriben `movements`, pero falta la prueba con
+  un movimiento histórico real antes y después de ambas operaciones.
 - `AC-MEM-11` — Corregir desde la pantalla de memoria y corregir desde el
-  módulo de origen producen **el mismo efecto**. Evidencia: `TEST`.
+  módulo de origen producen **el mismo efecto**. Evidencia: `TEST`. Clase:
+  `integracion`. No cierra: Movimientos emite evidencia negativa/positiva
+  estructurada; Memoria encadena una frase libre. Convergen en auditoría, no
+  todavía en la misma clave y destino clasificatorio.
 - `AC-MEM-12` — Corregir encadena con `supersedes_memory_id`; no sobrescribe.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-13`: Postgres real
+  prueba el encadenado y undo de clasificación, perfil y preferencia.
 - `AC-MEM-13` — Deshacer funciona dentro de 30 días y lo dice claramente
-  fuera de ellos. Evidencia: `TEST`.
+  fuera de ellos. Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-13`:
+  día 29 funciona, día 31 devuelve `MEMORY_UNDO_WINDOW_EXPIRED` y la UI nombra
+  explícitamente los 30 días.
 - `AC-MEM-14` — Las cuatro acciones quedan en `memory_events` con estado
-  anterior, siguiente y actor. Evidencia: `TEST`.
+  anterior, siguiente y actor. Evidencia: `TEST`. Clase: `integracion`. Cierra
+  en `W-13`: la prueba real cubre `visto`, `corregido`, `deshecho` y `olvidado`;
+  ver usa la acción separada de `WEB-D244` y conserva el GET puro.
 - `AC-MEM-15` — Nada se aprende de un dato sin confirmar. Evidencia: `TEST`.
+  Clase: `unidad`. Cierra en `W-13`: el handler de outbox solo procesa
+  movimientos Core confirmados/corregidos y los candidatos de perfil no se
+  convierten en hechos sin resolución explícita.
 - `AC-MEM-16` — Editar antes de confirmar genera evidencia positiva de lo
-  corregido y **negativa de lo propuesto**. Evidencia: `TEST`.
+  corregido y **negativa de lo propuesto**. Evidencia: `TEST`. Clase:
+  `integracion`. No cierra: la corrección posterior a confirmación sí emite las
+  dos polaridades, pero no existe prueba del recorrido Pendiente editado antes
+  de confirmar → outbox → evidencia doble.
 - `AC-MEM-17` — Ningún atributo protegido se infiere ni se almacena; el intento
-  se rechaza en el servidor. Evidencia: `TEST`.
+  se rechaza en el servidor. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-13`: el trigger rechaza candidatos y hechos protegidos antes de insertar.
 - `AC-MEM-18` — **No existe ninguna ruta de código que lea la memoria de más de
-  un usuario.** Evidencia: `CODE` + `TEST`.
+  un usuario.** Evidencia: `CODE` + `TEST`. Clase: `integracion`. Cierra en
+  `W-13`: las rutas usan cliente autenticado, todos los repositorios filtran el
+  `userId` de sesión y RLS devuelve cero filas ajenas.
 - `AC-MEM-19` — No se muestra confianza, peso ni porcentaje en ninguna
-  superficie ni respuesta de API. Evidencia: `TEST`.
+  superficie ni respuesta de API. Evidencia: `TEST`. Clase: `unidad`. Cierra
+  en `W-13`: presentador y DOM eliminan esos campos; `RUL-HECHO-02` falló al
+  reintroducir `confidence`.
 - `AC-MEM-20` — El motor no puede borrar toda la memoria. Evidencia: `TEST`.
+  Clase: `lint`. No cierra: el borrado total solo existe hoy en la ruta
+  autenticada que exige `OLVIDAR` y no hay herramienta del motor, pero falta
+  el test estructural que proteja esa frontera.
 - `AC-MEM-21` — La exportación completa incluye lo aprendido **y los
-  candidatos sin confirmar**, marcados como tales. Evidencia: `TEST`.
-- `AC-MEM-22` — Eliminar la cuenta elimina las seis tablas, lápidas y
-  auditoría incluidas. Evidencia: `TEST`.
+  candidatos sin confirmar**, marcados como tales. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-13`: `privacy.repository.test.ts` prueba las tres
+  clases, candidatos, lápidas y auditoría con estado pendiente preservado.
+- `AC-MEM-22` — Eliminar la cuenta elimina las siete familias canónicas, lápidas y
+  auditoría incluidas. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-13` con la corrección de censo `WEB-D235`: son siete familias canónicas y
+  la prueba borra `auth.users` y exige cero filas en todas.
 - `AC-MEM-23` — El aprendizaje ocurre fuera de la petición de guardar un
-  movimiento. Evidencia: `CODE` + `TEST`.
+  movimiento. Evidencia: `CODE` + `TEST`. Clase: `unidad`. Cierra en `W-13`:
+  el Core solo emite outbox y `learning-evidence-handler.test.ts` prueba el
+  consumidor separado para creación y corrección confirmadas.
 - `AC-MEM-24` — Un ajuste declarado en `user_preferences` **prevalece** sobre
   cualquier preferencia observada que hable de lo mismo, sin importar el
-  conteo de observaciones. Evidencia: `TEST`.
+  conteo de observaciones. Evidencia: `TEST`. Clase: `unidad`. Cierra en
+  `W-13`: `preference-resolution.test.ts` conserva la vista mensual declarada
+  frente a quince observaciones semanales.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

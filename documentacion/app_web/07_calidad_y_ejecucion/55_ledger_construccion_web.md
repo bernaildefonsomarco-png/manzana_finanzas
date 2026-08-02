@@ -3,7 +3,7 @@
 **Bloque:** 07 — Calidad y ejecución
 **Alcance:** V1
 **Estado:** vivo
-**Fecha de última actualización:** 29 de julio de 2026
+**Fecha de última actualización:** 1 de agosto de 2026
 **Docs fuente:** `54` (los veinte cortes), `49` §8 y §9 (protocolos de `USER` y `METRIC`), `50` (matriz)
 **Documentos que dependen de este:** `56` (puente a WhatsApp)
 
@@ -201,16 +201,16 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-12` cerraron `G1` y `G2`. Ninguno
-tiene criterios de `G3` propios. En `W-12`, “verificado” incluye la parte
+**La construcción avanza.** `W-01` a `W-13` cerraron `G1` y `G2`. Ninguno
+tiene criterios de `G3` propios. En `W-13`, “verificado” incluye la parte
 `TEST` que el criterio realmente cubre; las mitades `USER` sin sesión y los
 criterios explícitamente diferidos siguen marcados como abiertos en sus
 documentos.
 
 | | |
 |---|---|
-| Cortes cerrados | 12 de 20 |
-| Criterios `verificado` | 165 de 708 |
+| Cortes cerrados | 13 de 20 |
+| Criterios `verificado` | 212 de 708 |
 | Criterios `validado` | 0 de 139 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -1686,6 +1686,117 @@ SQL anteriores siguen abiertas y no se atribuyen a este corte.
   tablas, rutas internas y superficies nuevas declaradas.
 - Migración `061`, Core, repositorios, 27 contratos de API, privacidad,
   invalidación, worker/outbox y pantallas modulares de ambos documentos.
+
+## W-13 — Descubrimientos útiles y Memoria gobernable
+
+**Cerrado:** 2026-08-01
+**Portones:** G1 ✓ · G2 ✓ contra Supabase local · G3 no cierra: no hubo
+sesiones `USER` ni una cohorte para `METRIC`
+**Matriz regenerada:** 2026-08-01, con `npm run matriz:generar`; hash del
+commit sustantivo: `PENDIENTE` (hash real registrado en el commit de seguimiento de este cierre).
+
+### Qué se entregó
+
+Descubrimientos dejó de ser un placeholder. El Insight Engine genera y
+prioriza hallazgos deterministas, con umbrales numéricos, fingerprint,
+evidencia, vigencia, feedback idempotente, descarte, acción, silencio por tipo
+y resumen de máximo dos elementos para Home. El worker interno evalúa fuera
+de las peticiones de usuario y registra inicio, éxito o fallo en
+`worker_job_runs`, con alerta y log estructurado cuando falla. Las rutas de
+lista, detalle, evidencia, visto, feedback, acción, descarte, resumen y
+preferencias de tipo aplican sesión, aislamiento 404 o colección filtrada,
+validación e idempotencia según `WEB-D230`.
+
+Memoria publica las tres clases: reglas clasificatorias, hechos de perfil y
+preferencias observadas. La migración `062_w13_insights_memory.sql` incorpora
+las siete familias canónicas, RLS, cascadas, recibos y RPCs transaccionales
+para ver, corregir, olvidar, reactivar y deshacer. Corregir encadena versiones;
+olvidar crea lápida; deshacer respeta 30 días; el GET de detalle sigue siendo
+puro y `POST /memory/[id]/view` registra el evento idempotente (`WEB-D244`).
+La exportación de privacidad incluye clases, candidatos, lápidas y auditoría.
+
+Las superficies `src/features/insights/**` y `src/features/memory/**` fueron
+reemplazadas completas conforme a `WEB-D164`. También cerraron carryovers:
+clasificación masiva con preview/exclusiones/undo, explicación por movimiento,
+merge de subcategorías con preview y undo, y el prefill compartido de
+Movimientos para Descubrimientos y Proyecciones. Una fecha futura se conserva
+visible pero bloquea guardar; una categoría global no inventa subcategoría.
+
+La matriz conserva 708 criterios y ahora tiene 295 con clase: 76 de
+integración, 109 de unidad y 39 de lint; 337 declaran `TEST` y aún no tienen
+clase. W-13 agrega 47 verificaciones clasificadas. RLS termina 16 archivos y
+262/262 pruebas. `npx tsc --noEmit` y `npx eslint .` pasan. Resultado de
+`npm test`: 319/320 archivos y 2.058/2.059 pruebas por el único timeout frío
+conocido de `src/app/api/v1/movements/route.test.ts > AC-API-04`; el archivo
+aislado con `--testTimeout=20000` pasa 6/6. `npm run build` pasa sus cinco
+gates, compila Next.js 16.2.7 y genera 42 páginas.
+
+### Qué sorprendió
+
+La primera reconstrucción real del esquema encontró tres bugs: el upsert de
+lifecycle no incluía el predicado del índice parcial, una corrección de
+memoria financiera podía colisionar con su clave canónica y el undo dependía
+del reloj implícito. El reset también mostró que Kong podía responder con
+conexión vacía justo después de reiniciar; reiniciar únicamente
+`supabase_kong_manzana` restauró el gateway y la suite completa quedó verde.
+
+El corpus reservaba `060` y `061` para W-13 aunque ya pertenecían a W-11 y
+W-12. `WEB-D234` asignó `062`. A la vez, Memoria decía “seis tablas” mientras
+enumeraba siete y atribuía perfil a `054`, que realmente es correo;
+`WEB-D235` fijó siete familias y preservó las tablas heredadas. Esto dejó una
+segunda colisión documental: W-14 todavía reserva `062/063`. `WEB-D245`
+obliga a elegir los siguientes números libres al abrir ese corte, sin
+renumerar historia.
+
+La suite completa encontró tres desajustes de inventario que las suites
+focales no veían: README omitía `core/memory` y `shared/movements`, el gate
+404 aún esperaba 104 rutas en vez de 120 y cuatro excepciones service-role ya
+eran obsoletas. Se corrigieron y la lista temporal bajó honestamente de 62 a
+58; los cuatro archivos afectados pasan 144/144.
+
+`RUL-HECHO-02` volvió a encontrar defectos y a demostrar cobertura: al mutar
+el merge real, `47 + 89` produjo `137` y la prueba exigió `136`; degradar el
+estado observable del worker, reactivar al “ver”, cambiar el umbral de cuatro
+comercios, filtrar score público, alterar la precarga o filtrar confianza de
+clasificación/memoria produjo rojo antes de restaurar. También se revirtieron
+y restauraron constraints/RPCs mediante `npx supabase db reset --debug`.
+
+### Qué quedó abierto
+
+No se ejecutaron sesiones `USER`, staging, despliegue ni push. En
+Descubrimientos siguen abiertos los resolvers no basados en movimientos, la
+revisión exhaustiva de copy, el recorrido integral movimiento→worker→vigencia,
+una regresión aislada de fingerprint, las dos obligaciones `USER`, la prueba
+estructural de tools del asistente y `AC-DESC-20`, que necesita una cohorte
+real para medir mediana menor de un día.
+
+Memoria no cierra la equivalencia exacta entre corregir clasificación desde
+su pantalla y hacerlo desde Movimientos: hoy la corrección desde Memoria es
+texto libre. Tampoco están resueltas todas las referencias de perfil y
+preferencia, la contradicción automática de perfil a `en_duda`, un caso real
+antes/después sobre movimientos pasados, el doble camino de evidencia al
+editar un pendiente antes de confirmarlo ni la prueba estructural de
+“olvidar todo” desde el motor. Esos criterios quedaron anotados como abiertos,
+no presentados como terminados.
+
+La corrección temporal de `tests/rls/w12-budgets-goals.test.ts` de julio a
+agosto fue necesaria porque el reloj Lima avanzó durante W-13; no cambia el
+producto W-12. Las advertencias SQL heredadas y el timeout frío conocido de
+Movimientos tampoco se atribuyen silenciosamente a este corte.
+
+### Documentos corregidos
+
+- `34` y `36` §20: cada criterio quedó contrastado con código/prueba y marcado
+  con clase o razón concreta de no cierre.
+- `25` `AC-CAT-08` a `12` y `33` `SCR-PROY-03`/`ACT-PROY-04`: carryovers
+  verificados contra las operaciones y el prefill realmente entregados.
+- `03_decisiones_producto_web.md`: `WEB-D234` a `WEB-D245`, incluidas las
+  contradicciones de migración, censo, evidencia, prefill, transacciones y
+  vista idempotente.
+- `50`, `tests/corpus/matriz.test.ts` y `scripts/matriz/matriz.generada.json`:
+  censo regenerado, 295 clases asignadas y cero formas inválidas.
+- `55`: esta entrada y la tabla de estado actual; código, migración `062`,
+  tipos Supabase, RLS y superficies se citan desde la evidencia de §20.
 
 ---
 

@@ -25,6 +25,54 @@ export type InsightCommitment = {
   linked_box_id: string | null;
 };
 
+export type InsightBudget = {
+  id: string;
+  category_id: CategoryId | null;
+  category_name: string | null;
+  period_start: string;
+  period_end: string;
+  amount: number;
+  spent: number;
+  status: "activo" | "pausado" | "archivado";
+};
+
+export type InsightGoal = {
+  id: string;
+  name: string;
+  target_amount: number;
+  target_date: string | null;
+  box_id: string | null;
+  current_balance: number | null;
+  status: "activa" | "alcanzada" | "pausada" | "archivada";
+};
+
+export type InsightProjection = {
+  currency: "PEN";
+  period_start: string;
+  period_end: string;
+  as_of: string;
+  free_money_cents: number;
+  uncovered_commitments_cents: number;
+  observed_days: number;
+  daily_pace_cents: number;
+  days_remaining: number;
+  sufficient_data: boolean;
+  projection_cents: number | null;
+  range: { min_cents: number; max_cents: number } | null;
+  assumption_refs: string[];
+  movement_refs: string[];
+};
+
+export type InsightProfileFact = {
+  id: string;
+  subject_key: string;
+  statement: string;
+  origin: "dicho" | "observado_confirmado";
+  status: "vigente" | "en_duda" | "suspendido" | "olvidado" | "caducado" | "reemplazado";
+  expires_at: string | null;
+  positive_evidence_refs: string[];
+};
+
 export type InsightAction = {
   type:
     | "view_movements"
@@ -33,6 +81,9 @@ export type InsightAction = {
     | "review_debt"
     | "confirm_recurring"
     | "view_money"
+    | "adjust_budget"
+    | "link_goal"
+    | "create_box"
     | "dismiss";
   target_view: "movements" | "money" | "debts" | "upcoming" | "insights";
   filters?: Record<string, unknown>;
@@ -66,14 +117,23 @@ export type InsightEngineInput = {
   accounts?: Account[];
   boxes?: Box[];
   commitments?: InsightCommitment[];
+  budgets?: InsightBudget[];
+  goals?: InsightGoal[];
+  projection?: InsightProjection | null;
+  profileFacts?: InsightProfileFact[];
   movementTags?: MovementTag[];
   tags?: Tag[];
   activePendingCount?: number;
+  activePendingIds?: string[];
   now?: Date;
   timezone?: string;
 };
 
-const spendTypes = new Set<Movement["type"]>(["gasto", "pago_recurrente"]);
+const spendTypes = new Set<Movement["type"]>([
+  "gasto",
+  "pago_recurrente",
+  "pago_deuda",
+]);
 
 const categoryLabels: Record<CategoryId, string> = {
   alimentacion: "Alimentacion",
@@ -99,6 +159,31 @@ export function buildAdvancedInsightDrafts(
   const confirmed = input.movements.filter(isConfirmedMovement);
   const spend = confirmed.filter((movement) => spendTypes.has(movement.type));
   const drafts: InsightDraft[] = [];
+
+  drafts.push(
+    ...buildBudgetRiskInsights({
+      budgets: input.budgets ?? [],
+      spend,
+      today,
+      now,
+      timezone,
+    }),
+  );
+  drafts.push(
+    ...buildGoalPaceInsights({
+      goals: input.goals ?? [],
+      movements: confirmed,
+      today,
+      now,
+      timezone,
+    }),
+  );
+  const uncovered = buildCommitmentUncoveredInsight({
+    commitments: input.commitments ?? [],
+    today,
+    now,
+  });
+  if (uncovered) drafts.push(uncovered);
 
   const debtDrafts = buildDebtInsights({
     debts: input.debts ?? [],
@@ -132,55 +217,60 @@ export function buildAdvancedInsightDrafts(
   });
   if (boxProgress) drafts.push(boxProgress);
 
-  if (confirmed.length >= 5) {
-    const dataQuality = buildDataQualityInsight({ confirmed, today, now });
-    if (dataQuality) drafts.push(dataQuality);
-  }
+  const dataQuality = buildDataQualityInsight({
+    confirmed,
+    activePendingCount: input.activePendingCount ?? 0,
+    activePendingIds: input.activePendingIds ?? [],
+    today,
+    now,
+  });
+  if (dataQuality) drafts.push(dataQuality);
 
-  if (confirmed.length >= 10) {
-    const concentration = buildCategoryConcentrationInsight({
-      spend,
-      today,
-      now,
-      timezone,
-    });
-    if (concentration) drafts.push(concentration);
-  }
+  const concentration = buildCategoryConcentrationInsight({
+    spend,
+    today,
+    now,
+    timezone,
+  });
+  if (concentration) drafts.push(concentration);
 
-  if (confirmed.length >= 20) {
-    const comparison = buildWeeklyComparisonInsight({
-      spend,
-      today,
-      now,
-      timezone,
-    });
-    if (comparison) drafts.push(comparison);
-  }
+  const comparison = buildWeeklyComparisonInsight({
+    spend,
+    today,
+    now,
+    timezone,
+  });
+  if (comparison) drafts.push(comparison);
 
-  if (confirmed.length >= 40 && hasMinimumSpan(confirmed, 27, timezone)) {
-    const temporal = buildTemporalPatternInsight({
-      spend,
-      today,
-      now,
-      timezone,
-    });
-    if (temporal) drafts.push(temporal);
+  const temporal = buildTemporalPatternInsight({
+    spend,
+    today,
+    now,
+    timezone,
+  });
+  if (temporal) drafts.push(temporal);
 
-    const anomaly = buildAnomalyInsight({ spend, today, now, timezone });
-    if (anomaly) drafts.push(anomaly);
-  }
+  const anomaly = buildAnomalyInsight({ spend, today, now, timezone });
+  if (anomaly) drafts.push(anomaly);
+
+  const merchant = buildMerchantPatternInsight({ spend, today, now, timezone });
+  if (merchant) drafts.push(merchant);
+
+  const projection = buildProjectionInsight(input.projection ?? null, now);
+  if (projection) drafts.push(projection);
 
   const contextual = buildContextualInsight({
     movements: spend,
     movementTags: input.movementTags ?? [],
     tags: input.tags ?? [],
+    profileFacts: input.profileFacts ?? [],
     today,
     now,
     timezone,
   });
   if (contextual) drafts.push(contextual);
 
-  if (drafts.length === 0 && confirmed.length >= 5) {
+  if (confirmed.length >= 3 && drafts.length === 0) {
     drafts.push(buildLearningProgressInsight(confirmed, today, now));
   }
 
@@ -188,6 +278,288 @@ export function buildAdvancedInsightDrafts(
     .filter((draft) => draft.qualityScore >= 55 && draft.confidence >= 0.6)
     .sort(compareDrafts)
     .slice(0, 8);
+}
+
+function buildBudgetRiskInsights(input: {
+  budgets: InsightBudget[];
+  spend: Movement[];
+  today: string;
+  now: Date;
+  timezone: string;
+}): InsightDraft[] {
+  return input.budgets.flatMap((budget) => {
+    if (
+      budget.status !== "activo" ||
+      budget.period_start > input.today ||
+      budget.period_end < input.today ||
+      budget.amount <= 0
+    ) {
+      return [];
+    }
+    const movements = filterByLocalDate(
+      input.spend,
+      budget.period_start,
+      budget.period_end,
+      input.timezone,
+    ).filter((movement) =>
+      budget.category_id == null
+        ? true
+        : movement.category_id === budget.category_id,
+    );
+    if (movements.length < 3) return [];
+
+    const elapsedDays = daysBetweenIsoDates(budget.period_start, input.today) + 1;
+    const periodDays = daysBetweenIsoDates(budget.period_start, budget.period_end) + 1;
+    const spent = sumAmounts(movements);
+    const projected = roundMoney((spent / elapsedDays) * periodDays);
+    if (projected <= budget.amount) return [];
+    const daysToLimit = Math.max(1, Math.ceil(budget.amount / (spent / elapsedDays)));
+    const projectedLimitDate = shiftIsoDate(budget.period_start, daysToLimit - 1);
+    const label = budget.category_name ?? "Tu presupuesto general";
+
+    return [{
+      type: "budget_risk",
+      fingerprint: `budget_risk:${budget.id}:${budget.period_start}`,
+      periodStart: budget.period_start,
+      periodEnd: budget.period_end,
+      confidence: 1,
+      qualityScore: 92,
+      rankScore: 94,
+      riskLevel: budget.category_id === "salud" ? "sensitive" : "medium",
+      title: `${label} llegaria al limite antes de cerrar el periodo`,
+      body: `Llevas ${formatPen(spent)} en ${movements.length} gastos. Al ritmo actual, el limite de ${formatPen(budget.amount)} se alcanzaria alrededor del ${projectedLimitDate}.`,
+      evidenceText: `${formatPen(spent)} de ${formatPen(budget.amount)}; proyeccion ${formatPen(projected)}`,
+      evidence: {
+        budget_id: budget.id,
+        category_id: budget.category_id,
+        period_start: budget.period_start,
+        period_end: budget.period_end,
+        elapsed_days: elapsedDays,
+        period_days: periodDays,
+        movement_count: movements.length,
+        spent: roundMoney(spent),
+        budget_amount: roundMoney(budget.amount),
+        projected_amount: projected,
+        projected_limit_date: projectedLimitDate,
+        exclusions: ["transferencias", "ajustes", "pendientes"],
+      },
+      sourceFacts: {
+        budget_id: budget.id,
+        category_id: budget.category_id,
+        movement_count: movements.length,
+        spent: roundMoney(spent),
+        budget_amount: roundMoney(budget.amount),
+        projected_amount: projected,
+        projected_limit_date: projectedLimitDate,
+      },
+      sourceEntityIds: [budget.id, ...movements.map((movement) => movement.id)],
+      action: {
+        type: "adjust_budget",
+        target_view: "insights",
+        filters: { budget_id: budget.id },
+      },
+      expiresAt: shiftIsoDate(budget.period_end, 1),
+      metadata: { signal_version: "insight-engine-v3", class: "A" },
+    }];
+  });
+}
+
+function buildGoalPaceInsights(input: {
+  goals: InsightGoal[];
+  movements: Movement[];
+  today: string;
+  now: Date;
+  timezone: string;
+}): InsightDraft[] {
+  return input.goals.flatMap((goal) => {
+    if (
+      goal.status !== "activa" ||
+      !goal.target_date ||
+      goal.target_date <= input.today ||
+      !goal.box_id ||
+      goal.current_balance == null ||
+      goal.target_amount <= 0
+    ) {
+      return [];
+    }
+    const contributions = input.movements.filter(
+      (movement) =>
+        movement.box_destination_id === goal.box_id &&
+        movement.occurred_at != null &&
+        localIsoDate(new Date(movement.occurred_at), input.timezone) <= input.today,
+    );
+    if (contributions.length < 2) return [];
+    const firstDate = minLocalDate(contributions, input.timezone) ?? input.today;
+    const elapsedDays = Math.max(1, daysBetweenIsoDates(firstDate, input.today) + 1);
+    const remainingDays = daysBetweenIsoDates(input.today, goal.target_date);
+    const contributed = sumAmounts(contributions);
+    const projected = roundMoney(
+      Number(goal.current_balance) + (contributed / elapsedDays) * remainingDays,
+    );
+    const onPace = projected >= goal.target_amount;
+
+    return [{
+      type: "goal_pace",
+      fingerprint: `goal_pace:${goal.id}:${goal.target_date}`,
+      periodStart: firstDate,
+      periodEnd: goal.target_date,
+      confidence: 1,
+      qualityScore: 88,
+      rankScore: onPace ? 82 : 91,
+      riskLevel: "low",
+      title: onPace
+        ? `${goal.name} va al ritmo de su fecha`
+        : `${goal.name} no llegaria a su fecha al ritmo actual`,
+      body: `Con ${contributions.length} aportes y ${formatPen(Number(goal.current_balance))} separados, el ritmo actual proyecta ${formatPen(projected)} para el ${goal.target_date}.`,
+      evidenceText: `${contributions.length} aportes; meta ${formatPen(goal.target_amount)}`,
+      evidence: {
+        goal_id: goal.id,
+        box_id: goal.box_id,
+        contribution_count: contributions.length,
+        contributed: roundMoney(contributed),
+        current_balance: roundMoney(Number(goal.current_balance)),
+        target_amount: roundMoney(goal.target_amount),
+        target_date: goal.target_date,
+        projected_amount: projected,
+        on_pace: onPace,
+      },
+      sourceFacts: {
+        goal_id: goal.id,
+        goal_name: goal.name,
+        contribution_count: contributions.length,
+        current_balance: roundMoney(Number(goal.current_balance)),
+        target_amount: roundMoney(goal.target_amount),
+        target_date: goal.target_date,
+        projected_amount: projected,
+        on_pace: onPace,
+      },
+      sourceEntityIds: [goal.id, goal.box_id, ...contributions.map((item) => item.id)],
+      action: {
+        type: "link_goal",
+        target_view: "money",
+        filters: { goal_id: goal.id, box_id: goal.box_id },
+      },
+      expiresAt: goal.target_date,
+      metadata: { signal_version: "insight-engine-v3", class: "A" },
+    }];
+  });
+}
+
+function buildCommitmentUncoveredInsight(input: {
+  commitments: InsightCommitment[];
+  today: string;
+  now: Date;
+}): InsightDraft | null {
+  const windowEnd = shiftIsoDate(input.today, 30);
+  const uncovered = input.commitments
+    .filter(
+      (commitment) =>
+        commitment.due_at.slice(0, 10) >= input.today &&
+        commitment.due_at.slice(0, 10) <= windowEnd &&
+        commitment.linked_box_id == null,
+    )
+    .sort((left, right) => left.due_at.localeCompare(right.due_at));
+  if (uncovered.length === 0) return null;
+  const selected = uncovered[0];
+  return {
+    type: "commitment_uncovered",
+    fingerprint: `commitment_uncovered:${selected.kind}:${selected.id}`,
+    periodStart: input.today,
+    periodEnd: selected.due_at.slice(0, 10),
+    confidence: 1,
+    qualityScore: 90,
+    rankScore: 93,
+    riskLevel: "medium",
+    title: `${selected.title} viene sin dinero apartado`,
+    body: `${formatCurrency(selected.amount, selected.currency)} vencen el ${selected.due_at.slice(0, 10)} y el compromiso no esta vinculado a una caja.`,
+    evidenceText: `${formatCurrency(selected.amount, selected.currency)} con vencimiento ${selected.due_at.slice(0, 10)}`,
+    evidence: {
+      commitment_id: selected.id,
+      kind: selected.kind,
+      amount: roundMoney(selected.amount),
+      currency: selected.currency,
+      due_at: selected.due_at,
+      linked_box_id: null,
+    },
+    sourceFacts: {
+      commitment_id: selected.id,
+      title: selected.title,
+      kind: selected.kind,
+      amount: roundMoney(selected.amount),
+      currency: selected.currency,
+      due_at: selected.due_at,
+    },
+    sourceEntityIds: [selected.id],
+    action: { type: "create_box", target_view: "money" },
+    expiresAt: selected.due_at,
+    metadata: { signal_version: "insight-engine-v3", class: "A" },
+  };
+}
+
+function buildProjectionInsight(
+  projection: InsightProjection | null,
+  now: Date,
+): InsightDraft | null {
+  if (!projection?.sufficient_data) return null;
+  const refs = [...new Set([
+    ...projection.movement_refs,
+    ...projection.assumption_refs,
+  ])];
+  if (refs.length === 0) return null;
+  const range = projection.range
+    ? {
+        min: projection.range.min_cents / 100,
+        max: projection.range.max_cents / 100,
+      }
+    : null;
+  const point = projection.projection_cents == null
+    ? null
+    : projection.projection_cents / 100;
+  const body = range
+    ? `Con el ritmo observado y los compromisos conocidos, el cierre estaria entre ${formatPen(range.min)} y ${formatPen(range.max)}.`
+    : `Con el ritmo observado y los compromisos conocidos, el cierre seria ${formatPen(point ?? 0)}.`;
+  return {
+    type: "projection",
+    fingerprint: `projection:${projection.period_start}:${projection.period_end}`,
+    periodStart: projection.period_start,
+    periodEnd: projection.period_end,
+    confidence: 1,
+    qualityScore: 86,
+    rankScore: 84,
+    riskLevel: "low",
+    title: "Asi vendria el cierre del periodo",
+    body,
+    evidenceText: `${projection.observed_days} dias observados; ${projection.days_remaining} por venir`,
+    evidence: {
+      period_start: projection.period_start,
+      period_end: projection.period_end,
+      as_of: projection.as_of,
+      observed_days: projection.observed_days,
+      days_remaining: projection.days_remaining,
+      free_money: roundMoney(projection.free_money_cents / 100),
+      uncovered_commitments: roundMoney(
+        projection.uncovered_commitments_cents / 100,
+      ),
+      daily_pace: roundMoney(projection.daily_pace_cents / 100),
+      projection: point == null ? null : roundMoney(point),
+      range,
+      assumptions: [
+        "mediana de gasto diario en dias civiles de Lima",
+        "solo compromisos conocidos",
+        "sin ingresos futuros no declarados",
+      ],
+    },
+    sourceFacts: {
+      observed_days: projection.observed_days,
+      days_remaining: projection.days_remaining,
+      projection: point == null ? null : roundMoney(point),
+      range,
+    },
+    sourceEntityIds: refs,
+    action: { type: "view_money", target_view: "money", filters: { projection: true } },
+    expiresAt: addDays(now, Math.max(1, projection.days_remaining + 1)).toISOString(),
+    metadata: { signal_version: "insight-engine-v3", class: "A" },
+  };
 }
 
 function buildDebtInsights(input: {
@@ -530,6 +902,7 @@ function buildContextualInsight(input: {
   movements: Movement[];
   movementTags: MovementTag[];
   tags: Tag[];
+  profileFacts: InsightProfileFact[];
   today: string;
   now: Date;
   timezone: string;
@@ -555,11 +928,6 @@ function buildContextualInsight(input: {
       tagById.has(assignment.tag_id) &&
       (assignment.confidence == null || assignment.confidence >= 0.7),
   );
-  const taggedMovementCount = new Set(
-    eligibleAssignments.map((assignment) => assignment.movement_id),
-  ).size;
-  if (taggedMovementCount < 8) return null;
-
   const assignmentsByTag = new Map<string, MovementTag[]>();
   for (const assignment of eligibleAssignments) {
     assignmentsByTag.set(assignment.tag_id, [
@@ -568,74 +936,70 @@ function buildContextualInsight(input: {
     ]);
   }
 
+  const activeFacts = input.profileFacts.filter(
+    (fact) =>
+      fact.status === "vigente" &&
+      (fact.expires_at == null || fact.expires_at > input.now.toISOString()),
+  );
   const selected = [...assignmentsByTag.entries()]
     .map(([tagId, assignments]) => {
       const movements = assignments
         .map((assignment) => movementById.get(assignment.movement_id))
         .filter((movement): movement is Movement => Boolean(movement));
-      const weekdayCounts = new Map<number, number>();
-      for (const movement of movements) {
-        const weekday = localWeekday(new Date(movement.occurred_at), input.timezone);
-        weekdayCounts.set(weekday, (weekdayCounts.get(weekday) ?? 0) + 1);
-      }
-      const topWeekday = [...weekdayCounts.entries()].sort(
-        (left, right) => right[1] - left[1],
-      )[0];
+      const tag = tagById.get(tagId);
+      const fact = tag
+        ? activeFacts.find(
+            (candidate) =>
+              candidate.subject_key.toLocaleLowerCase("es-PE").includes(tag.key.toLocaleLowerCase("es-PE")) ||
+              candidate.positive_evidence_refs.includes(tag.id) ||
+              movements.some((movement) => candidate.positive_evidence_refs.includes(movement.id)),
+          )
+        : undefined;
       return {
-        tag: tagById.get(tagId),
+        tag,
+        fact,
         movements,
-        topWeekday: topWeekday?.[0] ?? null,
-        topWeekdayCount: topWeekday?.[1] ?? 0,
       };
     })
     .filter(
       (candidate) =>
         candidate.tag != null &&
-        candidate.movements.length >= 4 &&
-        candidate.topWeekday != null &&
-        candidate.topWeekdayCount >= 3 &&
-        candidate.topWeekdayCount / candidate.movements.length >= 0.5,
+        candidate.fact != null &&
+        candidate.movements.length >= 1,
     )
-    .sort((left, right) => {
-      const leftShare = left.topWeekdayCount / left.movements.length;
-      const rightShare = right.topWeekdayCount / right.movements.length;
-      if (rightShare !== leftShare) return rightShare - leftShare;
-      return right.movements.length - left.movements.length;
-    })[0];
-  if (!selected?.tag || selected.topWeekday == null) return null;
+    .sort((left, right) => right.movements.length - left.movements.length)[0];
+  if (!selected?.tag || !selected.fact) return null;
 
-  const weekday = weekdayLabel(selected.topWeekday);
   const totalAmount = sumAmounts(selected.movements);
   return {
     type: "contextual",
-    fingerprint: `contextual:${selected.tag.id}:${periodStart}`,
+    fingerprint: `contextual:${selected.fact.id}:${selected.tag.id}:${periodStart}`,
     periodStart,
     periodEnd: input.today,
-    confidence: clamp(0.64 + selected.movements.length * 0.025, 0, 0.86),
-    qualityScore: 72,
-    rankScore: 68,
+    confidence: 1,
+    qualityScore: 78,
+    rankScore: 72,
     riskLevel: "medium",
-    title: `${selected.tag.label} aparece mas los ${weekday}`,
-    body: `En los ultimos 28 dias, ${selected.topWeekdayCount} de ${selected.movements.length} movimientos con esa etiqueta ocurrieron los ${weekday}. Es una senal para revisar, no un diagnostico sobre ti.`,
+    title: `${selected.fact.statement} aparece en tus movimientos`,
+    body: `En los ultimos 28 dias hay ${selected.movements.length} movimientos con la etiqueta ${selected.tag.label}. Es contexto confirmado por ti, no un diagnostico.`,
     evidenceText: `${selected.movements.length} movimientos etiquetados por ${formatPen(totalAmount)}`,
     evidence: {
       tag_id: selected.tag.id,
       tag_key: selected.tag.key,
       tag_label: selected.tag.label,
+      profile_fact_id: selected.fact.id,
+      profile_statement: selected.fact.statement,
       movement_count: selected.movements.length,
-      top_weekday: selected.topWeekday,
-      top_weekday_label: weekday,
-      top_weekday_count: selected.topWeekdayCount,
       total_amount: roundMoney(totalAmount),
     },
     sourceFacts: {
       tag_label: selected.tag.label,
+      profile_statement: selected.fact.statement,
       movement_count: selected.movements.length,
-      top_weekday_label: weekday,
-      top_weekday_count: selected.topWeekdayCount,
       total_amount: roundMoney(totalAmount),
     },
     sourceEntityIds: [
+      selected.fact.id,
       selected.tag.id,
       ...selected.movements.map((movement) => movement.id),
     ],
@@ -771,6 +1135,8 @@ function buildLearningProgressInsight(
 
 function buildDataQualityInsight(input: {
   confirmed: Movement[];
+  activePendingCount: number;
+  activePendingIds: string[];
   today: string;
   now: Date;
 }): InsightDraft | null {
@@ -778,35 +1144,51 @@ function buildDataQualityInsight(input: {
     (movement) =>
       movement.account_origin_id == null && movement.account_destination_id == null,
   );
-  const ratio = withoutAccount.length / input.confirmed.length;
-  if (withoutAccount.length < 3 || ratio < 0.35) return null;
+  const ratio = input.confirmed.length > 0
+    ? withoutAccount.length / input.confirmed.length
+    : 0;
+  if (withoutAccount.length === 0 && input.activePendingCount === 0) return null;
 
-  const confidence = clamp(0.65 + ratio * 0.25, 0, 0.93);
+  const confidence = 1;
+  const pendingOnly = withoutAccount.length === 0;
   return {
     type: "data_quality",
-    fingerprint: "data_quality:missing_account",
+    fingerprint: pendingOnly
+      ? "data_quality:pending_confirmation"
+      : "data_quality:missing_account",
     periodStart: minOccurredDate(input.confirmed) ?? input.today,
     periodEnd: input.today,
     confidence,
-    qualityScore: roundScore(60 + ratio * 25),
-    rankScore: roundScore(58 + ratio * 20),
+    qualityScore: 82,
+    rankScore: 80,
     riskLevel: "low",
-    title: "Una parte de tu historia aun no mueve saldos",
-    body:
-      "Hay movimientos confirmados sin cuenta. Siguen en tu historial, pero asignarlos haria mas preciso tu dinero libre.",
-    evidenceText: `${withoutAccount.length} de ${input.confirmed.length} movimientos sin cuenta`,
+    title: pendingOnly
+      ? "Hay un pendiente que aun no forma parte de tus numeros"
+      : "Una parte de tu historia aun no mueve saldos",
+    body: pendingOnly
+      ? "Confirmarlo o descartarlo permite calcular con datos cerrados."
+      : "Hay movimientos confirmados sin cuenta. Siguen en tu historial, pero asignarlos haria mas preciso tu dinero libre.",
+    evidenceText: pendingOnly
+      ? `${input.activePendingCount} pendiente(s) sin confirmar`
+      : `${withoutAccount.length} de ${input.confirmed.length} movimientos sin cuenta`,
     evidence: {
       movement_count: input.confirmed.length,
       without_account_count: withoutAccount.length,
       ratio: roundDecimal(ratio),
+      active_pending_count: input.activePendingCount,
       exclusions: ["pendientes", "movimientos eliminados"],
     },
     sourceFacts: {
       movement_count: input.confirmed.length,
       without_account_count: withoutAccount.length,
+      active_pending_count: input.activePendingCount,
     },
-    sourceEntityIds: withoutAccount.map((movement) => movement.id),
-    action: { type: "assign_account", target_view: "movements" },
+    sourceEntityIds: pendingOnly
+      ? input.activePendingIds
+      : withoutAccount.map((movement) => movement.id),
+    action: pendingOnly
+      ? { type: "view_movements", target_view: "movements", filters: { pending: true } }
+      : { type: "assign_account", target_view: "movements" },
     expiresAt: null,
     metadata: { signal_version: "insight-engine-v1" },
   };
@@ -825,7 +1207,7 @@ function buildCategoryConcentrationInsight(input: {
     input.today,
     input.timezone,
   ).filter((movement) => movement.category_id != null);
-  if (period.length < 6) return null;
+  if (period.length < 10) return null;
 
   const total = sumAmounts(period);
   if (total < 50) return null;
@@ -912,7 +1294,7 @@ function buildWeeklyComparisonInsight(input: {
     previousEnd,
     input.timezone,
   );
-  if (current.length < 4 || previous.length < 4) return null;
+  if (current.length < 5 || previous.length < 5) return null;
 
   const currentTotal = sumAmounts(current);
   const previousTotal = sumAmounts(previous);
@@ -990,7 +1372,7 @@ function buildTemporalPatternInsight(input: {
     input.today,
     input.timezone,
   );
-  if (period.length < 16) return null;
+  if (!hasMinimumSpan(period, 21, input.timezone)) return null;
 
   const counts = new Map<number, Movement[]>();
   for (const movement of period) {
@@ -1001,7 +1383,7 @@ function buildTemporalPatternInsight(input: {
     (left, right) => right[1].length - left[1].length,
   )[0] ?? [0, []];
   const share = selected.length / period.length;
-  if (selected.length < 5 || share < 0.32) return null;
+  if (selected.length < 3) return null;
 
   const label = weekdayLabel(weekday);
   const confidence = clamp(0.61 + selected.length * 0.018 + share * 0.18, 0, 0.91);
@@ -1050,8 +1432,8 @@ function buildAnomalyInsight(input: {
   timezone: string;
 }): InsightDraft | null {
   const baselineStart = shiftIsoDate(input.today, -28);
-  const baselineEnd = shiftIsoDate(input.today, -1);
   const recentStart = shiftIsoDate(input.today, -2);
+  const baselineEnd = shiftIsoDate(recentStart, -1);
   const baseline = filterByLocalDate(
     input.spend,
     baselineStart,
@@ -1076,11 +1458,11 @@ function buildAnomalyInsight(input: {
         candidate.id !== movement.id &&
         candidate.amount > 0,
     );
-    if (comparable.length < 5) continue;
+    if (comparable.length < 6) continue;
     const median = medianAmount(comparable);
     if (median <= 0) continue;
     const ratio = movement.amount / median;
-    if (ratio < 2.5 || movement.amount - median < 20) continue;
+    if (ratio < 2 || movement.amount - median < 20) continue;
     if (!best || ratio > best.ratio) {
       best = { movement, median, ratio, baseline: comparable };
     }
@@ -1135,6 +1517,72 @@ function buildAnomalyInsight(input: {
   };
 }
 
+function buildMerchantPatternInsight(input: {
+  spend: Movement[];
+  today: string;
+  now: Date;
+  timezone: string;
+}): InsightDraft | null {
+  const periodStart = shiftIsoDate(input.today, -59);
+  const period = filterByLocalDate(
+    input.spend,
+    periodStart,
+    input.today,
+    input.timezone,
+  ).filter((movement) => normalizeMerchant(movement.merchant) != null);
+  const groups = new Map<string, Movement[]>();
+  for (const movement of period) {
+    const key = normalizeMerchant(movement.merchant);
+    if (!key) continue;
+    groups.set(key, [...(groups.get(key) ?? []), movement]);
+  }
+  const [merchantKey, selected] = [...groups.entries()]
+    .filter(([, movements]) => movements.length >= 4)
+    .sort((left, right) => right[1].length - left[1].length)[0] ?? [null, []];
+  if (!merchantKey || selected.length < 4) return null;
+  const merchant = selected[0].merchant?.trim() ?? merchantKey;
+  const total = sumAmounts(selected);
+  const lastOccurred = [...selected]
+    .sort((left, right) => right.occurred_at.localeCompare(left.occurred_at))[0]
+    .occurred_at;
+
+  return {
+    type: "merchant_pattern",
+    fingerprint: `merchant_pattern:${merchantKey}:60d`,
+    periodStart,
+    periodEnd: input.today,
+    confidence: clamp(0.68 + selected.length * 0.03, 0, 0.92),
+    qualityScore: roundScore(70 + selected.length * 2),
+    rankScore: roundScore(68 + selected.length * 2),
+    riskLevel: "low",
+    title: `${merchant} se repitio en tus gastos`,
+    body: `Aparece ${selected.length} veces en los ultimos 60 dias, por un total de ${formatPen(total)}.`,
+    evidenceText: `${selected.length} movimientos por ${formatPen(total)}`,
+    evidence: {
+      merchant,
+      merchant_key: merchantKey,
+      period_start: periodStart,
+      period_end: input.today,
+      movement_count: selected.length,
+      total_amount: roundMoney(total),
+      exclusions: ["transferencias", "ajustes", "pendientes"],
+    },
+    sourceFacts: {
+      merchant,
+      movement_count: selected.length,
+      total_amount: roundMoney(total),
+    },
+    sourceEntityIds: selected.map((movement) => movement.id),
+    action: {
+      type: "view_movements",
+      target_view: "movements",
+      filters: { merchant, date_from: periodStart, date_to: input.today },
+    },
+    expiresAt: addDays(new Date(lastOccurred), 30).toISOString(),
+    metadata: { signal_version: "insight-engine-v3", class: "B" },
+  };
+}
+
 function compareDebtPriority(left: Debt, right: Debt): number {
   const statusPriority: Record<Debt["status"], number> = {
     overdue: 0,
@@ -1164,6 +1612,17 @@ function debtProgressRatio(debt: Debt): number {
 
 function isInsightCurrency(value: string): value is InsightCurrency {
   return value === "PEN" || value === "USD";
+}
+
+function normalizeMerchant(value: string | null): string | null {
+  if (!value) return null;
+  const normalized = value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("es-PE");
+  return normalized.length > 0 ? normalized : null;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

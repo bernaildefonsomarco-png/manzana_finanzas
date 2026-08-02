@@ -13,6 +13,7 @@ import { MovementHistoryList } from "./movement-history-list";
 import { MovementDetailActions } from "./movement-detail-actions";
 import { DeleteMovementDialog } from "./delete-movement-dialog";
 import { MovementSummary } from "./movement-summary";
+import { ClassificationWhyPanel } from "./classification-why-panel";
 
 /**
  * Piloto de `12` §6: contenido único que consumen tanto el panel
@@ -120,6 +121,8 @@ export function MovementDetailView({ movementId }: { movementId: string }) {
         ) : null}
 
         {showHistory ? <MovementHistoryList entries={historyQuery.data?.history} loading={historyQuery.isLoading} /> : null}
+
+        {!isDeleted && !isSpecialized ? <ClassificationWhyPanel movementId={movementId} /> : null}
 
         <Link href="/movimientos" className="mt-5 inline-flex text-sm font-medium text-brand hover:text-brand-hover">
           Volver a movimientos

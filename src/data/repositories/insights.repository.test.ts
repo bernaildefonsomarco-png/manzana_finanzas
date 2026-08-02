@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   applyInsightFeedbackPenalty,
+  balanceInsightClasses,
   isInsightPastExpiry,
   isNarrationFactSafe,
   shouldSuppressInsightDraft,
+  toPublicInsight,
 } from "./insights.repository";
 import type { InsightDraft } from "@/core/insights/insight-engine";
 import type { InsightCandidate } from "@/shared/types/domain";
@@ -148,6 +150,25 @@ describe("insight feedback lifecycle", () => {
     expect(
       shouldSuppressInsightDraft({ ...draft, rankScore: 92 }, feedback, now),
     ).toBe(false);
+  });
+});
+
+describe("contrato publico", () => {
+  it("AC-DESC-06: elimina scores, confianza, fingerprint y metadata", () => {
+    const serialized = JSON.stringify(toPublicInsight(feedbackCandidate()));
+    expect(serialized).not.toMatch(/confidence|quality_score|rank_score|fingerprint|metadata/);
+  });
+
+  it("AC-DESC-13: ubica un hecho de progreso entre los tres primeros", () => {
+    const rows = [
+      feedbackCandidate({ id: "a", type: "budget_risk", rank_score: 99 }),
+      feedbackCandidate({ id: "b", type: "debt", rank_score: 98 }),
+      feedbackCandidate({ id: "c", type: "comparative", rank_score: 97 }),
+      feedbackCandidate({ id: "d", type: "progress", rank_score: 60 }),
+    ];
+    expect(balanceInsightClasses(rows).slice(0, 3).map((row) => row.id)).toEqual([
+      "a", "b", "d",
+    ]);
   });
 });
 

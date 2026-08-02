@@ -20,7 +20,15 @@ function signFor(type: Movement["type"]): "negative" | "positive" | "none" | "au
 /** `SCR-MOV-01`: cada fila indica su origen y estado sin depender solo del
  * color (`AC-MOV-20`) — el nombre accesible incluye tipo, comercio, fecha y
  * monto con signo. */
-export function MovementRow({ movement }: { movement: Movement }) {
+export function MovementRow({
+  movement,
+  selected = false,
+  onSelectedChange,
+}: {
+  movement: Movement;
+  selected?: boolean;
+  onSelectedChange?: (selected: boolean) => void;
+}) {
   const view = toMovementViewItem(movement);
   const isDeleted = movement.deleted_at !== null;
   const accessibleName = `${view.typeLabel}, ${view.title}, ${view.description}, ${
@@ -28,11 +36,21 @@ export function MovementRow({ movement }: { movement: Movement }) {
   }`;
 
   return (
-    <Link
-      href={`/movimientos/${movement.id}`}
-      aria-label={accessibleName}
-      className="flex items-center gap-3 rounded-lg px-3 py-3 transition hover:bg-bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
-    >
+    <div className="flex items-center gap-2 rounded-lg px-3 py-1 transition hover:bg-bg-surface">
+      {onSelectedChange ? (
+        <input
+          type="checkbox"
+          checked={selected}
+          onChange={(event) => onSelectedChange(event.target.checked)}
+          aria-label={`Seleccionar ${view.title}`}
+          className="h-4 w-4 accent-brand"
+        />
+      ) : null}
+      <Link
+        href={`/movimientos/${movement.id}`}
+        aria-label={accessibleName}
+        className="flex min-w-0 flex-1 items-center gap-3 rounded-lg py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+      >
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <p className="truncate text-sm font-medium text-text">{view.title}</p>
@@ -54,6 +72,7 @@ export function MovementRow({ movement }: { movement: Movement }) {
         </p>
       </div>
       <MoneyText value={view.amount} sign={signFor(movement.type)} className="shrink-0 text-sm font-semibold" />
-    </Link>
+      </Link>
+    </div>
   );
 }

@@ -172,7 +172,7 @@ describe("W-12: Core y RLS de presupuestos", () => {
         category_id: "transporte",
         period_kind: "mensual",
         kind: "limite_duro",
-        date: "2026-07-05",
+        date: "2026-08-05",
       },
     });
     expect(created.error).toBeNull();
@@ -181,54 +181,54 @@ describe("W-12: Core y RLS de presupuestos", () => {
     const firstId = await insertMovement(owner.id, {
       amount: 197,
       categoryId: "transporte",
-      date: "2026-07-05",
+      date: "2026-08-05",
     });
     const removableId = await insertMovement(owner.id, {
       amount: 18,
       categoryId: "transporte",
-      date: "2026-07-05",
+      date: "2026-08-05",
     });
     expect(firstId).toBeTruthy();
-    await runLifecycle(owner.id, "2026-07-05");
+    await runLifecycle(owner.id, "2026-08-05");
 
     await insertMovement(owner.id, {
       amount: 61,
       categoryId: "transporte",
-      date: "2026-07-12",
+      date: "2026-08-12",
     });
-    await runLifecycle(owner.id, "2026-07-12");
+    await runLifecycle(owner.id, "2026-08-12");
 
     const removed = await admin
       .from("movements")
       .update({
         status: "deleted",
-        deleted_at: "2026-07-14T17:00:00.000Z",
+        deleted_at: "2026-08-14T17:00:00.000Z",
       })
       .eq("id", removableId);
     expect(removed.error).toBeNull();
-    await runLifecycle(owner.id, "2026-07-14");
+    await runLifecycle(owner.id, "2026-08-14");
 
     await insertMovement(owner.id, {
       amount: 33,
       categoryId: "transporte",
-      date: "2026-07-18",
+      date: "2026-08-18",
     });
-    await runLifecycle(owner.id, "2026-07-18");
+    await runLifecycle(owner.id, "2026-08-18");
 
     await insertMovement(owner.id, {
       amount: 39,
       categoryId: "transporte",
-      date: "2026-07-26",
+      date: "2026-08-26",
     });
-    await runLifecycle(owner.id, "2026-07-26");
+    await runLifecycle(owner.id, "2026-08-26");
 
     await insertMovement(owner.id, {
       amount: 28,
       categoryId: "transporte",
-      date: "2026-07-29",
+      date: "2026-08-29",
     });
-    await runLifecycle(owner.id, "2026-07-29");
-    await runLifecycle(owner.id, "2026-07-29");
+    await runLifecycle(owner.id, "2026-08-29");
+    await runLifecycle(owner.id, "2026-08-29");
 
     const [budget, events, snapshots] = await Promise.all([
       admin
@@ -257,7 +257,7 @@ describe("W-12: Core y RLS de presupuestos", () => {
     ).toEqual([70, 90, 100]);
     expect(snapshots.error).toBeNull();
     expect(snapshots.data?.at(-1)).toMatchObject({
-      as_of: "2026-07-29",
+      as_of: "2026-08-29",
       spent: 358,
     });
 
@@ -272,13 +272,13 @@ describe("W-12: Core y RLS de presupuestos", () => {
       jsonRecord(jsonRecord(adjusted.data).budget).alerted_thresholds
     ).toEqual([70, 90, 100]);
 
-    await runLifecycle(owner.id, "2026-08-01");
+    await runLifecycle(owner.id, "2026-09-01");
     const renewed = await admin
       .from("budgets")
       .select("alerted_thresholds,status")
       .eq("user_id", owner.id)
       .eq("category_id", "transporte")
-      .eq("period_start", "2026-08-01")
+      .eq("period_start", "2026-09-01")
       .single();
     expect(renewed.error).toBeNull();
     expect(renewed.data).toMatchObject({

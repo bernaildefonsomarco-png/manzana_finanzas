@@ -7,7 +7,11 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
-import { getInsightById } from "@/data/repositories/insights.repository";
+import {
+  getInsightById,
+  toPublicInsightDetail,
+} from "@/data/repositories/insights.repository";
+import { getExperiencePreferences } from "@/data/repositories/experience-preferences.repository";
 
 export const dynamic = "force-dynamic";
 
@@ -25,10 +29,11 @@ export async function GET(request: Request, context: RouteContext) {
     }
     const { id } = ParamsSchema.parse(await context.params);
     const detail = await getInsightById(auth.client, auth.userId, id);
-    if (!detail) {
+    const preferences = await getExperiencePreferences(auth.client, auth.userId);
+    if (!detail || (preferences.discreet_mode_enabled && detail.insight.risk_level === "sensitive")) {
       return errorJson("NOT_FOUND", "No encontre ese descubrimiento.", meta, 404);
     }
-    return okJson(detail, meta);
+    return okJson(toPublicInsightDetail(detail), meta);
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
     return unexpectedError(error, meta);

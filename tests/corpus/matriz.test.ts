@@ -102,18 +102,22 @@ describe("generador de la matriz de trazabilidad", () => {
     // tres `lint`. Los cinco rótulos con sufijo minúsculo (`05b`–`05e` y
     // `02b`) se anotan individualmente en el corpus, pero se pliegan en el
     // identificador base de la matriz según `WEB-D231`; no inflan el censo.
+    // W-13 añade cuarenta y siete clases verificadas entre Descubrimientos,
+    // Memoria y los carryovers de Categorías/Proyecciones. Los criterios que
+    // dependen de sesión USER, métrica real o una capacidad aún ausente se
+    // mantienen explícitamente abiertos y no reciben una clase ficticia.
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 16,
-      lint: 36,
+      lint: 39,
       e2e: 7,
       presupuesto: 2,
       contenido: 1,
-      integracion: 52,
-      unidad: 89,
+      integracion: 76,
+      unidad: 109,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(248);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(384);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(295);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(337);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {

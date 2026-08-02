@@ -49,6 +49,7 @@ src/
     budgets/        # Presupuestos/metas: periodos, avance, umbrales, rollover y ritmo
     projections/    # Proyección y simulación deterministas, mediana/IQR en Lima
     insights/       # Insight Engine
+    memory/         # Operaciones y resolución gobernable de Memoria
     nudges/         # Nudge Evaluator y Nudge Policy
     pending/        # Confirmación de pendientes (27) — computeConfirmability, RUL-PEND-01
     email/          # Ingesta y normalización de email (28)
@@ -84,6 +85,7 @@ src/
     types/          # Tipos TypeScript globales
     money/          # Aritmética en céntimos (index.ts) + parseo de entrada de formularios
                      # (parse-money-input.ts, AC-PAT-09) — la presentación vive en ui/primitivas/money.tsx
+    movements/      # Contrato validado de precarga para registrar movimientos
     dates/          # Módulo único de fechas y zona horaria de Lima (lima.ts, AC-PAT-09)
     data/           # Patrón de obtención de datos (17): TanStack Query, claves de caché,
                      # invalidación selectiva por mutación, mutación optimista

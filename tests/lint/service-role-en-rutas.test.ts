@@ -13,7 +13,7 @@ describe("AC-SEG-01: service-role solo con justificación registrada", () => {
     expect(resultado.entradasObsoletas).toEqual([]);
   });
 
-  it("la lista de excepciones temporales tiene 62 rutas: las migraciones pendientes de 15 §9 más las ocho superficies de lifecycle de W-11", () => {
+  it("la lista de excepciones temporales tiene 58 rutas: W-13 retiró cuatro rutas ya migradas a sesión", () => {
     // /api/v1/onboarding y /api/v1/privacy/account están entre las 48 que
     // 15 §1 mide como "usan createServiceClient", pero 15 §4 ya las
     // justifica como categoría permanente (registro sin sesión completa,
@@ -31,7 +31,10 @@ describe("AC-SEG-01: service-role solo con justificación registrada", () => {
     // de sus contratos, no una autorización permanente del service-role.
     // W-12 añade `internal/jobs/budgets-daily`, cubierto por la lista blanca
     // permanente de jobs: no incrementa estas excepciones de `/api/v1`.
-    expect(EXCEPCIONES_TEMPORALES.length).toBe(62);
+    // W-13 retira tres acciones de Descubrimientos y la colección de Memoria:
+    // ya operan con el cliente autenticado y RLS, por lo que conservarlas en
+    // la lista sería una excepción obsoleta, no documentación preventiva.
+    expect(EXCEPCIONES_TEMPORALES.length).toBe(58);
   });
 
   it("AC-SEG-07 (agregado): la lista temporal no está vacía todavía — no cierra en W-02 (WEB-D168)", () => {

@@ -1,12 +1,23 @@
-import { PlaceholderSection } from "@/shared/placeholder-section";
+"use client";
 
-export default function DescubrimientoDetallePage() {
+import { use } from "react";
+import { InsightDetailScreen } from "@/features/insights/insights-screen";
+import {
+  useLegacyNavigate,
+  useLegacySignOut,
+} from "@/shared/legacy-nav/legacy-view-routes";
+
+export default function DescubrimientoDetallePage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
   return (
-    <PlaceholderSection
-      title="Detalle del descubrimiento"
-      description="El detalle con evidencia y URL propia llega junto a la reconstrucción de esta pantalla."
-      backHref="/descubrimientos"
-      backLabel="Volver a descubrimientos"
+    <InsightDetailScreen
+      id={id}
+      onNavigate={useLegacyNavigate()}
+      onSignOut={useLegacySignOut()}
     />
   );
 }

@@ -33,6 +33,55 @@ describe("exportUserData", () => {
       expect(queries.get(table)?.eq).toHaveBeenCalledWith("user_id", "user-1");
     }
   });
+
+  it("AC-MEM-21 exporta las tres clases, candidatos sin confirmar y auditoria", async () => {
+    const queries = new Map<string, ReturnType<typeof thenableQuery>>();
+    const from = vi.fn((table: string) => {
+      const singular = [
+        "profiles",
+        "user_preferences",
+        "learning_preferences",
+      ].includes(table);
+      const query = thenableQuery(
+        singular
+          ? null
+          : [
+              {
+                id: `${table}-1`,
+                ...(table === "user_profile_candidates"
+                  ? { status: "pending_confirmation" }
+                  : {}),
+              },
+            ],
+      );
+      queries.set(table, query);
+      return query;
+    });
+
+    const exported = await exportUserData({ from } as never, "user-1");
+
+    expect(exported).toMatchObject({
+      profile_facts: [{ id: "user_profile_facts-1" }],
+      profile_candidates: [
+        {
+          id: "user_profile_candidates-1",
+          status: "pending_confirmation",
+        },
+      ],
+      learned_usage_preferences: [{ id: "learned_preferences-1" }],
+      memory_tombstones: [{ id: "memory_tombstones-1" }],
+      memory_events: [{ id: "memory_events-1" }],
+    });
+    for (const table of [
+      "user_profile_facts",
+      "user_profile_candidates",
+      "learned_preferences",
+      "memory_tombstones",
+      "memory_events",
+    ]) {
+      expect(queries.get(table)?.eq).toHaveBeenCalledWith("user_id", "user-1");
+    }
+  });
 });
 
 function thenableQuery(data: Record<string, unknown>[] | null) {

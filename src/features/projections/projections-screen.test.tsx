@@ -216,8 +216,11 @@ describe("Projections W-12", () => {
       screen.getByText("Simular no registra ni modifica nada."),
     ).toBeInTheDocument();
     expect(
-      screen.queryByRole("link", { name: /Registrar gasto/i }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("link", { name: /Registrar gasto/i }),
+    ).toHaveAttribute(
+      "href",
+      "/movimientos/nuevo?tipo=gasto&monto=300.00&categoria=alimentacion&fecha=2026-07-28&origen=proyeccion",
+    );
   });
 
   it("AC-PROY-15: ante fallo no muestra una proyección aproximada de respaldo", async () => {

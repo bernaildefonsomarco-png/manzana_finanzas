@@ -326,6 +326,7 @@ declare
   v_negative_count integer;
   v_positive_weight numeric;
   v_negative_weight numeric;
+  v_consecutive_negative_count integer;
   v_confidence numeric;
   v_learning_enabled boolean;
 begin
@@ -391,7 +392,7 @@ begin
       p_evidence_weight,
       p_sensitivity,
       p_requires_user_confirmation,
-      case when p_polarity = 'negative' then 'suspended' else 'observed' end,
+      'observed',
       p_valid_until,
       case
         when p_valid_until is null then now() + interval '180 days'
@@ -465,6 +466,23 @@ begin
   where candidate_id = v_candidate.id
     and user_id = p_user_id;
 
+  select count(*)
+    into v_consecutive_negative_count
+    from public.learning_evidence evidence
+   where evidence.candidate_id = v_candidate.id
+     and evidence.user_id = p_user_id
+     and evidence.polarity = 'negative'
+     and evidence.observed_at > coalesce(
+       (
+         select max(positive.observed_at)
+           from public.learning_evidence positive
+          where positive.candidate_id = v_candidate.id
+            and positive.user_id = p_user_id
+            and positive.polarity = 'positive'
+       ),
+       '-infinity'::timestamptz
+     );
+
   v_confidence := case
     when v_positive_weight + v_negative_weight = 0 then 0
     else round(
@@ -511,12 +529,14 @@ begin
            or p_sensitivity = 'sensitive',
          status = case
            when status in ('rejected', 'superseded', 'expired') then status
-           when p_polarity = 'negative' then 'suspended'
+           when v_consecutive_negative_count >= 3
+             or v_negative_count >= v_positive_count then 'suspended'
            when status = 'suspended' then status
            else status
          end,
          decision_reason = case
-           when p_polarity = 'negative'
+           when v_consecutive_negative_count >= 3
+             or v_negative_count >= v_positive_count
              then 'contradictory_evidence_requires_resolution'
            else decision_reason
          end,
@@ -551,8 +571,11 @@ begin
     end,
     'policy',
     case
+      when v_consecutive_negative_count >= 3
+        or v_negative_count >= v_positive_count
+        then 'Evidencia contradictoria supero el umbral y suspendio el aprendizaje.'
       when p_polarity = 'negative'
-        then 'Evidencia contradictoria suspendio el aprendizaje.'
+        then 'Se agrego evidencia contradictoria sin superar el umbral de suspension.'
       else 'Se agrego evidencia unica y trazable.'
     end,
     p_evidence_ref,
@@ -563,22 +586,13 @@ begin
   )
   on conflict (user_id, idempotency_key) do nothing;
 
-  if p_polarity = 'negative' then
+  if v_consecutive_negative_count >= 3
+    or v_negative_count >= v_positive_count then
     update public.financial_memory_items
        set lifecycle_status = 'suspended',
            suspended_at = coalesce(p_observed_at, now()),
-           negative_evidence_refs = (
-             select coalesce(array_agg(distinct ref), '{}')
-             from unnest(
-               negative_evidence_refs || array[p_evidence_ref]
-             ) ref
-           ),
-           negative_evidence_count =
-             negative_evidence_count +
-             case
-               when p_evidence_ref = any(negative_evidence_refs) then 0
-               else 1
-             end,
+           negative_evidence_refs = v_negative_refs,
+           negative_evidence_count = v_negative_count,
            confidence = v_confidence,
            explanation =
              'Suspendido porque aparecio evidencia contradictoria.',

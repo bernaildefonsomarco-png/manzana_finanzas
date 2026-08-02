@@ -7,7 +7,10 @@ import {
   unexpectedError,
   validationError,
 } from "@/app/api/_lib/http";
-import { listInsights } from "@/data/repositories/insights.repository";
+import {
+  listInsights,
+  toPublicInsight,
+} from "@/data/repositories/insights.repository";
 import {
   buildCompositeCursorOrFilter,
   clampLimit,
@@ -15,6 +18,7 @@ import {
   paginateComposite,
 } from "@/app/api/_lib/pagination";
 import { INSIGHT_STATUSES, INSIGHT_TYPES } from "@/shared/types/domain";
+import { getExperiencePreferences } from "@/data/repositories/experience-preferences.repository";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +30,7 @@ const QuerySchema = z
     status: z.enum(INSIGHT_STATUSES).optional(),
     type: z.enum(INSIGHT_TYPES).optional(),
     cursor: z.string().optional(),
+    include_expired: z.enum(["true", "false"]).optional(),
   })
   .strict();
 
@@ -46,8 +51,9 @@ export async function GET(request: Request) {
     if (cursor === "invalid") {
       return errorJson("VALIDATION_ERROR", "Cursor invalido.", meta, 400);
     }
-    const limit = clampLimit(query.limit);
+    const limit = Math.min(clampLimit(query.limit), 5);
 
+    const preferences = await getExperiencePreferences(auth.client, auth.userId);
     const insights = await listInsights(auth.client, auth.userId, {
       status: query.status,
       type: query.type,
@@ -55,6 +61,8 @@ export async function GET(request: Request) {
       cursorFilter: cursor
         ? buildCompositeCursorOrFilter(INSIGHTS_ORDER_COLUMNS, cursor, "desc")
         : undefined,
+      includeExpired: query.include_expired === "true",
+      excludeSensitive: preferences.discreet_mode_enabled,
     });
 
     const { data: pageRows, page } = paginateComposite(insights, limit, (row) => [
@@ -62,7 +70,10 @@ export async function GET(request: Request) {
       row.created_at,
     ]);
 
-    return okJson({ insights: pageRows }, { ...meta, page });
+    return okJson(
+      { insights: pageRows.map(toPublicInsight) },
+      { ...meta, page },
+    );
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
     return unexpectedError(error, meta);

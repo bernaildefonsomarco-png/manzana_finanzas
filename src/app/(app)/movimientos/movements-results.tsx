@@ -18,6 +18,8 @@ export function MovementsResults({
   onClearFilters,
   onNewMovement,
   onFetchNextPage,
+  selectedIds,
+  onSelectedChange,
 }: {
   isLoading: boolean;
   isError: boolean;
@@ -29,6 +31,8 @@ export function MovementsResults({
   onClearFilters: () => void;
   onNewMovement: () => void;
   onFetchNextPage: () => void;
+  selectedIds?: ReadonlySet<string>;
+  onSelectedChange?: (movementId: string, selected: boolean) => void;
 }) {
   if (isLoading) {
     return (
@@ -78,7 +82,12 @@ export function MovementsResults({
     <>
       <div className="divide-y divide-border rounded-xl border border-border bg-bg-surface-raised">
         {movements.map((movement) => (
-          <MovementRow key={movement.id} movement={movement} />
+          <MovementRow
+            key={movement.id}
+            movement={movement}
+            selected={selectedIds?.has(movement.id)}
+            onSelectedChange={onSelectedChange ? (selected) => onSelectedChange(movement.id, selected) : undefined}
+          />
         ))}
       </div>
       {hasNextPage ? (

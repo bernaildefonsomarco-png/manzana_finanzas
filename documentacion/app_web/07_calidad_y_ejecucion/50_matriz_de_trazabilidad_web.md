@@ -3,7 +3,7 @@
 **Bloque:** 07 — Calidad y ejecución
 **Alcance:** V1
 **Estado:** vivo
-**Fecha de última actualización:** 29 de julio de 2026
+**Fecha de última actualización:** 1 de agosto de 2026
 **Docs fuente:** los documentos del corpus con identificadores (57 a fecha de hoy)
 **Documentos que dependen de este:** `51` (pruebas), `54` (plan), `55` (ledger)
 
@@ -203,14 +203,14 @@ test las distingue por familia.
 |---|---|
 | `corpus` | 45 |
 | `build` | 16 |
-| `lint` | 36 |
+| `lint` | 39 |
 | `e2e` | 7 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
-| `integracion` | 52 |
-| `unidad` | 89 |
-| **Con clase** | **248** |
-| **Con `TEST` y sin clase** | **384** |
+| `integracion` | 76 |
+| `unidad` | 109 |
+| **Con clase** | **295** |
+| **Con `TEST` y sin clase** | **337** |
 | **Total con `TEST`** | **632** |
 
 `lint` sube de 13 a 14 en `W-01`: `AC-INV-10` recibe su clase al escribir su
@@ -221,8 +221,13 @@ leída sin ejecutar la aplicación.
 `32`/`33` conservan su evidencia individual, pero se pliegan en el
 identificador base y no alteran el censo (`WEB-D231`).
 
+`W-13` añade 47 filas con clase entre `34`, `36` y los carryovers de `25` y
+`33`. Los criterios que todavía requieren `USER`, una `METRIC` real o una
+capacidad no implementada permanecen abiertos y no reciben una clase
+ficticia.
+
 Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
-posible. De los 460 criterios que todavía no tienen clase, 384 ya declaran
+posible. De los 413 criterios que todavía no tienen clase, 337 ya declaran
 `TEST` y quedan pendientes de asignación explícita; los otros 76 aún no tienen
 evidencia de prueba. `AC-HECHO-03` impide que cualquiera llegue a `verificado`
 sin clase.

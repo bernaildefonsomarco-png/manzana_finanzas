@@ -69,7 +69,7 @@ export async function GET(request: Request) {
       listUpcomingCommitments(auth.client, auth.userId, 31),
       listDebtInstallmentCommitments(auth.client, auth.userId, 31),
       listDashboardNudges(auth.client, auth.userId, { limit: 5 }),
-      listDashboardInsights(auth.client, auth.userId, { limit: 3 }),
+      listDashboardInsights(auth.client, auth.userId, { limit: 2 }),
       listRecentMovements(auth.client, auth.userId),
       countConfirmedMovements(auth.client, auth.userId),
       countConfirmedMovementsWithoutAccount(auth.client, auth.userId),

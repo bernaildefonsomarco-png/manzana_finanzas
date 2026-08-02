@@ -7,7 +7,12 @@ import { listSubcategories } from "@/shared/api/categories";
 import { listDebts } from "@/shared/api/debts";
 import { listRecurringRules } from "@/shared/api/recurring";
 import { parseMoneyInput } from "@/shared/money/parse-money-input";
-import { limaLocalInputToUtcIso, utcIsoToLimaParts } from "@/shared/dates/lima";
+import { isoDateInLima, limaLocalInputToUtcIso, utcIsoToLimaParts } from "@/shared/dates/lima";
+import {
+  isMovementDateFuture,
+  movementDateFieldsFromPrefill,
+  type MovementPrefill,
+} from "@/shared/movements/movement-prefill";
 import {
   ApiClientError,
   createDebtOriginationMovement,
@@ -38,14 +43,20 @@ function nowForDatetimeLocalInLima(): string {
  * lo mínimo para una buena experiencia y muestra el mensaje del servidor
  * cuando rechaza algo.
  */
-export function useMovementForm(onSaved: () => void) {
+export function useMovementForm(onSaved: () => void, prefill?: MovementPrefill) {
   const queryClient = useQueryClient();
-  const [type, setType] = useState<MovementType>("gasto");
-  const [amountRaw, setAmountRaw] = useState("");
-  const [occurredAtLocal, setOccurredAtLocal] = useState(nowForDatetimeLocalInLima);
+  const [type, setType] = useState<MovementType>(prefill?.type ?? "gasto");
+  const [amountRaw, setAmountRaw] = useState(prefill?.amount ?? "");
+  const [initialDateFields] = useState(() =>
+    movementDateFieldsFromPrefill(prefill, nowForDatetimeLocalInLima()),
+  );
+  const [occurredDate, setOccurredDate] = useState(initialDateFields.date);
+  const [occurredTime, setOccurredTime] = useState(initialDateFields.time);
   const [description, setDescription] = useState("");
   const [merchant, setMerchant] = useState("");
-  const [category, setCategory] = useState<CategorySelectorValue | null>(null);
+  const [category, setCategory] = useState<CategorySelectorValue | null>(
+    prefill ? { kind: "category", categoryId: prefill.categoryId } : null,
+  );
   const [accountOriginId, setAccountOriginId] = useState("");
   const [accountDestinationId, setAccountDestinationId] = useState("");
   const [boxOriginId, setBoxOriginId] = useState("");
@@ -84,6 +95,9 @@ export function useMovementForm(onSaved: () => void) {
   // `category_id: null`, no un valor especial (`25` §5, W-08).
   function resolveCategorySelection(): { category_id: string | null; subcategory_id: string | null } {
     if (!category || category.kind === "unclassified") return { category_id: null, subcategory_id: null };
+    if (category.kind === "category") {
+      return { category_id: category.categoryId, subcategory_id: null };
+    }
     const subcategory = subcategories.find((s) => s.id === category.subcategoryId);
     return { category_id: subcategory?.category_id ?? null, subcategory_id: category.subcategoryId };
   }
@@ -113,6 +127,19 @@ export function useMovementForm(onSaved: () => void) {
   function changeType(next: MovementType) {
     setType(next);
     resetTypeSpecificFields();
+  }
+
+  function changeOccurredDate(next: string) {
+    setOccurredDate(next);
+    const today = isoDateInLima();
+    if (next === today) {
+      const current = nowForDatetimeLocalInLima().split("T")[1] ?? "";
+      setOccurredTime(current);
+    } else {
+      // Una simulacion solo aporta el dia. Al cambiar a otro dia, exigir la
+      // hora evita inventar un instante para un hecho financiero.
+      setOccurredTime("");
+    }
   }
 
   async function submitGeneric(occurredAtIso: string, amount: number, confirmDuplicate: boolean) {
@@ -194,10 +221,20 @@ export function useMovementForm(onSaved: () => void) {
       setError("No entendí ese monto. Escríbelo como 40 o 40.50.");
       return;
     }
-    if (!occurredAtLocal) {
+    if (!occurredDate) {
       setError("Necesito la fecha.");
       return;
     }
+    const today = isoDateInLima();
+    if (isMovementDateFuture(occurredDate, today)) {
+      setError("Esa fecha todavía no llega. ¿Quieres anotarlo como un pago que viene?");
+      return;
+    }
+    if (!occurredTime) {
+      setError("Necesito la hora para registrar ese día sin inventarla.");
+      return;
+    }
+    const occurredAtLocal = `${occurredDate}T${occurredTime}`;
     const occurredAtIso = limaLocalInputToUtcIso(occurredAtLocal);
     // `RUL-MOV-10`: el servidor es quien decide de verdad; esto solo evita
     // un viaje de red para el caso obvio.
@@ -232,8 +269,11 @@ export function useMovementForm(onSaved: () => void) {
     changeType,
     amountRaw,
     setAmountRaw,
-    occurredAtLocal,
-    setOccurredAtLocal,
+    occurredDate,
+    changeOccurredDate,
+    occurredTime,
+    setOccurredTime,
+    occurredDateIsFuture: isMovementDateFuture(occurredDate, isoDateInLima()),
     description,
     setDescription,
     merchant,

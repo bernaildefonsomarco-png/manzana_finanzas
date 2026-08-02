@@ -1,4 +1,4 @@
-import { Archive, Pencil } from "lucide-react";
+import { Archive, GitMerge, Pencil } from "lucide-react";
 import { Button } from "@/ui/primitivas/button";
 import type { SubcategoryWithCount } from "@/shared/api/categories-types";
 
@@ -6,10 +6,12 @@ export function SubcategoryRow({
   subcategory,
   onRename,
   onArchive,
+  onMerge,
 }: {
   subcategory: SubcategoryWithCount;
   onRename: () => void;
   onArchive: () => void;
+  onMerge: () => void;
 }) {
   return (
     <li className="flex items-center justify-between gap-3 py-3">
@@ -20,6 +22,15 @@ export function SubcategoryRow({
         </p>
       </div>
       <div className="flex items-center gap-2">
+        <Button
+          size="icon"
+          variant="ghost"
+          title={`Fusionar ${subcategory.label}`}
+          aria-label={`Fusionar ${subcategory.label}`}
+          onClick={onMerge}
+        >
+          <GitMerge className="h-4 w-4" aria-hidden="true" />
+        </Button>
         <Button
           size="icon"
           variant="ghost"

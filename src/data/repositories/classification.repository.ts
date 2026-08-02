@@ -279,6 +279,7 @@ export async function validateMovementClassificationReferences(
   input: {
     userId: string;
     subcategoryId: string | null;
+    includeManuallyCorrected?: boolean;
     relatedPersonId: string | null;
     tagIds: string[];
   },
@@ -406,4 +407,283 @@ export async function appendClassificationAudit(
     metadata: { command_id: input.commandId },
   });
   if (error) throw error;
+}
+
+export type ClassificationOperationCode =
+  | "MOVEMENT_NOT_FOUND"
+  | "SUBCATEGORY_NOT_FOUND"
+  | "CATEGORY_NOT_FOUND"
+  | "CLASSIFICATION_BATCH_NOT_FOUND"
+  | "CLASSIFICATION_BATCH_EMPTY"
+  | "CLASSIFICATION_UNDO_EXPIRED"
+  | "CLASSIFICATION_IDEMPOTENCY_CONFLICT"
+  | "CLASSIFICATION_UNDO_ALREADY_APPLIED"
+  | "SUBCATEGORY_MERGE_SELF"
+  | "SUBCATEGORY_MERGE_CATEGORY_MISMATCH"
+  | "SUBCATEGORY_UNDO_NAME_CONFLICT"
+  | "MOVEMENT_TYPE_NOT_CLASSIFIABLE";
+
+export class ClassificationOperationError extends Error {
+  constructor(
+    readonly code: ClassificationOperationCode,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ClassificationOperationError";
+  }
+}
+
+export type ClassificationBatchResult = {
+  batch?: Record<string, unknown>;
+  preview?: boolean;
+  count?: number;
+  sample?: Record<string, unknown> | null;
+  movements?: Array<Record<string, unknown>>;
+  excluded_count?: number;
+  target_count_before?: number;
+  target_count_after?: number;
+  source?: Record<string, unknown>;
+  target?: Record<string, unknown>;
+  idempotent: boolean;
+};
+
+export async function classifyMovement(
+  client: Client,
+  input: {
+    userId: string;
+    movementId: string;
+    categoryId: CategoryId | null;
+    subcategoryId: string | null;
+    idempotencyKey: string;
+    traceId: string;
+  },
+): Promise<{ movement: Record<string, unknown>; idempotent: boolean }> {
+  const { data, error } = await callUntypedRpc(client, "commit_movement_classification", {
+    p_user_id: input.userId,
+    p_movement_id: input.movementId,
+    p_category_id: input.categoryId,
+    p_subcategory_id: input.subcategoryId,
+    p_idempotency_key: input.idempotencyKey,
+    p_trace_id: input.traceId,
+  });
+  if (error) throw classificationOperationError(error);
+  return asOperationResult(data) as { movement: Record<string, unknown>; idempotent: boolean };
+}
+
+export async function classifyMovementsInBulk(
+  client: Client,
+  input: {
+    userId: string;
+    movementIds: string[];
+    excludedIds: string[];
+    categoryId: CategoryId | null;
+    subcategoryId: string | null;
+    includeManuallyCorrected?: boolean;
+    preview: boolean;
+    idempotencyKey: string;
+  },
+): Promise<ClassificationBatchResult> {
+  const { data, error } = await callUntypedRpc(client, "commit_classification_bulk", {
+    p_user_id: input.userId,
+    p_movement_ids: [...new Set(input.movementIds)],
+    p_excluded_ids: [...new Set(input.excludedIds)],
+    p_category_id: input.categoryId,
+    p_subcategory_id: input.subcategoryId,
+    p_include_manually_corrected: input.includeManuallyCorrected ?? false,
+    p_preview: input.preview,
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) throw classificationOperationError(error);
+  return asOperationResult(data) as ClassificationBatchResult;
+}
+
+export async function undoClassificationBatch(
+  client: Client,
+  input: {
+    userId: string;
+    batchId: string;
+    expectedKind: "bulk" | "merge";
+    expectedSourceId?: string | null;
+    idempotencyKey: string;
+  },
+): Promise<ClassificationBatchResult> {
+  const { data, error } = await callUntypedRpc(client, "undo_classification_batch", {
+    p_user_id: input.userId,
+    p_batch_id: input.batchId,
+    p_expected_kind: input.expectedKind,
+    p_expected_source_id: input.expectedSourceId ?? null,
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) throw classificationOperationError(error);
+  return asOperationResult(data) as ClassificationBatchResult;
+}
+
+export async function mergeSubcategories(
+  client: Client,
+  input: {
+    userId: string;
+    sourceId: string;
+    targetId: string;
+    preview: boolean;
+    idempotencyKey: string;
+  },
+): Promise<ClassificationBatchResult> {
+  const { data, error } = await callUntypedRpc(client, "commit_subcategory_merge", {
+    p_user_id: input.userId,
+    p_source_id: input.sourceId,
+    p_target_id: input.targetId,
+    p_preview: input.preview,
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) throw classificationOperationError(error);
+  return asOperationResult(data) as ClassificationBatchResult;
+}
+
+export type ClassificationWhy = {
+  movement: {
+    id: string;
+    category_id: string | null;
+    subcategory_id: string | null;
+  };
+  explanation: string;
+  evidence: Array<{
+    polarity: "positive" | "negative";
+    text: string;
+    observed_at: string;
+  }>;
+  forget_targets: Array<{ memory_id: string; summary: string }>;
+};
+
+export async function getMovementClassificationWhy(
+  client: Client,
+  userId: string,
+  movementId: string,
+): Promise<ClassificationWhy | null> {
+  const movementResult = await client
+    .from("movements")
+    .select("id,category_id,subcategory_id,description,merchant")
+    .eq("user_id", userId)
+    .eq("id", movementId)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (movementResult.error) throw movementResult.error;
+  if (!movementResult.data) return null;
+
+  const evidenceResult = await client
+    .from("learning_evidence")
+    .select("candidate_id,polarity,source_type,observed_at,claim_value")
+    .eq("user_id", userId)
+    .eq("source_entity_type", "movement")
+    .eq("source_entity_id", movementId)
+    .order("observed_at", { ascending: false })
+    .limit(20);
+  if (evidenceResult.error) throw evidenceResult.error;
+
+  const evidenceRows = evidenceResult.data ?? [];
+  const candidateIds = [...new Set(
+    evidenceRows
+      .map((row) => row.candidate_id)
+      .filter((value): value is string => Boolean(value)),
+  )];
+  const candidates = candidateIds.length === 0
+    ? []
+    : await readWhyCandidates(client, userId, candidateIds);
+  const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  const memories = candidateIds.length === 0
+    ? []
+    : await readWhyMemories(client, userId, candidateIds);
+  const subject = movementResult.data.merchant ?? movementResult.data.description ?? "este movimiento";
+  const visibleEvidence = evidenceRows.map((row) => ({
+    polarity: row.polarity as "positive" | "negative",
+    text: row.polarity === "negative"
+      ? `Corregiste una clasificacion anterior de ${subject}.`
+      : `Elegiste esta clasificacion para ${subject}.`,
+    observed_at: row.observed_at,
+  }));
+  const latestPositive = evidenceRows.find((row) => row.polarity === "positive");
+  const latestCandidate = latestPositive?.candidate_id
+    ? candidateById.get(latestPositive.candidate_id)
+    : undefined;
+
+  return {
+    movement: {
+      id: movementResult.data.id,
+      category_id: movementResult.data.category_id,
+      subcategory_id: movementResult.data.subcategory_id,
+    },
+    explanation: latestCandidate?.proposal_summary
+      ?? (visibleEvidence.length > 0
+        ? `Esta clasificacion viene de una correccion que confirmaste para ${subject}.`
+        : "No encontre un aprendizaje aplicado: esta clasificacion pudo elegirse directamente."),
+    evidence: visibleEvidence,
+    forget_targets: memories
+      .map((memory) => ({
+        memory_id: memory.id,
+        summary: memory.summary,
+      })),
+  };
+}
+
+async function readWhyCandidates(client: Client, userId: string, ids: string[]) {
+  const { data, error } = await client
+    .from("learning_candidates")
+    .select("id,proposal_summary,status")
+    .eq("user_id", userId)
+    .in("id", ids);
+  if (error) throw error;
+  return data ?? [];
+}
+
+async function readWhyMemories(client: Client, userId: string, candidateIds: string[]) {
+  const { data, error } = await client
+    .from("financial_memory_items")
+    .select("id,summary,source_candidate_id,lifecycle_status")
+    .eq("user_id", userId)
+    .eq("lifecycle_status", "confirmed")
+    .in("source_candidate_id", candidateIds);
+  if (error) throw error;
+  return data ?? [];
+}
+
+function classificationOperationError(error: unknown): ClassificationOperationError {
+  const haystack = error && typeof error === "object"
+    ? JSON.stringify(error)
+    : String(error);
+  const mappings: Array<[string, ClassificationOperationCode, string]> = [
+    ["CLASSIFICATION_RESOURCE_NOT_FOUND", "MOVEMENT_NOT_FOUND", "No encontre uno de esos movimientos."],
+    ["MOVEMENT_NOT_FOUND", "MOVEMENT_NOT_FOUND", "No encontre ese movimiento."],
+    ["SUBCATEGORY_NOT_FOUND", "SUBCATEGORY_NOT_FOUND", "No encontre esa subcategoria."],
+    ["CATEGORY_NOT_FOUND", "CATEGORY_NOT_FOUND", "Esa categoria no existe."],
+    ["CLASSIFICATION_BATCH_NOT_FOUND", "CLASSIFICATION_BATCH_NOT_FOUND", "No encontre ese lote."],
+    ["CLASSIFICATION_BATCH_EMPTY", "CLASSIFICATION_BATCH_EMPTY", "No hay movimientos que coincidan con eso."],
+    ["CLASSIFICATION_UNDO_EXPIRED", "CLASSIFICATION_UNDO_EXPIRED", "Ese cambio ya no se puede deshacer en bloque."],
+    ["CLASSIFICATION_IDEMPOTENCY_CONFLICT", "CLASSIFICATION_IDEMPOTENCY_CONFLICT", "Esa Idempotency-Key ya se uso con otros datos."],
+    ["CLASSIFICATION_UNDO_ALREADY_APPLIED", "CLASSIFICATION_UNDO_ALREADY_APPLIED", "Ese lote ya fue deshecho."],
+    ["SUBCATEGORY_MERGE_SELF", "SUBCATEGORY_MERGE_SELF", "No puedo fusionar una subcategoria consigo misma."],
+    ["SUBCATEGORY_MERGE_CATEGORY_MISMATCH", "SUBCATEGORY_MERGE_CATEGORY_MISMATCH", "Solo puedo fusionar subcategorias de la misma categoria."],
+    ["SUBCATEGORY_UNDO_NAME_CONFLICT", "SUBCATEGORY_UNDO_NAME_CONFLICT", "Ya existe otra subcategoria con el nombre original. Resuelve ese duplicado y vuelve a intentar."],
+    ["MOVEMENT_TYPE_NOT_CLASSIFIABLE", "MOVEMENT_TYPE_NOT_CLASSIFIABLE", "Ese tipo de movimiento no admite categoria."],
+  ];
+  const match = mappings.find(([token]) => haystack.includes(token));
+  return match
+    ? new ClassificationOperationError(match[1], match[2])
+    : new ClassificationOperationError("CLASSIFICATION_BATCH_NOT_FOUND", "No pude completar la clasificacion.");
+}
+
+function asOperationResult(data: Json): Record<string, unknown> {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Respuesta invalida de la operacion de clasificacion.");
+  }
+  return data as Record<string, unknown>;
+}
+
+async function callUntypedRpc(
+  client: Client,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ data: Json; error: unknown }> {
+  return await (client.rpc as unknown as (
+    functionName: string,
+    functionArgs: Record<string, unknown>,
+  ) => Promise<{ data: Json; error: unknown }>)(name, args);
 }

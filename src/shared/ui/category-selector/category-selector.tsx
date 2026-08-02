@@ -7,9 +7,11 @@ import { Popover, PopoverContent } from "@/ui/primitivas/popover";
 import { Button } from "@/ui/primitivas/button";
 import { queryKeys } from "@/shared/data/query-keys";
 import { getCategories, listSubcategories } from "@/shared/api/categories";
+import type { CategoryId } from "@/shared/types/domain";
 import { CategorySelectorGroup } from "./category-selector-group";
 
 export type CategorySelectorValue =
+  | { kind: "category"; categoryId: CategoryId }
   | { kind: "subcategory"; subcategoryId: string }
   | { kind: "unclassified" };
 
@@ -46,6 +48,10 @@ export function CategorySelector({
   function computeSelectedLabel(): string {
     if (!value) return "Elige una categoria";
     if (value.kind === "unclassified") return UNCLASSIFIED_LABEL;
+    if (value.kind === "category") {
+      const category = categories.find((item) => item.id === value.categoryId);
+      return category?.label ?? (loading ? "Cargando…" : "Categoría no disponible");
+    }
     const subcategory = subcategories.find((s) => s.id === value.subcategoryId);
     if (!subcategory) return loading ? "Cargando…" : "Subcategoria archivada";
     const category = categories.find((c) => c.id === subcategory.category_id);

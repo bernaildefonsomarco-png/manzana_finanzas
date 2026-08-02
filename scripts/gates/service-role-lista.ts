@@ -129,12 +129,6 @@ export const EXCEPCIONES_TEMPORALES: EntradaLista[] = [
   "v1/debts/*/installments/*/skip",
   "v1/related-persons",
   "v1/related-persons/*",
-  // Descubrimientos (34)
-  "v1/insights/*/action",
-  "v1/insights/*/dismiss",
-  "v1/insights/*/seen",
-  // Memoria (36)
-  "v1/memory",
   // Recordatorios (37)
   "v1/nudges/*/dismiss",
   "v1/preferences/nudges",

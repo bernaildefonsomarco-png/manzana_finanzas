@@ -1,29 +1,14 @@
 import { ApiClientError } from "@/features/movements/movements-api";
-import type { InsightCandidate } from "@/shared/types/domain";
-import type {
-  InsightDetail,
-  InsightEvidence,
-} from "./insights-types";
+import type { InsightType } from "@/shared/types/domain";
+import type { InsightDetail, InsightEvidence, PublicInsight } from "./insights-types";
 
 type ApiResponse<T> =
-  | {
-      ok: true;
-      data: T;
-      meta: { trace_id: string };
-    }
-  | {
-      ok: false;
-      error: {
-        code: string;
-        message: string;
-        details?: Record<string, unknown>;
-      };
-      meta: { trace_id: string };
-    };
+  | { ok: true; data: T; meta: { trace_id: string; idempotent_replay?: boolean } }
+  | { ok: false; error: { code: string; message: string; details?: Record<string, unknown> }; meta: { trace_id: string } };
 
-export async function listInsights(): Promise<InsightCandidate[]> {
-  const data = await request<{ insights: InsightCandidate[] }>(
-    "/api/v1/insights?limit=50",
+export async function listInsights(includeExpired = false): Promise<PublicInsight[]> {
+  const data = await request<{ insights: PublicInsight[] }>(
+    `/api/v1/insights?limit=5&include_expired=${includeExpired}`,
   );
   return data.insights;
 }
@@ -33,58 +18,43 @@ export function getInsightDetail(id: string): Promise<InsightDetail> {
 }
 
 export async function getInsightEvidence(id: string): Promise<InsightEvidence> {
-  const data = await request<{ evidence: InsightEvidence }>(
-    `/api/v1/insights/${id}/evidence`,
-  );
+  const data = await request<{ evidence: InsightEvidence }>(`/api/v1/insights/${id}/evidence`);
   return data.evidence;
 }
 
-export async function markInsightSeen(id: string): Promise<InsightCandidate> {
-  const data = await request<{ insight: InsightCandidate }>(
-    `/api/v1/insights/${id}/seen`,
-    { method: "POST" },
+export async function interactWithInsight(
+  id: string,
+  operation: "seen" | "dismiss" | "feedback" | "action",
+  body?: Record<string, unknown>,
+): Promise<PublicInsight> {
+  const data = await request<{ insight: PublicInsight }>(
+    `/api/v1/insights/${id}/${operation}`,
+    writeInit(body),
   );
   return data.insight;
 }
 
-export async function dismissInsight(
-  id: string,
-  reason: string,
-): Promise<InsightCandidate> {
-  const data = await request<{ insight: InsightCandidate }>(
-    `/api/v1/insights/${id}/dismiss`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason }),
-    },
-  );
-  return data.insight;
+export async function setInsightTypeMuted(
+  type: InsightType,
+  muted: boolean,
+): Promise<void> {
+  await request(`/api/v1/insights/types/${type}/${muted ? "mute" : "unmute"}`, writeInit());
 }
 
-export async function recordInsightAction(
-  id: string,
-  actionKey: string,
-  metadata: Record<string, unknown> = {},
-): Promise<InsightCandidate> {
-  const data = await request<{ insight: InsightCandidate; note: string }>(
-    `/api/v1/insights/${id}/action`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action_key: actionKey, metadata }),
+function writeInit(body?: Record<string, unknown>): RequestInit {
+  return {
+    method: "POST",
+    headers: {
+      "Idempotency-Key": crypto.randomUUID(),
+      ...(body ? { "Content-Type": "application/json" } : {}),
     },
-  );
-  return data.insight;
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  };
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const response = await fetch(path, {
-    credentials: "same-origin",
-    ...init,
-  });
-  const payload = (await response.json()) as ApiResponse<T>;
-
+  const response = await fetch(path, { credentials: "same-origin", ...init });
+  const payload = await response.json() as ApiResponse<T>;
   if (!payload.ok) {
     throw new ApiClientError(
       payload.error.code,
@@ -94,6 +64,5 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       payload.error.details ?? {},
     );
   }
-
   return payload.data;
 }

@@ -10,13 +10,15 @@ import { queryKeys } from "@/shared/data/query-keys";
 import { getCategories, listSubcategories } from "@/shared/api/categories";
 import { RenameSubcategoryDialog } from "./rename-subcategory-dialog";
 import { ArchiveSubcategoryDialog } from "./archive-subcategory-dialog";
+import { MergeSubcategoryDialog } from "./merge-subcategory-dialog";
 import { SubcategoryRow } from "./subcategory-row";
 import type { UserSubcategory } from "@/shared/types/domain";
 
 type DetailDialogState =
   | { kind: "none" }
   | { kind: "rename"; subcategory: UserSubcategory }
-  | { kind: "archive"; subcategory: UserSubcategory };
+  | { kind: "archive"; subcategory: UserSubcategory }
+  | { kind: "merge"; subcategory: UserSubcategory };
 
 /** SCR-CAT-02: subcategorias de una categoria, renombrar y archivar (WEB-D190: fusion diferida a W-13). */
 export function CategoryDetailView({ categoryId }: { categoryId: string }) {
@@ -104,6 +106,7 @@ export function CategoryDetailView({ categoryId }: { categoryId: string }) {
                 subcategory={subcategory}
                 onRename={() => setDialog({ kind: "rename", subcategory })}
                 onArchive={() => setDialog({ kind: "archive", subcategory })}
+                onMerge={() => setDialog({ kind: "merge", subcategory })}
               />
             ))}
           </ul>
@@ -124,6 +127,18 @@ export function CategoryDetailView({ categoryId }: { categoryId: string }) {
           open
           onOpenChange={(next) => !next && setDialog({ kind: "none" })}
           onDone={onDone}
+        />
+      ) : null}
+      {dialog.kind === "merge" ? (
+        <MergeSubcategoryDialog
+          source={dialog.subcategory}
+          candidates={subcategories.filter((subcategory) => subcategory.id !== dialog.subcategory.id)}
+          open
+          onOpenChange={(next) => !next && setDialog({ kind: "none" })}
+          onDone={(message) => {
+            setFeedback(message);
+            void subcategoriesQuery.refetch();
+          }}
         />
       ) : null}
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { AppShell } from "@/features/app-shell/app-shell";
@@ -9,7 +9,9 @@ import { DialogTitle } from "@/ui/primitivas/dialog-parts";
 import { useLegacyNavigate, useLegacySignOut } from "@/shared/legacy-nav/legacy-view-routes";
 import { queryKeys } from "@/shared/data/query-keys";
 import { listMovements } from "@/shared/api/movements";
+import { parseMovementPrefill } from "@/shared/movements/movement-prefill";
 import { MovementForm } from "./movement-form/movement-form";
+import { BulkClassificationPanel } from "./bulk-classification-panel";
 import { MovementsFiltersBar } from "./movements-filters-bar";
 import { MovementsResults } from "./movements-results";
 
@@ -27,6 +29,15 @@ export function MovementsListScreen({ openNewOnMount = false }: { openNewOnMount
 
   const [searchInput, setSearchInput] = useState(searchParams.get("q") ?? "");
   const [newMovementOpen, setNewMovementOpen] = useState(openNewOnMount);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const searchParamsString = searchParams.toString();
+  const prefillResult = useMemo(
+    () =>
+      openNewOnMount
+        ? parseMovementPrefill(new URLSearchParams(searchParamsString))
+        : ({ status: "empty" } as const),
+    [openNewOnMount, searchParamsString],
+  );
 
   const filters = {
     q: searchParams.get("q") ?? undefined,
@@ -91,13 +102,35 @@ export function MovementsListScreen({ openNewOnMount = false }: { openNewOnMount
           onClearFilters={clearFilters}
           onNewMovement={() => setNewMovementOpen(true)}
           onFetchNextPage={() => query.fetchNextPage()}
+          selectedIds={selectedIds}
+          onSelectedChange={(movementId, selected) => {
+            setSelectedIds((current) => {
+              const next = new Set(current);
+              if (selected) next.add(movementId);
+              else next.delete(movementId);
+              return next;
+            });
+          }}
         />
+        {selectedIds.size > 0 ? (
+          <BulkClassificationPanel
+            movementIds={[...selectedIds]}
+            onDone={() => {
+              void query.refetch();
+            }}
+          />
+        ) : null}
       </div>
 
       <Dialog open={newMovementOpen} onOpenChange={(open) => (open ? setNewMovementOpen(true) : closeNewMovement())}>
         <DialogContent size="lg" className="max-h-[90vh] overflow-y-auto">
           <DialogTitle>Nuevo movimiento</DialogTitle>
-          <MovementForm onSaved={closeNewMovement} onCancel={closeNewMovement} />
+          <MovementForm
+            onSaved={closeNewMovement}
+            onCancel={closeNewMovement}
+            prefill={prefillResult.status === "valid" ? prefillResult.value : undefined}
+            prefillError={prefillResult.status === "invalid" ? prefillResult.message : undefined}
+          />
         </DialogContent>
       </Dialog>
     </AppShell>

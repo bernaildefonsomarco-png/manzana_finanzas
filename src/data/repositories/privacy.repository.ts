@@ -28,6 +28,11 @@ export type UserDataExport = {
   learning_candidates: Array<Record<string, unknown>>;
   learning_evidence: Array<Record<string, unknown>>;
   learning_history: Array<Record<string, unknown>>;
+  profile_facts: Array<Record<string, unknown>>;
+  profile_candidates: Array<Record<string, unknown>>;
+  learned_usage_preferences: Array<Record<string, unknown>>;
+  memory_tombstones: Array<Record<string, unknown>>;
+  memory_events: Array<Record<string, unknown>>;
   conversation_memory: Array<Record<string, unknown>>;
   source_summary: {
     gmail: Array<Record<string, unknown>>;
@@ -70,6 +75,11 @@ export async function exportUserData(
     learningCandidates,
     learningEvidence,
     learningHistory,
+    profileFacts,
+    profileCandidates,
+    learnedUsagePreferences,
+    memoryTombstones,
+    memoryEvents,
     conversationMemory,
   ] = await Promise.all([
     client
@@ -232,6 +242,41 @@ export async function exportUserData(
       .eq("user_id", userId)
       .order("created_at"),
     client
+      .from("user_profile_facts")
+      .select(
+        "id,subject_key,statement,origin,status,validity,last_confirmed_at,expires_at,positive_evidence_refs,negative_evidence_refs,positive_evidence_count,negative_evidence_count,supersedes_fact_id,created_at,updated_at,metadata",
+      )
+      .eq("user_id", userId)
+      .order("created_at"),
+    client
+      .from("user_profile_candidates")
+      .select(
+        "id,subject_key,statement,status,ask_count,evidence_refs,last_asked_at,decided_at,created_at,updated_at,metadata",
+      )
+      .eq("user_id", userId)
+      .order("created_at"),
+    client
+      .from("learned_preferences")
+      .select(
+        "id,source_module,key,value,status,observation_count,last_observed_at,positive_evidence_refs,negative_evidence_refs,positive_evidence_count,negative_evidence_count,supersedes_preference_id,created_at,updated_at,metadata",
+      )
+      .eq("user_id", userId)
+      .order("created_at"),
+    client
+      .from("memory_tombstones")
+      .select(
+        "id,scope,subject_key,reason,created_at,lifted_at,lifted_by,metadata",
+      )
+      .eq("user_id", userId)
+      .order("created_at"),
+    client
+      .from("memory_events")
+      .select(
+        "id,scope,subject_id,subject_key,action,previous,next,actor,created_at,metadata",
+      )
+      .eq("user_id", userId)
+      .order("created_at"),
+    client
       .from("conversation_memory_states")
       .select(
         "id,channel,scope,last_intent,last_query_kind,last_query_text,last_query_date_range,last_result_summary,last_tool_name,referenced_movements,referenced_entities,continuity_hint,source_ref,expires_at,created_at,updated_at",
@@ -264,6 +309,11 @@ export async function exportUserData(
     learningCandidates,
     learningEvidence,
     learningHistory,
+    profileFacts,
+    profileCandidates,
+    learnedUsagePreferences,
+    memoryTombstones,
+    memoryEvents,
     conversationMemory,
   ];
   const failed = results.find((result) => result.error);
@@ -299,6 +349,11 @@ export async function exportUserData(
     learning_candidates: asRecords(learningCandidates.data),
     learning_evidence: asRecords(learningEvidence.data),
     learning_history: asRecords(learningHistory.data),
+    profile_facts: asRecords(profileFacts.data),
+    profile_candidates: asRecords(profileCandidates.data),
+    learned_usage_preferences: asRecords(learnedUsagePreferences.data),
+    memory_tombstones: asRecords(memoryTombstones.data),
+    memory_events: asRecords(memoryEvents.data),
     conversation_memory: asRecords(conversationMemory.data),
     source_summary: {
       gmail: asRecords(gmailConnections.data),

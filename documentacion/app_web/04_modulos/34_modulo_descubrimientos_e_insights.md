@@ -150,7 +150,7 @@ En V1-web solo se usa `channel = 'dashboard'`. El valor `whatsapp` queda en la
 restricción sin usar, para la fase 2. Lo mismo con el estado `sent` del enum
 `insight_status`: en V1-web nada se envía, se muestra.
 
-### 4.3 Migración `060` — lo que falta
+### 4.3 Migración `062` — lo que falta
 
 **Cuatro tipos nuevos** en `insight_type`, todos de la clase A, todos
 imposibles antes porque sus módulos de origen no existían:
@@ -829,7 +829,7 @@ la reescritura no sirvió de nada por bien argumentada que esté.
 - Índices existentes de la migración `027`, que se conservan:
   `(user_id, rank_score desc, quality_score desc, created_at desc)`,
   `(user_id, status, expires_at)`, `(user_id, type, fingerprint)`.
-  Más el nuevo `(user_id, type, feedback)` de la migración `060`.
+  Más el nuevo `(user_id, type, feedback)` de la migración `062`.
 - **El cálculo nunca ocurre en una petición del usuario.** Dispara un trabajo:
   - por evento, para la clase A, que es barata y depende de pocas filas;
   - una vez al día, para la clase B, que agrega historial.
@@ -892,47 +892,85 @@ la reescritura no sirvió de nada por bien argumentada que esté.
 ## 20. Criterios de aceptación
 
 - `AC-DESC-01` — Un usuario con una deuda registrada y **cero gastos** recibe
-  al menos un descubrimiento de clase A. Evidencia: `TEST`.
+  al menos un descubrimiento de clase A. Evidencia: `TEST`. Clase: `unidad`.
+  Cierra en `W-13`: `insight-engine.test.ts` prueba deuda sin gastos y el
+  catálogo determinístico devuelve clase A con evidencia de la deuda.
 - `AC-DESC-02` — Un usuario con un presupuesto y 3 gastos en su categoría
   recibe `budget_risk` **sin ningún requisito de historial**.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-13`: el ejemplo numérico
+  exacto vive en `insight-engine.test.ts`.
 - `AC-DESC-03` — No existe en el código ningún umbral que dependa del total de
   movimientos del usuario. Todos son por dimensión. Evidencia: `CODE` + `TEST`.
+  Clase: `unidad`. Cierra en `W-13`: los umbrales están aislados por tipo y la
+  prueba de 60 movimientos no habilita un comercio con una sola evidencia.
 - `AC-DESC-04` — Con 60 movimientos de los cuales 1 es de una categoría, no se
-  genera ningún descubrimiento sobre esa categoría. Evidencia: `TEST`.
+  genera ningún descubrimiento sobre esa categoría. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-13`: `RUL-DESC-03` usa exactamente 60 y 1.
 - `AC-DESC-05` — Ningún descubrimiento se muestra con `evidence` vacía o con
-  referencias que no resuelven. Evidencia: `TEST`.
+  referencias que no resuelven. Evidencia: `TEST`. Clase: `integracion`. No
+  cierra: el motor descarta evidencia vacía y detalle resuelve movimientos,
+  pero faltan resolutores y pruebas para referencias de presupuesto, meta,
+  deuda y recurrente.
 - `AC-DESC-06` — `confidence`, `quality_score` y `rank_score` **no aparecen en
-  ninguna respuesta de API**. Evidencia: `TEST`.
+  ninguna respuesta de API**. Evidencia: `TEST`. Clase: `unidad`. Cierra en
+  `W-13`: presentador y rutas de lista/detalle/evidencia lo prueban por
+  serialización; `RUL-HECHO-02` detectó la fuga al reintroducirla.
 - `AC-DESC-07` — Ningún texto de descubrimiento contiene las palabras
   prohibidas de §3 ni un consejo sobre qué hacer con el dinero.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `unidad`. No cierra: el motor y las
+  superficies usan copy neutral, pero falta un barrido exhaustivo del catálogo
+  y no hubo sesión `USER` en `W-13`.
 - `AC-DESC-08` — Corregir un movimiento que sostiene un descubrimiento
   mostrado lo pasa a `outdated` y **muestra que cambió**, sin corregir en
-  silencio. Evidencia: `TEST` + `USER`.
+  silencio. Evidencia: `TEST` + `USER`. Clase: `integracion`. No cierra: el
+  reconciliador sí marca `outdated` y la UI lo anuncia, pero falta la prueba
+  integral movimiento corregido → worker → descubrimiento y la sesión `USER`.
 - `AC-DESC-09` — El `fingerprint` no incluye cifras: corregir un monto no
-  genera un descubrimiento duplicado. Evidencia: `TEST`.
+  genera un descubrimiento duplicado. Evidencia: `TEST`. Clase: `unidad`. No
+  cierra: el código construye fingerprints sin cifras y reconcilia por esa
+  clave, pero falta la prueba explícita monto corregido → mismo candidato.
 - `AC-DESC-10` — Un tipo marcado `no_util` dos veces deja de generarse para
-  ese usuario. Evidencia: `TEST`.
+  ese usuario. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-13`:
+  `insight_feedback_events` conserva ambos hechos, los retries son idempotentes
+  y `shouldSuppressInsightDraft` prueba el segundo `no_util`.
 - `AC-DESC-11` — Se muestran como máximo 5 en `/descubrimientos` y 2 en el
-  Inicio. Evidencia: `TEST`.
+  Inicio. Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-13`: la ruta
+  limita a cinco y `GET /dashboard/home` presenta como máximo dos.
 - `AC-DESC-12` — Los sensibles nunca aparecen en el Inicio y se ocultan
-  enteros en modo discreto. Evidencia: `TEST`.
+  enteros en modo discreto. Evidencia: `TEST`. Clase: `unidad`. Cierra en
+  `W-13`: Inicio filtra `sensitive`, lista/detalle no revelan el sensible en
+  modo discreto y la tarjeta sustituye cuerpo, evidencia y monto.
 - `AC-DESC-13` — Al menos 1 de cada 3 mostrados es de clase C cuando hay
-  material. Evidencia: `TEST` + `METRIC`.
+  material. Evidencia: `TEST` + `METRIC`. Clase: `unidad`. No cierra: la
+  selección balanceada está probada, pero la señal `METRIC` aún no tiene una
+  ventana observada con datos reales.
 - `AC-DESC-14` — Ninguna acción de un descubrimiento escribe dinero: todas
-  navegan. Evidencia: `CODE` + `TEST`.
-- `AC-DESC-15` — Ningún `GET` genera descubrimientos. Evidencia: `CODE`.
+  navegan. Evidencia: `CODE` + `TEST`. Clase: `lint`. Cierra en `W-13`: el
+  presentador solo emite destinos y el contrato compartido de precarga abre
+  Movimientos sin guardar (`WEB-D238`).
+- `AC-DESC-15` — Ningún `GET` genera descubrimientos. Evidencia: `CODE`. Clase:
+  `lint`. Cierra en `W-13`: generar/reconciliar vive exclusivamente en el job
+  interno autenticado; los GET consultan candidatos persistidos.
 - `AC-DESC-16` — El detalle muestra qué se contó y **qué no se contó**.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `unidad`. No cierra: el DOM prueba ambos
+  bloques y referencias, pero falta la validación `USER` exigida.
 - `AC-DESC-17` — El estado `outdated` se anuncia con texto, no solo con color.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-13`:
+  `insights-screen.test.tsx` exige el texto visible de cambio.
 - `AC-DESC-18` — El motor no puede generar un descubrimiento, solo leer los
-  existentes. Evidencia: `TEST`.
+  existentes. Evidencia: `TEST`. Clase: `lint`. No cierra: la arquitectura
+  separa la evaluación en el job interno y el motor no registra ese comando,
+  pero falta el test estructural que falle si aparece una herramienta de
+  generación.
 - `AC-DESC-19` — El fallo del trabajo de cálculo no muestra ningún error al
-  usuario y sí emite alerta de observabilidad. Evidencia: `TEST`.
+  usuario y sí emite alerta de observabilidad. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-13`: el job registra `worker_job_runs.status=failed`,
+  `last_error`, señal de alerta y log estructurado; ninguna ruta de usuario lo
+  ejecuta. `RUL-HECHO-02` falló al degradar el estado a `partial`.
 - `AC-DESC-20` — La mediana de días hasta el primer descubrimiento de clase A
-  es menor que 1. Evidencia: `METRIC`.
+  es menor que 1. Evidencia: `METRIC`. No cierra: el
+  producto ya puede generar clase A desde el primer dato suficiente, pero no
+  existe todavía una cohorte real sobre la que calcular la mediana.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

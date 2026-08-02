@@ -437,6 +437,120 @@ export type Database = {
         }
         Relationships: []
       }
+      classification_action_receipts: {
+        Row: {
+          created_at: string
+          id: string
+          idempotency_key: string
+          movement_id: string | null
+          operation: string
+          request_fingerprint: string
+          response: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          movement_id?: string | null
+          operation: string
+          request_fingerprint: string
+          response: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          movement_id?: string | null
+          operation?: string
+          request_fingerprint?: string
+          response?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "classification_action_receipts_movement_id_fkey"
+            columns: ["movement_id"]
+            isOneToOne: false
+            referencedRelation: "movements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      classification_batches: {
+        Row: {
+          created_at: string
+          id: string
+          idempotency_key: string
+          kind: string
+          metadata: Json
+          movement_changes: Json
+          movement_count: number
+          source_subcategory_id: string | null
+          status: string
+          target_category_id: string | null
+          target_subcategory_id: string | null
+          undo_until: string
+          undone_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          kind: string
+          metadata?: Json
+          movement_changes: Json
+          movement_count: number
+          source_subcategory_id?: string | null
+          status?: string
+          target_category_id?: string | null
+          target_subcategory_id?: string | null
+          undo_until: string
+          undone_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          kind?: string
+          metadata?: Json
+          movement_changes?: Json
+          movement_count?: number
+          source_subcategory_id?: string | null
+          status?: string
+          target_category_id?: string | null
+          target_subcategory_id?: string | null
+          undo_until?: string
+          undone_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "classification_batches_source_subcategory_id_fkey"
+            columns: ["source_subcategory_id"]
+            isOneToOne: false
+            referencedRelation: "user_subcategories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "classification_batches_target_category_id_fkey"
+            columns: ["target_category_id"]
+            isOneToOne: false
+            referencedRelation: "categories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "classification_batches_target_subcategory_id_fkey"
+            columns: ["target_subcategory_id"]
+            isOneToOne: false
+            referencedRelation: "user_subcategories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       conversation_memory_states: {
         Row: {
           channel: string
@@ -556,6 +670,57 @@ export type Database = {
             columns: ["movement_id"]
             isOneToOne: false
             referencedRelation: "movements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      debt_operation_receipts: {
+        Row: {
+          created_at: string
+          debt_id: string
+          id: string
+          idempotency_key: string
+          installment_id: string | null
+          operation: string
+          request_hash: string
+          result: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          debt_id: string
+          id?: string
+          idempotency_key: string
+          installment_id?: string | null
+          operation: string
+          request_hash: string
+          result: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          debt_id?: string
+          id?: string
+          idempotency_key?: string
+          installment_id?: string | null
+          operation?: string
+          request_hash?: string
+          result?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "debt_operation_receipts_debt_id_fkey"
+            columns: ["debt_id"]
+            isOneToOne: false
+            referencedRelation: "debts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "debt_operation_receipts_installment_id_fkey"
+            columns: ["installment_id"]
+            isOneToOne: false
+            referencedRelation: "debt_installments"
             referencedColumns: ["id"]
           },
         ]
@@ -1361,6 +1526,47 @@ export type Database = {
           },
         ]
       }
+      insight_action_receipts: {
+        Row: {
+          created_at: string
+          id: string
+          idempotency_key: string
+          insight_candidate_id: string | null
+          operation: string
+          request_fingerprint: string
+          response: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          insight_candidate_id?: string | null
+          operation: string
+          request_fingerprint: string
+          response: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          insight_candidate_id?: string | null
+          operation?: string
+          request_fingerprint?: string
+          response?: Json
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insight_action_receipts_insight_candidate_id_fkey"
+            columns: ["insight_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "insight_candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       insight_candidates: {
         Row: {
           action: Json | null
@@ -1371,6 +1577,8 @@ export type Database = {
           evidence: Json
           evidence_text: string
           expires_at: string | null
+          feedback: Database["public"]["Enums"]["insight_feedback"] | null
+          feedback_at: string | null
           fingerprint: string
           id: string
           metadata: Json
@@ -1398,6 +1606,8 @@ export type Database = {
           evidence?: Json
           evidence_text: string
           expires_at?: string | null
+          feedback?: Database["public"]["Enums"]["insight_feedback"] | null
+          feedback_at?: string | null
           fingerprint: string
           id?: string
           metadata?: Json
@@ -1425,6 +1635,8 @@ export type Database = {
           evidence?: Json
           evidence_text?: string
           expires_at?: string | null
+          feedback?: Database["public"]["Enums"]["insight_feedback"] | null
+          feedback_at?: string | null
           fingerprint?: string
           id?: string
           metadata?: Json
@@ -1489,6 +1701,77 @@ export type Database = {
           },
         ]
       }
+      insight_feedback_events: {
+        Row: {
+          created_at: string
+          id: string
+          idempotency_key: string
+          insight_candidate_id: string
+          insight_type: Database["public"]["Enums"]["insight_type"]
+          metadata: Json
+          user_id: string
+          value: Database["public"]["Enums"]["insight_feedback"]
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          insight_candidate_id: string
+          insight_type: Database["public"]["Enums"]["insight_type"]
+          metadata?: Json
+          user_id: string
+          value: Database["public"]["Enums"]["insight_feedback"]
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          insight_candidate_id?: string
+          insight_type?: Database["public"]["Enums"]["insight_type"]
+          metadata?: Json
+          user_id?: string
+          value?: Database["public"]["Enums"]["insight_feedback"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "insight_feedback_events_insight_candidate_id_fkey"
+            columns: ["insight_candidate_id"]
+            isOneToOne: false
+            referencedRelation: "insight_candidates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      insight_type_preferences: {
+        Row: {
+          insight_type: Database["public"]["Enums"]["insight_type"]
+          last_idempotency_key: string
+          metadata: Json
+          muted: boolean
+          muted_at: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          insight_type: Database["public"]["Enums"]["insight_type"]
+          last_idempotency_key: string
+          metadata?: Json
+          muted?: boolean
+          muted_at?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          insight_type?: Database["public"]["Enums"]["insight_type"]
+          last_idempotency_key?: string
+          metadata?: Json
+          muted?: boolean
+          muted_at?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       internal_event_log: {
         Row: {
           attempt_count: number
@@ -1535,6 +1818,71 @@ export type Database = {
             columns: ["outbox_id"]
             isOneToOne: false
             referencedRelation: "transactional_outbox"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      learned_preferences: {
+        Row: {
+          created_at: string
+          id: string
+          key: string
+          last_observed_at: string
+          metadata: Json
+          negative_evidence_count: number
+          negative_evidence_refs: string[]
+          observation_count: number
+          positive_evidence_count: number
+          positive_evidence_refs: string[]
+          source_module: string
+          status: string
+          supersedes_preference_id: string | null
+          updated_at: string
+          user_id: string
+          value: Json
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          key: string
+          last_observed_at?: string
+          metadata?: Json
+          negative_evidence_count?: number
+          negative_evidence_refs?: string[]
+          observation_count?: number
+          positive_evidence_count?: number
+          positive_evidence_refs?: string[]
+          source_module: string
+          status?: string
+          supersedes_preference_id?: string | null
+          updated_at?: string
+          user_id: string
+          value: Json
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          key?: string
+          last_observed_at?: string
+          metadata?: Json
+          negative_evidence_count?: number
+          negative_evidence_refs?: string[]
+          observation_count?: number
+          positive_evidence_count?: number
+          positive_evidence_refs?: string[]
+          source_module?: string
+          status?: string
+          supersedes_preference_id?: string | null
+          updated_at?: string
+          user_id?: string
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "learned_preferences_supersedes_preference_id_fkey"
+            columns: ["supersedes_preference_id"]
+            isOneToOne: false
+            referencedRelation: "learned_preferences"
             referencedColumns: ["id"]
           },
         ]
@@ -1810,6 +2158,114 @@ export type Database = {
           metadata?: Json
           updated_at?: string
           updated_by?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      memory_events: {
+        Row: {
+          action: string
+          actor: string
+          created_at: string
+          id: string
+          idempotency_key: string | null
+          metadata: Json
+          next: Json | null
+          previous: Json | null
+          scope: Database["public"]["Enums"]["memory_scope"]
+          subject_id: string
+          subject_key: string
+          user_id: string
+        }
+        Insert: {
+          action: string
+          actor: string
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          next?: Json | null
+          previous?: Json | null
+          scope: Database["public"]["Enums"]["memory_scope"]
+          subject_id: string
+          subject_key: string
+          user_id: string
+        }
+        Update: {
+          action?: string
+          actor?: string
+          created_at?: string
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          next?: Json | null
+          previous?: Json | null
+          scope?: Database["public"]["Enums"]["memory_scope"]
+          subject_id?: string
+          subject_key?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      memory_operation_receipts: {
+        Row: {
+          created_at: string
+          id: string
+          idempotency_key: string
+          request_fingerprint: string
+          response: Json
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          request_fingerprint: string
+          response: Json
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          request_fingerprint?: string
+          response?: Json
+          user_id?: string
+        }
+        Relationships: []
+      }
+      memory_tombstones: {
+        Row: {
+          created_at: string
+          id: string
+          lifted_at: string | null
+          lifted_by: string | null
+          metadata: Json
+          reason: string | null
+          scope: Database["public"]["Enums"]["memory_scope"]
+          subject_key: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lifted_at?: string | null
+          lifted_by?: string | null
+          metadata?: Json
+          reason?: string | null
+          scope: Database["public"]["Enums"]["memory_scope"]
+          subject_key: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lifted_at?: string | null
+          lifted_by?: string | null
+          metadata?: Json
+          reason?: string | null
+          scope?: Database["public"]["Enums"]["memory_scope"]
+          subject_key?: string
           user_id?: string
         }
         Relationships: []
@@ -2508,9 +2964,9 @@ export type Database = {
           cancelled_at: string | null
           category_id: string | null
           confidence: number | null
+          created_at: string
           creation_idempotency_key: string | null
           creation_request_hash: string | null
-          created_at: string
           currency: string
           date_window_end_day: number | null
           date_window_start_day: number | null
@@ -2540,9 +2996,9 @@ export type Database = {
           cancelled_at?: string | null
           category_id?: string | null
           confidence?: number | null
+          created_at?: string
           creation_idempotency_key?: string | null
           creation_request_hash?: string | null
-          created_at?: string
           currency?: string
           date_window_end_day?: number | null
           date_window_start_day?: number | null
@@ -2572,9 +3028,9 @@ export type Database = {
           cancelled_at?: string | null
           category_id?: string | null
           confidence?: number | null
+          created_at?: string
           creation_idempotency_key?: string | null
           creation_request_hash?: string | null
-          created_at?: string
           currency?: string
           date_window_end_day?: number | null
           date_window_start_day?: number | null
@@ -2948,6 +3404,119 @@ export type Database = {
           },
         ]
       }
+      user_profile_candidates: {
+        Row: {
+          ask_count: number
+          created_at: string
+          decided_at: string | null
+          evidence_refs: string[]
+          id: string
+          last_asked_at: string | null
+          metadata: Json
+          statement: string
+          status: string
+          subject_key: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ask_count?: number
+          created_at?: string
+          decided_at?: string | null
+          evidence_refs?: string[]
+          id?: string
+          last_asked_at?: string | null
+          metadata?: Json
+          statement: string
+          status?: string
+          subject_key: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ask_count?: number
+          created_at?: string
+          decided_at?: string | null
+          evidence_refs?: string[]
+          id?: string
+          last_asked_at?: string | null
+          metadata?: Json
+          statement?: string
+          status?: string
+          subject_key?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_profile_facts: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          id: string
+          last_confirmed_at: string | null
+          metadata: Json
+          negative_evidence_count: number
+          negative_evidence_refs: string[]
+          origin: string
+          positive_evidence_count: number
+          positive_evidence_refs: string[]
+          statement: string
+          status: string
+          subject_key: string
+          supersedes_fact_id: string | null
+          updated_at: string
+          user_id: string
+          validity: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_confirmed_at?: string | null
+          metadata?: Json
+          negative_evidence_count?: number
+          negative_evidence_refs?: string[]
+          origin: string
+          positive_evidence_count?: number
+          positive_evidence_refs?: string[]
+          statement: string
+          status?: string
+          subject_key: string
+          supersedes_fact_id?: string | null
+          updated_at?: string
+          user_id: string
+          validity?: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          last_confirmed_at?: string | null
+          metadata?: Json
+          negative_evidence_count?: number
+          negative_evidence_refs?: string[]
+          origin?: string
+          positive_evidence_count?: number
+          positive_evidence_refs?: string[]
+          statement?: string
+          status?: string
+          subject_key?: string
+          supersedes_fact_id?: string | null
+          updated_at?: string
+          user_id?: string
+          validity?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_profile_facts_supersedes_fact_id_fkey"
+            columns: ["supersedes_fact_id"]
+            isOneToOne: false
+            referencedRelation: "user_profile_facts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_subcategories: {
         Row: {
           category_id: string
@@ -3190,6 +3759,10 @@ export type Database = {
         }
         Returns: Json
       }
+      apply_user_memory_lifecycle: {
+        Args: { p_now?: string; p_user_id: string }
+        Returns: Json
+      }
       check_and_increment_rate_limit: {
         Args: {
           p_key: string
@@ -3234,6 +3807,20 @@ export type Database = {
           p_idempotency_key: string
           p_operation: string
           p_payload: Json
+        }
+        Returns: Json
+      }
+      commit_classification_bulk: {
+        Args: {
+          p_category_id: string | null
+          p_excluded_ids: string[]
+          p_idempotency_key: string
+          p_include_manually_corrected: boolean
+          p_movement_ids: string[]
+          p_now?: string
+          p_preview: boolean
+          p_subcategory_id: string | null
+          p_user_id: string
         }
         Returns: Json
       }
@@ -3292,6 +3879,18 @@ export type Database = {
         }
         Returns: Json
       }
+      commit_financial_memory_operation: {
+        Args: {
+          p_idempotency_key: string
+          p_memory_id: string
+          p_now?: string
+          p_operation: string
+          p_reason: string
+          p_summary: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       commit_gmail_connection: {
         Args: {
           p_email_address: string
@@ -3336,6 +3935,29 @@ export type Database = {
         }
         Returns: Json
       }
+      commit_insight_action: {
+        Args: {
+          p_idempotency_key: string
+          p_insight_id: string
+          p_operation: string
+          p_trace_id: string
+          p_user_id: string
+          p_value: string
+        }
+        Returns: Json
+      }
+      commit_movement_classification: {
+        Args: {
+          p_category_id: string | null
+          p_idempotency_key: string
+          p_movement_id: string
+          p_now?: string
+          p_subcategory_id: string | null
+          p_trace_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       commit_pending_debt_payment: {
         Args: {
           p_account_deltas: Json
@@ -3368,6 +3990,39 @@ export type Database = {
         }
         Returns: Json
       }
+      commit_preference_memory_operation: {
+        Args: {
+          p_idempotency_key: string
+          p_now?: string
+          p_operation: string
+          p_preference_id: string
+          p_reason: string
+          p_user_id: string
+          p_value: Json
+        }
+        Returns: Json
+      }
+      commit_profile_memory_operation: {
+        Args: {
+          p_fact_id: string
+          p_idempotency_key: string
+          p_now?: string
+          p_operation: string
+          p_reason: string
+          p_statement: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      commit_recurring_occurrence_skip: {
+        Args: {
+          p_occurrence_id: string
+          p_recurring_rule_id: string
+          p_trace_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       commit_recurring_payment: {
         Args: {
           p_account_deltas: Json
@@ -3381,11 +4036,13 @@ export type Database = {
         }
         Returns: Json
       }
-      commit_recurring_occurrence_skip: {
+      commit_subcategory_merge: {
         Args: {
-          p_occurrence_id: string
-          p_recurring_rule_id: string
-          p_trace_id: string
+          p_idempotency_key: string
+          p_now?: string
+          p_preview: boolean
+          p_source_id: string
+          p_target_id: string
           p_user_id: string
         }
         Returns: Json
@@ -3676,6 +4333,14 @@ export type Database = {
         Returns: Json
       }
       expire_financial_learning: { Args: { p_now?: string }; Returns: Json }
+      forget_all_user_memory: {
+        Args: {
+          p_confirmation: string
+          p_idempotency_key: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       get_budget_suggestions: {
         Args: {
           p_as_of?: string
@@ -3825,6 +4490,19 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      record_classification_correction_evidence: {
+        Args: {
+          p_evidence_ref: string
+          p_movement: Database["public"]["Tables"]["movements"]["Row"]
+          p_next_category_id: string
+          p_next_subcategory_id: string
+          p_observed_at?: string
+          p_previous_category_id: string
+          p_previous_subcategory_id: string
+          p_user_id: string
+        }
+        Returns: undefined
       }
       record_internal_event_processing: {
         Args: {
@@ -3979,35 +4657,6 @@ export type Database = {
         }
         Returns: Json
       }
-      resolve_budget_suggestion: {
-        Args: {
-          p_idempotency_key: string
-          p_payload: Json
-          p_resolution: string
-          p_suggestion_key: string
-        }
-        Returns: Json
-      }
-      reverse_debt_payment: {
-        Args: {
-          p_mode: string
-          p_movement_id: string
-          p_reason: string
-          p_trace_id: string
-          p_user_id: string
-        }
-        Returns: Json
-      }
-      reverse_recurring_payment: {
-        Args: {
-          p_mode: string
-          p_movement_id: string
-          p_reason: string
-          p_trace_id: string
-          p_user_id: string
-        }
-        Returns: Json
-      }
       requeue_outbox_event: {
         Args: {
           p_outbox_id: string
@@ -4042,11 +4691,47 @@ export type Database = {
           isSetofReturn: false
         }
       }
-      run_budget_daily_lifecycle: {
+      resolve_budget_suggestion: {
         Args: {
-          p_as_of?: string | null
-          p_user_id?: string | null
+          p_idempotency_key: string
+          p_payload: Json
+          p_resolution: string
+          p_suggestion_key: string
         }
+        Returns: Json
+      }
+      resolve_profile_candidate: {
+        Args: {
+          p_candidate_id: string
+          p_idempotency_key: string
+          p_resolution: string
+          p_statement: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      reverse_debt_payment: {
+        Args: {
+          p_mode: string
+          p_movement_id: string
+          p_reason: string
+          p_trace_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      reverse_recurring_payment: {
+        Args: {
+          p_mode: string
+          p_movement_id: string
+          p_reason: string
+          p_trace_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      run_budget_daily_lifecycle: {
+        Args: { p_as_of: string | null; p_user_id?: string | null }
         Returns: Json
       }
       set_dashboard_nudge_preference: {
@@ -4086,6 +4771,16 @@ export type Database = {
         }
         Returns: Json
       }
+      set_insight_type_muted: {
+        Args: {
+          p_idempotency_key: string
+          p_insight_type: Database["public"]["Enums"]["insight_type"]
+          p_muted: boolean
+          p_trace_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
       set_learning_preferences: {
         Args: {
           p_allow_narrative_memory: boolean
@@ -4121,6 +4816,17 @@ export type Database = {
           p_quiet_hours_end: string
           p_quiet_hours_start: string
           p_trace_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      undo_classification_batch: {
+        Args: {
+          p_batch_id: string
+          p_expected_kind: string
+          p_expected_source_id: string
+          p_idempotency_key: string
+          p_now?: string
           p_user_id: string
         }
         Returns: Json
@@ -4181,6 +4887,7 @@ export type Database = {
         | "cancelled"
         | "archived"
       goal_status: "activa" | "alcanzada" | "pausada" | "archivada"
+      insight_feedback: "util" | "no_util"
       insight_status:
         | "candidate"
         | "validated"
@@ -4207,6 +4914,10 @@ export type Database = {
         | "contextual"
         | "progress"
         | "data_quality"
+        | "budget_risk"
+        | "goal_pace"
+        | "commitment_uncovered"
+        | "merchant_pattern"
       installment_status:
         | "pending"
         | "due_soon"
@@ -4214,6 +4925,7 @@ export type Database = {
         | "paid"
         | "rescheduled"
         | "skipped"
+      memory_scope: "clasificacion" | "perfil" | "preferencia"
       movement_source:
         | "whatsapp"
         | "dashboard_manual"
@@ -4474,6 +5186,7 @@ export const Constants = {
         "archived",
       ],
       goal_status: ["activa", "alcanzada", "pausada", "archivada"],
+      insight_feedback: ["util", "no_util"],
       insight_status: [
         "candidate",
         "validated",
@@ -4501,6 +5214,10 @@ export const Constants = {
         "contextual",
         "progress",
         "data_quality",
+        "budget_risk",
+        "goal_pace",
+        "commitment_uncovered",
+        "merchant_pattern",
       ],
       installment_status: [
         "pending",
@@ -4510,6 +5227,7 @@ export const Constants = {
         "rescheduled",
         "skipped",
       ],
+      memory_scope: ["clasificacion", "perfil", "preferencia"],
       movement_source: [
         "whatsapp",
         "dashboard_manual",

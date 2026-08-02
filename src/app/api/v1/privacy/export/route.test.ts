@@ -46,6 +46,11 @@ beforeEach(() => {
     learning_candidates: [],
     learning_evidence: [],
     learning_history: [],
+    profile_facts: [],
+    profile_candidates: [],
+    learned_usage_preferences: [],
+    memory_tombstones: [],
+    memory_events: [],
     conversation_memory: [],
     source_summary: { gmail: [], whatsapp_linked: false },
   });
@@ -69,6 +74,7 @@ describe("privacy export route", () => {
       goals: [],
       budget_progress_snapshots: [],
       budget_suggestion_decisions: [],
+      profile_candidates: [],
     });
     expect(JSON.stringify(payload)).not.toMatch(/refresh_token|access_token/i);
     expect(mocks.exportUserData).toHaveBeenCalledWith({}, "user-1");

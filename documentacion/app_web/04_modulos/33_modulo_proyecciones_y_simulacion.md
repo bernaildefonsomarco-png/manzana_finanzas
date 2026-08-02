@@ -408,9 +408,10 @@ la defensa contra `RUL-CUENTAS-04`.
 ### `SCR-PROY-03` — Simulador
 
 Modal o sección. Pide monto y opcionalmente en qué y cuándo. Devuelve la
-respuesta de tres partes de `RUL-PROY-05`. En `W-12` permite recalcular o
-cerrar; registrar el gasto queda diferido hasta que `W-13` defina el contrato
-compartido de precarga de Movimientos (`WEB-D233`).
+respuesta de tres partes de `RUL-PROY-05`. Desde `W-13`, registrar abre
+Movimientos con el contrato estricto de precarga compartida (`WEB-D238`): no
+guarda nada, conserva una fecha futura bloqueada y nunca inventa subcategoría
+ni hora pasada.
 
 ### `SCR-PROY-04` — Cómo vas, en el Inicio
 
@@ -424,13 +425,13 @@ Solo aparece si hay datos suficientes (`RUL-PROY-04`).
 | `ACT-PROY-01` | Ver proyección de cierre | No | — | `proyeccion.vista` |
 | `ACT-PROY-02` | Ver el detalle de la aritmética | No | — | `proyeccion.detalle_consultado` |
 | `ACT-PROY-03` | Simular un gasto | No | — | `simulacion.ejecutada` |
-| `ACT-PROY-04` | Registrar el gasto simulado — diferido a `W-13` (`WEB-D233`) | Sí | Eliminando el movimiento | `movimiento.creado` |
+| `ACT-PROY-04` | Registrar el gasto simulado por precarga (`WEB-D238`) | Sí, en Movimientos | Eliminando el movimiento | `movimiento.creado` |
 | `ACT-PROY-05` | Ver situación del mes | No | — | `situacion.consultada` |
 | `ACT-PROY-06` | Ver de dónde sale un componente | No | — | `evidencia.consultada` |
 
-Solo `ACT-PROY-04` escribirá, y lo hará por el módulo 26 con sus reglas
-normales cuando exista el contrato de precarga. Las acciones entregadas en
-`W-12` son de lectura.
+Solo `ACT-PROY-04` termina escribiendo, y lo hace por el módulo 26 con sus
+reglas normales después de que el usuario revise y guarde. Proyecciones sigue
+sin mutar dinero: el enlace entregado en `W-13` solo transporta precarga.
 
 ## 10. API
 

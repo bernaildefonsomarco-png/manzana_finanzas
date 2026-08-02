@@ -9,10 +9,13 @@ import { useMovementForm } from "./use-movement-form";
 import { MovementTypeFields } from "./movement-type-fields";
 import { MOVEMENT_TYPE_LABEL, MOVEMENT_TYPE_ORDER, MOVEMENT_TYPE_SPECIALIZED_LINK } from "./movement-types";
 import type { MovementType } from "@/shared/types/domain";
+import type { MovementPrefill } from "@/shared/movements/movement-prefill";
 
 type Props = {
   onSaved: () => void;
   onCancel: () => void;
+  prefill?: MovementPrefill;
+  prefillError?: string;
 };
 
 /**
@@ -21,8 +24,8 @@ type Props = {
  * El estado y el envio viven en `useMovementForm`; los campos por tipo, en
  * `MovementTypeFields` — este fichero solo compone ambos.
  */
-export function MovementForm({ onSaved, onCancel }: Props) {
-  const form = useMovementForm(onSaved);
+export function MovementForm({ onSaved, onCancel, prefill, prefillError }: Props) {
+  const form = useMovementForm(onSaved, prefill);
   const specializedLink = MOVEMENT_TYPE_SPECIALIZED_LINK[form.type];
 
   return (
@@ -46,7 +49,13 @@ export function MovementForm({ onSaved, onCancel }: Props) {
         </RadioGroup>
       </fieldset>
 
-      <div className="grid grid-cols-2 gap-4">
+      {prefillError ? (
+        <p role="alert" className="rounded-lg border border-warning-subtle bg-warning-subtle/30 p-3 text-sm text-text">
+          {prefillError} Puedes completar el movimiento manualmente.
+        </p>
+      ) : null}
+
+      <div className="grid gap-4 sm:grid-cols-3">
         <FieldShell label="Monto" htmlFor="movement-amount" required>
           <Input
             id="movement-amount"
@@ -57,15 +66,29 @@ export function MovementForm({ onSaved, onCancel }: Props) {
             prefix="S/"
           />
         </FieldShell>
-        <FieldShell label="Fecha y hora" htmlFor="movement-occurred-at" required>
+        <FieldShell label="Fecha" htmlFor="movement-occurred-date" required>
           <Input
-            id="movement-occurred-at"
-            type="datetime-local"
-            value={form.occurredAtLocal}
-            onChange={(event) => form.setOccurredAtLocal(event.target.value)}
+            id="movement-occurred-date"
+            type="date"
+            value={form.occurredDate}
+            onChange={(event) => form.changeOccurredDate(event.target.value)}
+          />
+        </FieldShell>
+        <FieldShell label="Hora" htmlFor="movement-occurred-time" required>
+          <Input
+            id="movement-occurred-time"
+            type="time"
+            value={form.occurredTime}
+            onChange={(event) => form.setOccurredTime(event.target.value)}
           />
         </FieldShell>
       </div>
+
+      {form.occurredDateIsFuture ? (
+        <p role="alert" className="text-sm text-warning">
+          Esa fecha todavía no llega. Cámbiala para registrar el movimiento o anótalo en Pagos que vienen.
+        </p>
+      ) : null}
 
       <MovementTypeFields form={form} />
 
@@ -108,7 +131,7 @@ export function MovementForm({ onSaved, onCancel }: Props) {
         <Button type="button" variant="ghost" onClick={onCancel}>
           Cancelar
         </Button>
-        <Button type="submit" disabled={form.submitting}>
+        <Button type="submit" disabled={form.submitting || form.occurredDateIsFuture}>
           {form.submitting ? "Guardando…" : "Guardar movimiento"}
         </Button>
       </div>

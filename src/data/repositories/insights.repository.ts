@@ -8,6 +8,10 @@ import {
   type InsightDraft,
 } from "@/core/insights/insight-engine";
 import {
+  listBudgetsWithProgress,
+  listGoals,
+} from "@/data/repositories/budgets.repository";
+import {
   getActiveAccounts,
   getActiveBoxes,
 } from "@/data/repositories/accounts.repository";
@@ -19,6 +23,7 @@ import {
   listRecurringDashboard,
   listUpcomingCommitments,
 } from "@/data/repositories/recurring.repository";
+import { getProjectionSnapshot } from "@/data/repositories/projections.repository";
 import type { Database, Json } from "@/data/supabase/types";
 import { syncInsightNudgeCandidate } from "@/data/repositories/nudges.repository";
 import type {
@@ -85,7 +90,13 @@ export async function evaluateAdvancedInsights(
     recurringCommitments,
     debtCommitments,
     activePendingCount,
+    activePendingIds,
     feedbackHistory,
+    budgets,
+    goals,
+    projectionSnapshot,
+    controls,
+    profileFacts,
   ] = await Promise.all([
     listInsightSourceMovements(client, userId, now),
     getProfile(client, userId),
@@ -99,7 +110,22 @@ export async function evaluateAdvancedInsights(
     listUpcomingCommitments(client, userId, 31),
     listDebtInstallmentCommitments(client, userId, 31, now),
     countActiveInsightPendingItems(client, userId),
+    listActiveInsightPendingIds(client, userId),
     listRecentInsightFeedback(client, userId),
+    listBudgetsWithProgress(client, userId, {
+      date: localIsoDate(now, "America/Lima"),
+      periodKind: "mensual",
+      statuses: ["activo"],
+      limit: 100,
+    }),
+    listGoals(client, userId, {
+      statuses: ["activa", "alcanzada"],
+      limit: 100,
+      asOf: localIsoDate(now, "America/Lima"),
+    }),
+    getProjectionSnapshot(client, userId, now),
+    listInsightControls(client, userId),
+    listConfirmedProfileFacts(client, userId, now),
   ]);
   const { movementTags, tags } = await listInsightContextTags(
     client,
@@ -113,12 +139,49 @@ export async function evaluateAdvancedInsights(
     accounts,
     boxes,
     commitments: [...recurringCommitments, ...debtCommitments],
+    budgets: budgets.map((budget) => ({
+      id: budget.id,
+      category_id: budget.category_id,
+      category_name: budget.category_name,
+      period_start: budget.period_start,
+      period_end: budget.period_end,
+      amount: budget.amount,
+      spent: budget.spent,
+      status: budget.status,
+    })),
+    goals: goals.map((goal) => ({
+      id: goal.id,
+      name: goal.name,
+      target_amount: goal.target_amount,
+      target_date: goal.target_date,
+      box_id: goal.box_id,
+      current_balance: goal.current_balance,
+      status: goal.status,
+    })),
+    projection: {
+      ...projectionSnapshot.projection,
+      assumption_refs: projectionSnapshot.breakdown.lines.flatMap(
+        (line) => line.refs,
+      ),
+      movement_refs:
+        projectionSnapshot.projection.assumptions.find(
+          (assumption) => assumption.kind === "daily_pace",
+        )?.refs ?? [],
+    },
+    profileFacts,
     movementTags,
     tags,
     activePendingCount,
+    activePendingIds,
     now,
     timezone: profile?.timezone ?? "America/Lima",
-  });
+  }).filter(
+    (draft) =>
+      !controls.mutedTypes.has(draft.type) &&
+      (controls.noUsefulByType.get(draft.type) ?? 0) < 2 &&
+      draft.sourceEntityIds.length > 0 &&
+      Object.keys(draft.evidence).length > 0,
+  );
   const experienceAgent = options.experienceAgent ?? new InsightExperienceAgent();
   const narratorAgent = options.narratorAgent ?? new InsightNarratorAgent();
 
@@ -255,11 +318,12 @@ export async function listDashboardInsights(
     .select("*")
     .eq("user_id", userId)
     .in("status", dashboardVisibleStatuses)
+    .neq("risk_level", "sensitive")
     .or(`expires_at.is.null,expires_at.gt.${nowIso}`)
     .order("rank_score", { ascending: false })
     .order("quality_score", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(options.limit ?? 10);
+    .limit(Math.min(options.limit ?? 2, 2));
 
   if (error) {
     logger.error("insights.list_dashboard_failed", { error, user_id: userId });
@@ -331,7 +395,77 @@ export type InsightListOptions = {
   /** Filtro `.or(...)` de cursor ya construido (`pagination.ts`,
    * `buildCompositeCursorOrFilter(["rank_score","created_at"], cursor, "desc")`). */
   cursorFilter?: string;
+  includeExpired?: boolean;
+  excludeSensitive?: boolean;
 };
+
+export type PublicInsight = {
+  id: string;
+  type: InsightCandidate["type"];
+  class: "A" | "B" | "C";
+  status: InsightStatus;
+  period_start: string;
+  period_end: string;
+  risk_level: InsightCandidate["risk_level"];
+  title: string;
+  body: string;
+  evidence_text: string;
+  evidence_refs: string[];
+  action: Record<string, unknown> | null;
+  feedback: "util" | "no_util" | null;
+  expires_at: string | null;
+  displayed_at: string | null;
+  changed_notice: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const classAInsightTypes = new Set<InsightCandidate["type"]>([
+  "budget_risk",
+  "goal_pace",
+  "commitment_uncovered",
+  "debt",
+  "free_money",
+  "box_saving",
+  "projection",
+  "data_quality",
+]);
+const classCInsightTypes = new Set<InsightCandidate["type"]>([
+  "learning_progress",
+  "progress",
+]);
+
+export function insightClass(type: InsightCandidate["type"]): "A" | "B" | "C" {
+  if (classAInsightTypes.has(type)) return "A";
+  if (classCInsightTypes.has(type)) return "C";
+  return "B";
+}
+
+export function toPublicInsight(insight: InsightCandidate): PublicInsight {
+  return {
+    id: insight.id,
+    type: insight.type,
+    class: insightClass(insight.type),
+    status: insight.status,
+    period_start: insight.period_start,
+    period_end: insight.period_end,
+    risk_level: insight.risk_level,
+    title: insight.title,
+    body: insight.body,
+    evidence_text: insight.evidence_text,
+    evidence_refs: insight.source_entity_ids,
+    action: insight.action,
+    feedback: insight.feedback ?? null,
+    expires_at: insight.expires_at,
+    displayed_at: insight.displayed_at,
+    changed_notice:
+      insight.status === "outdated"
+        ? "Este descubrimiento cambio porque corregiste o eliminaste datos que lo sostenian."
+        : null,
+    created_at: insight.created_at,
+    updated_at: insight.updated_at,
+  };
+}
 
 export type InsightDetail = {
   insight: InsightCandidate;
@@ -344,6 +478,14 @@ export type InsightDetail = {
   }>;
 };
 
+export type PublicInsightDetail = Omit<InsightDetail, "insight"> & {
+  insight: PublicInsight;
+};
+
+export function toPublicInsightDetail(detail: InsightDetail): PublicInsightDetail {
+  return { ...detail, insight: toPublicInsight(detail.insight) };
+}
+
 export async function listInsights(
   client: Client,
   userId: string,
@@ -355,8 +497,15 @@ export async function listInsights(
     .eq("user_id", userId);
 
   if (options.status) query = query.eq("status", options.status);
-  else query = query.in("status", [...dashboardVisibleStatuses, "outdated"]);
+  else {
+    query = query.in("status", [
+      ...dashboardVisibleStatuses,
+      "outdated",
+      ...(options.includeExpired ? (["expired"] as InsightStatus[]) : []),
+    ]);
+  }
   if (options.type) query = query.eq("type", options.type);
+  if (options.excludeSensitive) query = query.neq("risk_level", "sensitive");
   if (!options.status || !["outdated", "expired"].includes(options.status)) {
     query = query.or(
       `expires_at.is.null,expires_at.gt.${(options.now ?? new Date()).toISOString()}`,
@@ -368,9 +517,41 @@ export async function listInsights(
     .order("rank_score", { ascending: false })
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
-    .limit(Math.min(Math.max(options.limit ?? 20, 1), 100));
+    .limit(100);
   if (error) throw error;
-  return (data ?? []) as unknown as InsightCandidate[];
+  return balanceInsightClasses((data ?? []) as unknown as InsightCandidate[])
+    .slice(0, Math.min(Math.max(options.limit ?? 20, 1), 100));
+}
+
+export function balanceInsightClasses(rows: InsightCandidate[]): InsightCandidate[] {
+  if (rows.length < 3 || rows.slice(0, 3).some((row) => insightClass(row.type) === "C")) {
+    return rows;
+  }
+  const progressIndex = rows.findIndex((row) => insightClass(row.type) === "C");
+  if (progressIndex < 0) return rows;
+  const result = [...rows];
+  const [progress] = result.splice(progressIndex, 1);
+  result.splice(2, 0, progress);
+  return result;
+}
+
+export async function listInsightSummary(
+  client: Client,
+  userId: string,
+  options: { now?: Date; discreetMode?: boolean } = {},
+): Promise<InsightCandidate[]> {
+  const rows = await listInsights(client, userId, {
+    limit: 20,
+    now: options.now,
+  });
+  return rows
+    .filter(
+      (insight) =>
+        insight.source_entity_ids.length > 0 &&
+        Object.keys(asRecord(insight.evidence)).length > 0 &&
+        insight.risk_level !== "sensitive",
+    )
+    .slice(0, 2);
 }
 
 export async function getInsightById(
@@ -482,10 +663,84 @@ export async function getInsightEvidence(
     evidence: insight.evidence,
     source_facts: insight.source_facts,
     source_entity_ids: insight.source_entity_ids,
-    confidence: insight.confidence,
     action: insight.action,
     methodology: asRecord(insight.metadata).methodology ?? null,
     related_movements: relatedMovements,
+  };
+}
+
+export type InsightInteractionResult = {
+  insight: InsightCandidate;
+  idempotent: boolean;
+};
+
+export class InsightOperationError extends Error {
+  constructor(readonly code: "INSIGHT_IDEMPOTENCY_CONFLICT") {
+    super(code);
+    this.name = "InsightOperationError";
+  }
+}
+
+export async function commitInsightInteraction(
+  client: Client,
+  userId: string,
+  input: {
+    insightId: string;
+    operation: "seen" | "feedback" | "dismiss" | "acted";
+    value?: string;
+    idempotencyKey: string;
+    traceId: string;
+  },
+): Promise<InsightInteractionResult | null> {
+  const { data, error } = await client.rpc("commit_insight_action", {
+    p_user_id: userId,
+    p_insight_id: input.insightId,
+    p_operation: input.operation,
+    p_value: input.value ?? "",
+    p_idempotency_key: input.idempotencyKey,
+    p_trace_id: input.traceId,
+  });
+  if (error) {
+    if (error.message.includes("INSIGHT_NOT_FOUND")) return null;
+    if (error.message.includes("INSIGHT_IDEMPOTENCY_CONFLICT")) {
+      throw new InsightOperationError("INSIGHT_IDEMPOTENCY_CONFLICT");
+    }
+    throw error;
+  }
+  const record = asRecord(data);
+  return {
+    insight: asRecord(record.insight) as unknown as InsightCandidate,
+    idempotent: record.idempotent === true,
+  };
+}
+
+export async function setInsightTypeMuted(
+  client: Client,
+  userId: string,
+  input: {
+    type: InsightCandidate["type"];
+    muted: boolean;
+    idempotencyKey: string;
+    traceId: string;
+  },
+): Promise<{ preference: Record<string, unknown>; idempotent: boolean }> {
+  const { data, error } = await client.rpc("set_insight_type_muted", {
+    p_user_id: userId,
+    p_insight_type: input.type,
+    p_muted: input.muted,
+    p_idempotency_key: input.idempotencyKey,
+    p_trace_id: input.traceId,
+  });
+  if (error) {
+    if (error.message.includes("INSIGHT_IDEMPOTENCY_CONFLICT")) {
+      throw new InsightOperationError("INSIGHT_IDEMPOTENCY_CONFLICT");
+    }
+    throw error;
+  }
+  const record = asRecord(data);
+  return {
+    preference: asRecord(record.preference),
+    idempotent: record.idempotent === true,
   };
 }
 
@@ -619,6 +874,79 @@ async function countActiveInsightPendingItems(
     .in("status", ["pending", "sent_for_confirmation", "user_edited"]);
   if (error) throw error;
   return count ?? 0;
+}
+
+async function listActiveInsightPendingIds(
+  client: Client,
+  userId: string,
+): Promise<string[]> {
+  const { data, error } = await client
+    .from("pending_items")
+    .select("id")
+    .eq("user_id", userId)
+    .in("status", ["pending", "sent_for_confirmation", "user_edited"])
+    .limit(200);
+  if (error) throw error;
+  return (data ?? []).map((row) => row.id);
+}
+
+async function listInsightControls(
+  client: Client,
+  userId: string,
+): Promise<{
+  mutedTypes: Set<InsightCandidate["type"]>;
+  noUsefulByType: Map<InsightCandidate["type"], number>;
+}> {
+  const [{ data: preferences, error: preferencesError }, { data: feedback, error: feedbackError }] =
+    await Promise.all([
+      client
+        .from("insight_type_preferences")
+        .select("insight_type")
+        .eq("user_id", userId)
+        .eq("muted", true),
+      client
+        .from("insight_feedback_events")
+        .select("insight_type")
+        .eq("user_id", userId)
+        .eq("value", "no_util"),
+    ]);
+  if (preferencesError) throw preferencesError;
+  if (feedbackError) throw feedbackError;
+  const mutedTypes = new Set(
+    (preferences ?? []).map((row) => row.insight_type),
+  );
+  const noUsefulByType = new Map<InsightCandidate["type"], number>();
+  for (const row of feedback ?? []) {
+    noUsefulByType.set(
+      row.insight_type,
+      (noUsefulByType.get(row.insight_type) ?? 0) + 1,
+    );
+  }
+  return { mutedTypes, noUsefulByType };
+}
+
+async function listConfirmedProfileFacts(
+  client: Client,
+  userId: string,
+  now: Date,
+) {
+  const { data, error } = await client
+    .from("user_profile_facts")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("status", "vigente")
+    .or(`expires_at.is.null,expires_at.gt.${now.toISOString()}`)
+    .limit(200);
+  if (error) throw error;
+  return (data ?? []) as unknown as Array<{
+    id: string;
+    subject_key: string;
+    statement: string;
+    origin: "dicho" | "observado_confirmado";
+    status: "vigente";
+    expires_at: string | null;
+    positive_evidence_refs: string[];
+  }>;
 }
 
 async function listInsightContextTags(
@@ -1276,4 +1604,14 @@ function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value,
   );
+}
+
+function localIsoDate(date: Date, timezone: string): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  return `${parts.find((part) => part.type === "year")?.value}-${parts.find((part) => part.type === "month")?.value}-${parts.find((part) => part.type === "day")?.value}`;
 }

@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useMutation } from "@tanstack/react-query";
 import { Calculator } from "lucide-react";
 import { Button } from "@/ui/primitivas/button";
 import { Card } from "@/ui/primitivas/card";
 import { FieldShell, Input, Select } from "@/ui/primitivas/field";
 import { MoneyText } from "@/ui/primitivas/money";
+import { buildMovementPrefillHref } from "@/shared/movements/movement-prefill";
+import { CATEGORY_IDS, type CategoryId } from "@/shared/types/domain";
 import { simulateExpense } from "./projections-api";
 import type {
   ExpenseSimulationView,
@@ -65,9 +68,11 @@ export function SimulationCard({
             onChange={(event) => setCategory(event.target.value)}
           >
             <option value="">Sin categoría</option>
-            <option value="alimentacion">Alimentación</option>
-            <option value="transporte">Transporte</option>
-            <option value="compras_personales">Compras personales</option>
+            {CATEGORY_IDS.map((categoryId) => (
+              <option key={categoryId} value={categoryId}>
+                {CATEGORY_LABELS[categoryId]}
+              </option>
+            ))}
           </Select>
         </FieldShell>
         <FieldShell label="Cuándo" htmlFor="simulation-date" required>
@@ -93,6 +98,16 @@ export function SimulationCard({
         <SimulationResult
           simulation={mutation.data.simulation}
           budgetEffect={mutation.data.budget_effect}
+          registrationHref={
+            mutation.variables?.category_id
+              ? buildMovementPrefillHref({
+                  amount: mutation.variables.amount,
+                  categoryId: mutation.variables.category_id,
+                  date: mutation.variables.date ?? projection.as_of,
+                  origin: "proyeccion",
+                })
+              : null
+          }
         />
       ) : null}
       {!projection.available ? (
@@ -108,9 +123,11 @@ export function SimulationCard({
 function SimulationResult({
   simulation,
   budgetEffect,
+  registrationHref,
 }: {
   simulation: ExpenseSimulationView;
   budgetEffect: Awaited<ReturnType<typeof simulateExpense>>["budget_effect"];
+  registrationHref: string | null;
 }) {
   const immediate = simulation.parts[0];
   const counted = simulation.parts[1];
@@ -169,15 +186,37 @@ function SimulationResult({
       <p className="mt-3 text-xs text-text-muted">
         Simular no registra ni modifica nada.
       </p>
+      {registrationHref ? (
+        <Link
+          href={registrationHref}
+          className="mt-4 inline-flex h-11 items-center justify-center rounded-md border border-brand bg-brand px-5 font-heading text-sm font-medium text-text-inverse transition hover:bg-brand-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-border-focus"
+        >
+          Registrar gasto
+        </Link>
+      ) : (
+        <p className="mt-3 text-xs text-text-muted">
+          Elige una categoría global y vuelve a calcular para precargar el registro.
+        </p>
+      )}
     </div>
   );
 }
 
 function categoryLabel(categoryId: string) {
-  const labels: Record<string, string> = {
-    alimentacion: "Alimentación",
-    transporte: "Transporte",
-    compras_personales: "Compras personales",
-  };
-  return labels[categoryId] ?? categoryId;
+  return CATEGORY_LABELS[categoryId as CategoryId] ?? categoryId;
 }
+
+const CATEGORY_LABELS: Record<CategoryId, string> = {
+  alimentacion: "Alimentación",
+  transporte: "Transporte",
+  vivienda_hogar: "Vivienda / Hogar",
+  servicios_suscripciones: "Servicios / Suscripciones",
+  salud: "Salud",
+  educacion: "Educación",
+  ocio_salidas: "Ocio / Salidas",
+  compras_personales: "Compras personales",
+  familia_apoyo: "Familia / Apoyo",
+  deudas: "Deudas",
+  trabajo_productividad: "Trabajo / Productividad",
+  otros: "Otros",
+};

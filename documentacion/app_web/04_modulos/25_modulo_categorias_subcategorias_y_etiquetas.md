@@ -650,24 +650,27 @@ demás.
   de `src/features/**`; sin cambios en `W-08`.
 - `AC-CAT-08` — Una reclasificación masiva muestra conteo real y muestra
   antes de ejecutar, y se puede deshacer entera. Evidencia: `TEST` + `USER`.
-  **No cierra en `W-08`** (`WEB-D190`): no existe comando de reclasificación
-  en lote en `src/core/classification/commands.ts` — depende de la ventana
-  de deshacer de `36_modulo_memoria_y_aprendizaje.md`, dueño `W-13`.
+  Clase: `integracion`. Cierra la parte `TEST` en `W-13` (`WEB-D241/243`):
+  Postgres real prueba preview, muestra, exclusión manual, aplicación y undo
+  de las filas elegibles; el DOM prueba ambos pasos. `USER` no cierra porque
+  no hubo sesión interactiva.
 - `AC-CAT-09` — Cada corrección genera evidencia negativa contra la
-  clasificación anterior. Evidencia: `TEST`. **No cierra en `W-08`**
-  (`WEB-D190`): depende de la misma maquinaria de evidencia de `36`, `W-13`.
+  clasificación anterior. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-13`: el lote real genera tres evidencias negativas de origen y tres
+  positivas de destino; la corrección individual usa el mismo RPC auxiliar.
 - `AC-CAT-10` — El usuario puede ver por qué se clasificó algo, con evidencia
-  concreta y sin jerga. Evidencia: `TEST` + `USER`. **No cierra en `W-08`**
-  (`WEB-D190`): `SCR-CAT-05` (panel "por qué") depende de la misma evidencia
-  de `36`, `W-13`.
+  concreta y sin jerga. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra la
+  parte `TEST` en `W-13`: la ruta resuelve evidencia propia y la UI muestra el
+  motivo y su aprendizaje olvidable sin scores. `USER` no cierra.
 - `AC-CAT-11` — El usuario puede olvidar un aprendizaje de clasificación y
-  deja de aplicarse. Evidencia: `TEST`. **No cierra en `W-08`** (`WEB-D190`):
-  "olvidar" exige la misma ventana de deshacer de `36`, `W-13`.
+  deja de aplicarse. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-13`: el panel usa el ID canónico, el RPC revoca y crea lápida atómica, y
+  la prueba real impide reaprender desde la misma evidencia.
 - `AC-CAT-12` — Fusionar subcategorías avisa el conteo antes y no pierde
-  ningún movimiento. Evidencia: `TEST`. **No cierra en `W-08`** (`WEB-D190`):
-  no existe comando de fusión — `SCR-CAT-02` construida en `W-08` ofrece
-  renombrar y archivar, explícitamente sin fusionar, hasta que `36` (`W-13`)
-  aporte la reversibilidad de 7 días que `RUL-CAT-07` exige.
+  ningún movimiento. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-13`: la prueba real crea 47 filas de origen y 89 de destino, exige
+  `47 + 89 = 136`, fusiona, conserva las 136 y restaura 47 dentro de siete
+  días. `RUL-HECHO-02` falló al alterar el resultado a 137.
 - `AC-CAT-13` — Un movimiento admite hasta 6 etiquetas simultáneas.
   Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-08`: el máximo estaba mal
   puesto en `12` (contradecía `RUL-CAT §7`/`ERR-CAT-05`) en
@@ -712,9 +715,10 @@ aprendizaje, posible desde la migración `044`; y se elimina la exposición de
 ejemplo.
 
 **Diferencias registradas en `W-08`:** `AC-CAT-08` a `12` (fusión,
-reclasificación masiva, panel "por qué", olvidar un aprendizaje) no cierran
-en `W-08` — dependen de la maquinaria de evidencia y ventana de deshacer de
-`36_modulo_memoria_y_aprendizaje.md`, dueño `W-13` (`WEB-D190`).
+reclasificación masiva, panel "por qué", olvidar un aprendizaje) no cerraron
+en `W-08`; `W-13` entregó la maquinaria de evidencia y ventanas de deshacer
+de `36_modulo_memoria_y_aprendizaje.md` (`WEB-D190/241`). Las partes `USER`
+de `AC-CAT-08/10` siguen abiertas por falta de sesión interactiva.
 `AC-CAT-15` ("ninguna ruta usa service-role") no cierra en `W-08` por la
 misma razón que `AC-CUENTAS-13`: las rutas de este módulo están en la lista
 de excepciones temporales de `AC-SEG-01` desde `W-02` (`WEB-D191`).

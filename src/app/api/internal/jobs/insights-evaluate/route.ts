@@ -9,8 +9,10 @@ import {
   validationError,
 } from "@/app/api/_lib/http";
 import { evaluateAdvancedInsights } from "@/data/repositories/insights.repository";
+import { finishWorkerJobRun, startWorkerJobRun } from "@/data/repositories/worker-operations.repository";
 import { createServiceClient } from "@/data/supabase/server";
 import type { Database } from "@/data/supabase/types";
+import { logger } from "@/shared/telemetry/logger";
 
 export const dynamic = "force-dynamic";
 
@@ -43,27 +45,54 @@ async function handleInsightsEvaluate(request: Request, input: unknown) {
 
     const parsed = InsightsEvaluateWorkerRequestSchema.parse(input);
     const serviceClient = createServiceClient();
-    const userIds = parsed.user_id
-      ? [parsed.user_id]
-      : await listInsightEligibleUserIds(serviceClient, parsed.max_users ?? 50);
-    const results = [];
+    const run = await startWorkerJobRun(serviceClient, {
+      job_name: "insights_evaluate",
+      trigger: request.method === "GET" ? "cron_get" : "worker_post",
+      trace_id,
+      metadata: { requested_user_id: parsed.user_id ?? null, max_users: parsed.max_users ?? 50 },
+    });
+    try {
+      const userIds = parsed.user_id
+        ? [parsed.user_id]
+        : await listInsightEligibleUserIds(serviceClient, parsed.max_users ?? 50);
+      const results = [];
 
-    for (const userId of userIds) {
-      const result = await evaluateAdvancedInsights(serviceClient, userId, {
-        traceId: trace_id,
+      for (const userId of userIds) {
+        const result = await evaluateAdvancedInsights(serviceClient, userId, {
+          traceId: trace_id,
+        });
+        results.push({ user_id: userId, result });
+      }
+
+      await finishWorkerJobRun(serviceClient, {
+        run,
+        status: "succeeded",
+        claimed_count: userIds.length,
+        processed_count: results.length,
+        result: { users: results.length },
       });
-      results.push({ user_id: userId, result });
-    }
 
-    return okJson(
-      {
-        worker: "insights_evaluate",
-        trigger: request.method === "GET" ? "cron_get" : "worker_post",
-        users: results.length,
-        results,
-      },
-      meta,
-    );
+      return okJson(
+        {
+          worker: "insights_evaluate",
+          trigger: request.method === "GET" ? "cron_get" : "worker_post",
+          users: results.length,
+          results,
+        },
+        meta,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown_error";
+      await finishWorkerJobRun(serviceClient, {
+        run,
+        status: "failed",
+        failed_count: 1,
+        last_error: message,
+        result: { alert: "insights_evaluate_failed" },
+      });
+      logger.error("insights_evaluate.failed", { trace_id, error: message });
+      throw error;
+    }
   } catch (error) {
     if (isZodLike(error)) return validationError(error, meta);
     return unexpectedError(error, meta);
