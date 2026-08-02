@@ -1080,7 +1080,7 @@ Movimientos tampoco se atribuyen silenciosamente a este corte.
 **Portones:** G1 ✓ (parcial, ver abajo) · G2 no aplica a este corte · G3 no
 cierra: no hubo sesiones `USER` ni cohorte para `METRIC`
 **Matriz regenerada:** 2026-08-02, con `npm run matriz:generar`; hash del
-commit sustantivo: `PENDIENTE` (hash real registrado en el commit de
+commit sustantivo: `b63e8a1` (hash real registrado en el commit de
 seguimiento de este cierre).
 
 ### Qué se entregó
