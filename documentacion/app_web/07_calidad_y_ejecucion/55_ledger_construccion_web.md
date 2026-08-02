@@ -1693,7 +1693,7 @@ SQL anteriores siguen abiertas y no se atribuyen a este corte.
 **Portones:** G1 ✓ · G2 ✓ contra Supabase local · G3 no cierra: no hubo
 sesiones `USER` ni una cohorte para `METRIC`
 **Matriz regenerada:** 2026-08-01, con `npm run matriz:generar`; hash del
-commit sustantivo: `PENDIENTE` (hash real registrado en el commit de seguimiento de este cierre).
+commit sustantivo: `56d1e62` (hash real registrado en el commit de seguimiento de este cierre).
 
 ### Qué se entregó
 
