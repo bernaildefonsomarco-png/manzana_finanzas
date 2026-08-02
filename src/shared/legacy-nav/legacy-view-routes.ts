@@ -22,6 +22,7 @@ export const LEGACY_VIEW_ROUTES: Record<AppView, string> = {
   reports: "/reportes",
   projections: "/proyecciones",
   assistant: "/asistente",
+  reminders: "/recordatorios",
 };
 
 export function useLegacyNavigate(): (view: AppView) => void {

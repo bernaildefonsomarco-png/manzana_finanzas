@@ -117,6 +117,13 @@ enabled = true
 # The maximum file size allowed (e.g. "5MB", "500KB").
 file_size_limit = "50MiB"
 
+# W-14 (35 §11): las exportaciones son privadas; el acceso siempre pasa por
+# un enlace firmado de un solo uso (RUL-REP-13), nunca por el bucket directo.
+[storage.buckets.exports]
+public = false
+file_size_limit = "50MiB"
+allowed_mime_types = ["text/csv", "application/json"]
+
 # Uncomment to configure local storage buckets
 # [storage.buckets.images]
 # public = false

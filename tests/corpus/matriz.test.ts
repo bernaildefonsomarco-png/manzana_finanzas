@@ -38,9 +38,9 @@ describe("generador de la matriz de trazabilidad", () => {
     expect(matriz.validacion.criteriosConFormaInvalida).toEqual([]);
   });
 
-  it("50 §3.1: el portón de los 708 criterios es 558 G1, 11 G2, 139 G3", () => {
+  it("50 §3.1: el portón de los 708 criterios es 563 G1, 10 G2, 135 G3", () => {
     expect(matriz.censo.criterios.total).toBe(708);
-    expect(matriz.censo.criterios.porPorton).toEqual({ G1: 558, G2: 11, G3: 139 });
+    expect(matriz.censo.criterios.porPorton).toEqual({ G1: 563, G2: 10, G3: 135 });
   });
 
   it("50 §3.1: 248 criterios tienen clase asignada, con el reparto declarado", () => {
@@ -106,6 +106,16 @@ describe("generador de la matriz de trazabilidad", () => {
     // Memoria y los carryovers de Categorías/Proyecciones. Los criterios que
     // dependen de sesión USER, métrica real o una capacidad aún ausente se
     // mantienen explícitamente abiertos y no reciben una clase ficticia.
+    // W-14 añade catorce clases entre Recordatorios, Búsqueda y Reportes:
+    // cinco `integracion` (resolución automática en la misma transacción,
+    // el índice único de `AC-NOTIF-07`, el evento de consentimiento, el
+    // registro de exportaciones) y nueve `unidad` (motor de recordatorios,
+    // parser de búsqueda, sugerencia ortográfica, agregación reutilizada de
+    // Presupuestos, formato del CSV, `computeReminderStatus`). El corte deja
+    // explícitamente sin clase los criterios que dependen de interfaz no
+    // construida (la paleta de comandos, los cuatro gráficos restantes,
+    // modo discreto en reportes) o de módulos que aún no existen (`41`,
+    // `45`/`46`) — documentado en el §20 de cada módulo, no en silencio.
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 16,
@@ -113,11 +123,11 @@ describe("generador de la matriz de trazabilidad", () => {
       e2e: 7,
       presupuesto: 2,
       contenido: 1,
-      integracion: 76,
-      unidad: 109,
+      integracion: 81,
+      unidad: 118,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(295);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(337);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(309);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(311);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {

@@ -1,12 +1,10 @@
-import { PlaceholderSection } from "@/shared/placeholder-section";
+"use client";
+
+import { ReminderPreferencesScreen } from "@/features/reminders/reminder-preferences-screen";
+import { useLegacyNavigate, useLegacySignOut } from "@/shared/legacy-nav/legacy-view-routes";
 
 export default function ConfiguracionRecordatoriosPage() {
-  return (
-    <PlaceholderSection
-      title="Preferencias de recordatorios"
-      description="Esta sección se divide de la configuración general en un corte posterior."
-      backHref="/configuracion"
-      backLabel="Volver a configuración"
-    />
-  );
+  const onNavigate = useLegacyNavigate();
+  const onSignOut = useLegacySignOut();
+  return <ReminderPreferencesScreen onNavigate={onNavigate} onSignOut={onSignOut} />;
 }

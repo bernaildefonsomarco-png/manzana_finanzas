@@ -3,7 +3,7 @@
 **Bloque:** 07 — Calidad y ejecución
 **Alcance:** V1
 **Estado:** vivo
-**Fecha de última actualización:** 1 de agosto de 2026
+**Fecha de última actualización:** 2 de agosto de 2026
 **Docs fuente:** los documentos del corpus con identificadores (57 a fecha de hoy)
 **Documentos que dependen de este:** `51` (pruebas), `54` (plan), `55` (ledger)
 
@@ -194,9 +194,9 @@ test las distingue por familia.
 
 | Portón | Criterios |
 |---|---|
-| `G1` construido | 558 |
-| `G2` probado en real | 11 |
-| `G3` validado | 139 |
+| `G1` construido | 563 |
+| `G2` probado en real | 10 |
+| `G3` validado | 135 |
 | **Total** | **708** |
 
 | Clase de prueba | Asignadas |
@@ -207,11 +207,11 @@ test las distingue por familia.
 | `e2e` | 7 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
-| `integracion` | 76 |
-| `unidad` | 109 |
-| **Con clase** | **295** |
-| **Con `TEST` y sin clase** | **337** |
-| **Total con `TEST`** | **632** |
+| `integracion` | 81 |
+| `unidad` | 118 |
+| **Con clase** | **309** |
+| **Con `TEST` y sin clase** | **311** |
+| **Total con `TEST`** | **620** |
 
 `lint` sube de 13 a 14 en `W-01`: `AC-INV-10` recibe su clase al escribir su
 prueba (`51` §4.1), como manda el árbol de decisión — es una comparación
@@ -226,9 +226,20 @@ identificador base y no alteran el censo (`WEB-D231`).
 capacidad no implementada permanecen abiertos y no reciben una clase
 ficticia.
 
+`W-14` añade 14 filas con clase entre `35`, `37` y `38` (cinco `integracion`,
+nueve `unidad`) y corrige de paso el portón declarado de una veintena de
+criterios de esos tres documentos: varios tenían `Evidencia: TEST` heredada
+de la redacción original sin que nada los verificara todavía, y al escribir
+el código real resultó que dependían de infraestructura que este corte no
+construye (el envío de correo real, `WEB-D248`; la paleta de comandos; los
+cuatro gráficos restantes de `RUL-REP-05`). Se corrigieron a `No cierra: …`
+con su razón, conservando la `Evidencia:` que sí les corresponde — quitarla
+del todo los habría sacado silenciosamente del censo de portones (`708` deja
+de cuadrar si `G1+G2+G3` no suma el total).
+
 Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
-posible. De los 413 criterios que todavía no tienen clase, 337 ya declaran
-`TEST` y quedan pendientes de asignación explícita; los otros 76 aún no tienen
+posible. De los 399 criterios que todavía no tienen clase, 311 ya declaran
+`TEST` y quedan pendientes de asignación explícita; los otros 88 aún no tienen
 evidencia de prueba. `AC-HECHO-03` impide que cualquiera llegue a `verificado`
 sin clase.
 

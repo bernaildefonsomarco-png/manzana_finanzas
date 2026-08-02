@@ -788,44 +788,88 @@ comprueba al encolar no vale; hay que comprobarlo al enviar.**
 
 - `AC-NOTIF-01` — Ningún canal que interrumpa viene activado en una cuenta
   nueva. El correo está apagado en los diez tipos. Cierra `C-17`.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-14`:
+  `tests/rls/w14-reminders-and-search.test.ts` prueba que sin fila en
+  `nudge_preferences` el canal `email` responde apagado por defecto.
 - `AC-NOTIF-02` — El consentimiento del correo es por tipo, y activar uno no
-  activa los demás. Evidencia: `TEST`.
+  activa los demás. Evidencia: `CODE`. No cierra la parte `TEST`: el diseño
+  (una fila `(user_id, nudge_type, channel)` independiente por tipo en
+  `nudge_preferences`) lo garantiza por construcción, pero no hay una prueba
+  que active un tipo y confirme explícitamente que otro sigue apagado.
 - `AC-NOTIF-03` — Activar el correo de un tipo registra un evento de
-  consentimiento explícito. Evidencia: `TEST`.
+  consentimiento explícito. Evidencia: `TEST`. Clase: `integracion`. Cierra
+  en `W-14`: el evento se encola en `transactional_outbox`
+  (`reminder_email_consent_granted`) porque el módulo de privacidad (`45`,
+  `W-19`) todavía no tiene tabla propia de consentimientos (`WEB-D247`).
 - `AC-NOTIF-04` — El horario silencioso y los límites diarios **no afectan a la
-  bandeja**, solo al correo. Evidencia: `TEST`.
+  bandeja**, solo al correo. Evidencia: `TEST`. No cierra: `WEB-D248` — el
+  envío real de correo es de `46`/`W-19`; W-14 no construye la cola de
+  entrega donde esta regla se aplicaría.
 - `AC-NOTIF-05` — Un correo que caería en horario silencioso se difiere, y
-  varios diferidos se agrupan en uno. Evidencia: `TEST`.
+  varios diferidos se agrupan en uno. Evidencia: `TEST`. No cierra:
+  `WEB-D248`.
 - `AC-NOTIF-06` — Resolver la causa resuelve el recordatorio **en la misma
-  transacción**, sin intervención del usuario. Evidencia: `TEST`.
+  transacción**, sin intervención del usuario. Evidencia: `TEST`. Clase:
+  `integracion`. Cierra en `W-14`: ocho triggers `AFTER` en la migración
+  `063` (cuotas, deudas, ocurrencias recurrentes, reglas canceladas,
+  presupuestos, pendientes, correo, movimientos) verificados contra
+  Postgres real, con `RUL-HECHO-02` (trigger deshabilitado a propósito,
+  la prueba de resolución falló, restaurado).
 - `AC-NOTIF-07` — No existen dos recordatorios abiertos con el mismo
-  `subject_key`. Evidencia: `TEST`.
+  `subject_key`. Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-14`:
+  índice único parcial `in_app_notifications_open_subject_unique_idx`,
+  verificado con `RUL-HECHO-02` (índice comentado, la prueba de duplicado
+  falló, restaurado) y con el evaluador corriendo dos veces sin duplicar.
 - `AC-NOTIF-08` — Un recordatorio pospuesto que se resuelve no vuelve.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-14`:
+  `domain.reminder-status.test.ts` prueba que `resolved_at` gana sobre
+  `snoozed_until` en `computeReminderStatus`.
 - `AC-NOTIF-09` — El badge cuenta solo lo abierto y sin leer, y muestra `9+`
-  como máximo. Evidencia: `TEST`.
+  como máximo. Evidencia: `CODE`. No cierra la parte `TEST`: el mecanismo
+  existe (`countOpenReminders`, `GET /reminders/count` con
+  `Math.min(count, 9)`), pero no hay una prueba dedicada que ejercite el
+  límite de exhibición.
 - `AC-NOTIF-10` — Ningún recordatorio ejecuta una acción; todos navegan.
-  Evidencia: `CODE` + `TEST`.
-- `AC-NOTIF-11` — `action_url` es siempre una ruta interna. Evidencia: `TEST`.
+  Evidencia: `CODE`. No cierra la parte `TEST`: `action_url` siempre se
+  renderiza como `<Link>`, nunca como un botón que despacha un comando, mas
+  no hay una prueba automatizada que lo verifique.
+- `AC-NOTIF-11` — `action_url` es siempre una ruta interna. Evidencia:
+  `CODE`. No cierra la parte `TEST`: la restricción
+  `in_app_notifications_action_url_internal` de la migración `063` la
+  impone en la base, pero ninguna prueba intenta insertar una URL externa
+  para confirmar el rechazo.
 - `AC-NOTIF-12` — El asunto de un correo no contiene montos ni categorías.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra: `WEB-D248`.
 - `AC-NOTIF-13` — Los recordatorios de categorías sensibles no salen por correo
-  ni con opt-in. Evidencia: `TEST`.
+  ni con opt-in. Evidencia: `TEST`. No cierra: `WEB-D248`; tampoco existe
+  todavía el filtro de categoría sensible sobre el envío.
 - `AC-NOTIF-14` — La preferencia de canal se lee **en el momento del envío**, no
-  al encolar. Evidencia: `TEST`.
+  al encolar. Evidencia: `TEST`. No cierra: `WEB-D248`.
 - `AC-NOTIF-15` — El envío es idempotente por `(user_id, subject_key, día)`.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No cierra: `WEB-D248`.
 - `AC-NOTIF-16` — `sin_registrar` viene apagado en todos los canales, incluida
-  la bandeja. Evidencia: `TEST`.
+  la bandeja. Evidencia: `CODE` + `TEST` parcial. No cierra completo: el
+  motor (`reminder-engine.ts`) genera el candidato de forma determinista,
+  y `reminders-evaluate.repository.ts::isDashboardEnabled` lo apaga por
+  defecto para este tipo — pero no hay una prueba de integración que
+  ejercite ese apagado por defecto de punta a punta.
 - `AC-NOTIF-17` — Un tipo descartado 5 veces seguidas sin resolverse deja de
-  generarse, y se dice en ajustes. Evidencia: `TEST`.
+  generarse, y se dice en ajustes. Evidencia: `TEST`. No cierra: no se
+  construyó en este corte — el aprendizaje de descartes repetidos queda
+  abierto.
 - `AC-NOTIF-18` — Ningún recordatorio usa `role="alert"` ni signos de
-  exclamación. Evidencia: `TEST`.
+  exclamación. Evidencia: `TEST` (título, constraint DB +
+  `reminder-engine.test.ts`) + `CODE` (la bandeja usa `role="listitem"`,
+  nunca `role="alert"`). Clase: `unidad`. Cierra en `W-14`.
 - `AC-NOTIF-19` — El motor no puede crear un recordatorio ni saltarse el horario
-  silencioso. Evidencia: `TEST`.
+  silencioso. Evidencia: `TEST`. No cierra: verificable solo cuando exista
+  el motor conversacional que podría intentarlo (`W-16`/`W-17`); hoy es
+  cierto por ausencia, no por una prueba que lo demuestre.
 - `AC-NOTIF-20` — No existe ninguna ruta pública que cree recordatorios.
-  Evidencia: `CODE`.
+  Evidencia: `CODE`. Cierra en `W-14`: `POST /reminders` no existe; toda
+  creación pasa por los triggers de la migración `063` (service-role) o el
+  evaluador diario (`src/app/api/internal/jobs/reminders-evaluate/`,
+  lista blanca permanente de `15` §4).
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

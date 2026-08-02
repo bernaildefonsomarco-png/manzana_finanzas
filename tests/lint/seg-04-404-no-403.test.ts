@@ -1,7 +1,7 @@
 // `AC-SEG-04` (`15` §8): un recurso de otro usuario devuelve 404, nunca 403.
-// Criterio agregado (`51` §5): su conjunto son las 120 rutas de `/api/v1`
+// Criterio agregado (`51` §5): su conjunto son las 142 rutas de `/api/v1`
 // (`AC-SEG-04` no se cierra con una prueba, se cierra con la unión de que
-// ninguna de las 120 use 403 para "no es tuyo" — que es exactamente lo que
+// ninguna de las 142 use 403 para "no es tuyo" — que es exactamente lo que
 // produce el patrón de repositorio del proyecto: toda consulta de un
 // recurso filtra por `user_id` e `id` a la vez, así que un recurso ajeno
 // simplemente no aparece, nunca se detecta y se rechaza aparte). W-08 sumó
@@ -22,6 +22,16 @@
 // W-13 suma dieciséis rutas para clasificación masiva, merge,
 // Descubrimientos y Memoria; las acciones mantienen recibo idempotente y los
 // recursos ajenos siguen siendo indistinguibles de uno inexistente.
+// W-14 suma veintidós rutas: `reminders`, `reminders/count`,
+// `reminders/[id]/{read,snooze,dismiss}`, `reminders/read-all`,
+// `reminder-preferences`, `reminder-preferences/{pause,resume}`, `search`,
+// `search/palette`, `search/suggest`, `saved-searches`,
+// `saved-searches/[id]`, `reports/{period,compare,chart}`, `saved-reports`,
+// `saved-reports/[id]`, `exports`, `exports/[id]`, `exports/[id]/link`.
+// Las colecciones sin `:id` (reminders, search, saved-searches, saved-reports,
+// exports) prueban aislamiento por alcance (WEB-D230); las rutas con recurso
+// mapean "ajeno" a `REMINDER_FORBIDDEN`/`EXPORT_FORBIDDEN` u ownership de RLS,
+// y en los dos casos la ruta HTTP responde 404, nunca 403.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -40,11 +50,11 @@ function recorrer(directorio: string, acumulado: string[]): string[] {
   return acumulado;
 }
 
-describe("AC-SEG-04 (agregado): ninguna de las 120 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
+describe("AC-SEG-04 (agregado): ninguna de las 142 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
   const rutas = recorrer(RAIZ_V1, []);
 
-  it("el conjunto declarado tiene 120 rutas — si cambia, hay que revisar esta prueba", () => {
-    expect(rutas.length).toBe(120);
+  it("el conjunto declarado tiene 142 rutas — si cambia, hay que revisar esta prueba", () => {
+    expect(rutas.length).toBe(142);
   });
 
   it.each(rutas.map((rutaAbsoluta) => [relative(RAIZ_V1, rutaAbsoluta).split("\\").join("/"), rutaAbsoluta]))(

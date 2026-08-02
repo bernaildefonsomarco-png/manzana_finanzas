@@ -696,44 +696,89 @@ cosmética.
 
 ## 20. Criterios de aceptación
 
-- `AC-BUS-01` — **Ninguna respuesta de API incluye puntuación, relevancia ni
-  confianza; el campo no existe.** Cierra `C-11`. Evidencia: `CODE` + `TEST`.
+**Nota de alcance de `W-14`:** este corte construye `SCR-BUS-02` (búsqueda
+completa, `/buscar`), `SCR-BUS-03` (sin resultados) y el backend entero
+(`GET /search`, `/search/palette`, `/search/suggest`, `/saved-searches`).
+**No construye `SCR-BUS-01`** (la paleta de comandos con `Ctrl+K`): el motor
+de coincidencias que la alimentaría existe (`matchPalette`,
+`GET /search/palette`), pero la superposición de teclado, su atrapado de
+foco y su interacción con `Enter`/`Esc` quedan sin interfaz. Los criterios
+que dependen de esa superposición (`AC-BUS-08`, `09`, `17`) no cierran por
+esa razón, no por un defecto del mecanismo que sí existe.
+
+- `AC-BUS-01` — Ninguna respuesta de API incluye puntuación, relevancia ni
+  confianza; el campo no existe. Cierra `C-11`. Evidencia: `CODE`. Cierra en
+  `W-14`: el tipo `SearchResults` y la respuesta real de `GET /search` no
+  declaran ningún campo de puntuación. No cierra la parte `TEST`: no hay una
+  prueba que lo verifique contra el JSON servido.
 - `AC-BUS-02` — La misma consulta sobre los mismos datos devuelve siempre los
-  mismos resultados, en el mismo orden. Evidencia: `TEST`.
+  mismos resultados, en el mismo orden. Evidencia: `CODE`. No cierra `TEST`:
+  determinista por diseño (sin aleatoriedad ni modelo), sin prueba dedicada.
 - `AC-BUS-03` — Los resultados se ordenan por fecha, nunca por relevancia.
-  Evidencia: `CODE` + `TEST`.
+  Evidencia: `CODE` (`search.repository.ts` ordena
+  `occurred_at desc` siempre). No cierra `TEST`.
 - `AC-BUS-04` — Una consulta que es una pregunta ofrece el traspaso **y** la
-  opción de buscar igual. Evidencia: `TEST` + `USER`.
+  opción de buscar igual. Evidencia: `TEST`. Clase: `unidad`. Cierra en
+  `W-14` la parte `TEST`: `query-parser.test.ts` prueba la detección; el
+  frontend ofrece las dos salidas (`search-screen.tsx`). La mitad `USER` no
+  cierra: no hubo sesión de tres personas.
 - `AC-BUS-05` — La detección de preguntas es determinista y no llama al
-  modelo. Evidencia: `CODE`.
+  modelo. Evidencia: `TEST` + `CODE`. Clase: `unidad`. Cierra en `W-14`:
+  `isQuestionLikeQuery` (reglas de palabras/signos, sin modelo),
+  `query-parser.test.ts`.
 - `AC-BUS-06` — Los filtros reconocidos se muestran como etiquetas quitables.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. No cierra completo: se muestran como etiquetas
+  (`FilterChip`), pero `ACT-BUS-03` (quitar un filtro reconocido) no está
+  construido — hoy son de solo lectura.
 - `AC-BUS-07` — Confirmados y pendientes van en grupos separados con
-  encabezado, y los pendientes no suman en ningún conteo.
-  Evidencia: `TEST`.
+  encabezado, y los pendientes no suman en ningún conteo. Evidencia: `CODE`.
+  No cierra `TEST`: `searchAll` separa `movements`/`pending` en dos listas y
+  el frontend las renderiza en secciones distintas (verificado a mano contra
+  Supabase local, ver §22), pero no hay un test de repositorio dedicado.
 - `AC-BUS-08` — Ningún elemento de la paleta ejecuta una operación de dinero.
-  Evidencia: `CODE` + `TEST`.
+  Evidencia: `CODE` + `TEST`. No cierra: `SCR-BUS-01` (la paleta) no tiene
+  interfaz todavía; ver nota de alcance arriba. `PALETTE_ACTIONS` del
+  backend ya solo declara `action_url` (nunca ejecuta), pero el criterio es
+  sobre la paleta como superficie, que no existe.
 - `AC-BUS-09` — `Enter` con la consulta vacía no hace nada. Evidencia: `TEST`.
+  No cierra: mismo motivo, sin interfaz de paleta.
 - `AC-BUS-10` — El texto de búsqueda nunca llega crudo a una consulta SQL.
-  Evidencia: `CODE` + `TEST`.
+  Evidencia: `CODE`. Cierra en `W-14`: toda consulta usa el cliente de
+  Supabase (`.ilike()`, `.textSearch()`, `.eq()`) con parámetros vinculados,
+  nunca concatenación de texto.
 - `AC-BUS-11` — La corrección ortográfica se calcula solo sobre los comercios
-  del propio usuario, y se ofrece, no se aplica. Evidencia: `TEST`.
+  del propio usuario, y se ofrece, no se aplica. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-14`: `spelling-suggestion.test.ts` (Levenshtein
+  sobre una lista dada, nunca un diccionario general) + el frontend la
+  ofrece como enlace, no la aplica sola.
 - `AC-BUS-12` — El texto de las consultas **no se registra** en telemetría.
-  Evidencia: `CODE` + `TEST`.
+  Evidencia: `CODE`. No cierra `TEST`: ninguna ruta registra el texto de `q`,
+  sin prueba dedicada que lo confirme.
 - `AC-BUS-13` — Las búsquedas recientes no salen del navegador, y en modo
-  discreto se borran de él. Evidencia: `TEST`.
+  discreto se borran de él. Evidencia: `TEST`. No cierra: la función
+  "búsquedas recientes" de `RUL-BUS-09` no se construyó en este corte.
 - `AC-BUS-14` — `GET /search/palette` responde por debajo de 150 ms con 5.000
-  movimientos. Evidencia: `TEST` + `METRIC`.
+  movimientos. Evidencia: `TEST` + `METRIC`. No cierra: no se midió con una
+  carga real.
 - `AC-BUS-15` — Escribir rápido no produce resultados de consultas
-  abandonadas. Evidencia: `TEST`.
+  abandonadas. Evidencia: `CODE`. No cierra `TEST`: `search-screen.tsx`
+  implementa el patrón `active`/`clearTimeout` (mismo patrón que
+  `insights-screen.tsx`), sin prueba de componente dedicada.
 - `AC-BUS-16` — El estado de la búsqueda se restaura desde la URL, y la URL no
-  contiene cifras ni identificadores. Evidencia: `TEST`.
+  contiene cifras ni identificadores. Evidencia: `TEST`. No cierra completo:
+  `/buscar?q=` sí restaura el término de texto; los filtros de fecha y monto
+  que `parseSearchQuery` deriva **no** se serializan de vuelta a la URL
+  todavía.
 - `AC-BUS-17` — La paleta es operable solo con teclado, y `Esc` devuelve el
-  foco a su disparador. Evidencia: `TEST`.
+  foco a su disparador. Evidencia: `TEST`. No cierra: sin interfaz de
+  paleta.
 - `AC-BUS-18` — El número de resultados se anuncia al estabilizarse, no en
-  cada pulsación. Evidencia: `TEST`.
+  cada pulsación. Evidencia: `TEST`. No cierra completo: la sección de
+  resultados lleva `aria-live="polite"`, pero no arma el texto "N
+  movimientos, M sin confirmar" que el criterio pide explícitamente.
 - `AC-BUS-19` — No se busca en el contenido de correos, porque no se almacena.
-  Evidencia: `CODE`.
+  Evidencia: `CODE`. Cierra en `W-14` como agregado estructural:
+  `search.repository.ts` no consulta `email_messages` en ningún camino.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

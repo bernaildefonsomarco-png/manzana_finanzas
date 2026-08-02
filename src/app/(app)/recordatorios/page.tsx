@@ -1,13 +1,10 @@
-import { PlaceholderSection } from "@/shared/placeholder-section";
+"use client";
 
-// Doc `37`, dueño `W-14`.
+import { RemindersScreen } from "@/features/reminders/reminders-screen";
+import { useLegacyNavigate, useLegacySignOut } from "@/shared/legacy-nav/legacy-view-routes";
+
 export default function RecordatoriosPage() {
-  return (
-    <PlaceholderSection
-      title="Recordatorios"
-      description="La bandeja de recordatorios llega en un corte posterior."
-      backHref="/inicio"
-      backLabel="Volver al inicio"
-    />
-  );
+  const onNavigate = useLegacyNavigate();
+  const onSignOut = useLegacySignOut();
+  return <RemindersScreen onNavigate={onNavigate} onSignOut={onSignOut} />;
 }

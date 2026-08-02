@@ -861,48 +861,116 @@ explicación parece un error del sistema en vez de un hecho sobre el mes.
 
 ## 20. Criterios de aceptación
 
+**Nota de alcance de `W-14`:** este corte entrega `GET /reports/period`,
+`/compare`, `/chart` (un solo gráfico: `barras_categoria`, no los cinco),
+`saved-reports` y el flujo de exportación (`POST /exports`, worker de
+generación, enlace firmado). No entrega: renderizado visual de los otros
+cuatro gráficos de `RUL-REP-05`, sincronización de filtros con la URL, modo
+discreto en `/reportes`, ni la exportación real en streaming (ver
+`AC-REP-12`). Se documenta cada gap en su criterio, no en silencio.
+
 - `AC-REP-01` — El total de una categoría en un periodo es **idéntico** en el
   reporte, en el módulo de presupuestos y en la respuesta del asistente, y los
-  tres salen de la misma función. Evidencia: `TEST`.
+  tres salen de la misma función. Evidencia: `TEST`. Clase: `unidad`. Cierra
+  en `W-14`: `report-engine.test.ts` reutiliza `movementCountsForBudget` de
+  `budgets/budget-progress.ts` (el mismo filtro de Presupuestos), verificado
+  con `RUL-HECHO-02` (mutado a un filtro propio, la prueba de exclusiones
+  falló, restaurado). La respuesta del asistente no existe todavía
+  (`W-16`/`17`): esa tercera pata queda sin verificar hasta que exista.
 - `AC-REP-02` — Todo reporte declara qué movimientos excluyó y por qué.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra la parte `TEST` en `W-14`:
+  `report-engine.test.ts` prueba las seis razones de exclusión. La mitad
+  `USER` no cierra: no hubo sesión de tres personas.
 - `AC-REP-03` — Cada gráfico tiene tabla equivalente con los mismos datos,
-  alcanzable con teclado y devuelta en la misma respuesta de API.
-  Evidencia: `TEST`.
+  alcanzable con teclado y devuelta en la misma respuesta de API. Evidencia:
+  `TEST`. No cierra completo: `GET /reports/chart` sí devuelve `bars` y
+  `table` en la misma respuesta (RUL-REP-06), pero solo para
+  `barras_categoria` — los otros cuatro gráficos no tienen ruta ni interfaz.
 - `AC-REP-04` — Ninguna serie se distingue solo por color, y ningún eje de
-  dinero empieza fuera de cero. Evidencia: `TEST` + `USER`.
+  dinero empieza fuera de cero. Evidencia: `TEST` + `USER`. No cierra: no
+  hay renderizado visual de gráfico en este corte, solo la tabla
+  (`reports-screen.tsx`).
 - `AC-REP-05` — No existe ningún gráfico sin decisión asociada en
-  `RUL-REP-05`. Evidencia: `CODE` + `USER`.
-- `AC-REP-06` — El reporte no destaca, concluye ni advierte.
-  Evidencia: `TEST` + `USER`.
+  `RUL-REP-05`. Evidencia: `TEST` parcial. `applicableCharts()` en
+  `report-engine.test.ts` prueba que el de ingreso-contra-gasto no aparece
+  sin ingresos y que nunca hay un sexto — pero solo un gráfico tiene
+  interfaz real (ver `AC-REP-03`).
+- `AC-REP-06` — El reporte no destaca, concluye ni advierte. Evidencia:
+  `CODE`. No cierra `TEST`: `reports-screen.tsx` solo muestra cifras y una
+  lista de exclusiones, sin juicio, pero no hay una prueba dedicada.
 - `AC-REP-07` — El estado completo del reporte se restaura desde la URL, y la
   URL no contiene cifras ni identificadores de movimiento. Evidencia: `TEST`.
+  No cierra: no construido — `/reportes` usa el mes actual fijo, sin leer ni
+  escribir `periodo`/`valor`/`agrupar`/`comparar` en la URL.
 - `AC-REP-08` — El CSV se abre en Excel con las tildes correctas: UTF-8 con
-  BOM, `CRLF`, RFC 4180. Evidencia: `SMOKE`.
+  BOM, `CRLF`, RFC 4180. Evidencia: `TEST`. Clase: `unidad`. Cierra la parte
+  `TEST` en `W-14`: `csv-export.test.ts` verifica BOM, `CRLF` y el escapado
+  RFC 4180. La evidencia `SMOKE` que el documento pedía (abrir el archivo en
+  Excel de verdad) no se ejecutó.
 - `AC-REP-09` — Los montos del CSV van sin símbolo, con punto decimal y sin
-  separador de miles. Evidencia: `TEST`.
+  separador de miles. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-14`.
 - `AC-REP-10` — La exportación completa incluye los catorce bloques de
-  `RUL-REP-11`, incluido el perfil aprendido. Evidencia: `TEST`.
+  `RUL-REP-11`, incluido el perfil aprendido. Evidencia: `TEST`. No cierra
+  completo: doce de
+  catorce bloques traen datos reales (movimientos, cuentas y cajas,
+  etiquetas, deudas, recurrentes, pendientes, correo, perfil,
+  descubrimientos, descargas, cuenta); `categorias` y
+  `presupuestos_y_metas` quedan como texto de referencia a otro endpoint,
+  no el contenido real, por el tiempo del corte. `conversaciones` está
+  vacío porque el motor del asistente (`41`) no existe todavía — eso sí es
+  correcto declararlo así, no un gap.
 - `AC-REP-11` — La exportación completa funciona con el asistente caído y en
-  modo degradado. Evidencia: `TEST`.
+  modo degradado. Evidencia: `CODE`. No cierra `TEST`: la exportación no
+  tiene ninguna dependencia del motor del asistente por diseño (no lo
+  importa en ningún punto), pero no hay una prueba que lo demuestre
+  activamente.
 - `AC-REP-12` — La exportación no tiene límite de filas y se genera en
   streaming, sin cargar el historial en memoria. Evidencia: `CODE` + `TEST`.
+  **No cierra, y es una contradicción real con lo construido**:
+  `buildMovementsCsvContent` trae
+  hasta 50.000 filas con un solo `.select()` y arma el CSV completo en
+  memoria antes de subirlo — ni streaming ni sin límite. Se documenta como
+  brecha nueva en vez de maquillarla; candidato a deuda de `53` en el
+  siguiente corte que toque exportaciones.
 - `AC-REP-13` — El enlace de descarga es de un solo uso, caduca en 15 minutos
-  y no da acceso sin la firma del usuario correcto. Evidencia: `TEST`.
+  y no da acceso sin la firma del usuario correcto. Evidencia: `CODE`. No
+  cierra `TEST`: se apoya en `createSignedUrl` de Supabase Storage
+  (mecanismo de la plataforma, no propio) con TTL de 900s y verificación de
+  propiedad previa por RLS; no hay una prueba que ejercite el enlace en sí.
 - `AC-REP-14` — El archivo se borra al caducar el trabajo, y la fila de
-  `export_jobs` se conserva. Evidencia: `TEST`.
+  `export_jobs` se conserva. Evidencia: `TEST`. No cierra: no existe un
+  worker que borre archivos de Storage al cumplirse `expires_at` — la fila
+  queda con estado `listo` indefinidamente hoy.
 - `AC-REP-15` — Toda solicitud de exportación queda registrada con su tipo,
-  filtros y momento. Evidencia: `TEST`.
+  filtros y momento. Evidencia: `TEST`. Clase: `integracion`. Cierra en
+  `W-14`: `tests/rls/w14-reminders-and-search.test.ts` prueba
+  `create_export_job` (idempotencia y ownership); cada llamada deja fila en
+  `export_jobs` con `kind`, `metadata` y `requested_at`.
 - `AC-REP-16` — El motor no puede enviar una exportación a ningún destino.
-  Evidencia: `CODE` + `TEST`.
+  Evidencia: `CODE`. No cierra `TEST`: no existe ninguna función que envíe a
+  un destino elegido por el modelo (el único mecanismo es el enlace servido
+  al propio usuario), pero verificable de fondo solo cuando exista el motor
+  conversacional (`W-16`/`17`).
 - `AC-REP-17` — En modo discreto las proporciones siguen visibles y los montos
-  no, y exportar sigue disponible. Evidencia: `TEST`.
+  no, y exportar sigue disponible. Evidencia: `TEST`. No cierra:
+  `reports-screen.tsx` no invoca `useDiscreetMode` — el modo discreto no
+  está conectado a esta pantalla todavía.
 - `AC-REP-18` — El agregado de un periodo se resuelve en una sola consulta,
-  dos con comparación. Evidencia: `CODE` + `TEST`.
+  dos con comparación. Evidencia: `CODE` + `TEST`. No cierra, y es otra
+  contradicción real: `getReportPeriod` trae las filas del periodo con
+  `.select()` y agrega en JavaScript (`computeReportPeriod`), no con
+  `group by` en SQL. Funciona, pero no cumple el criterio de rendimiento
+  tal como está escrito.
 - `AC-REP-19` — Un periodo sin gastos pero con transferencias explica el
-  S/0.00 en vez de mostrarlo desnudo. Evidencia: `TEST` + `USER`.
+  S/0.00 en vez de mostrarlo desnudo. Evidencia: `TEST` + `USER`. No cierra:
+  `reports-screen.tsx` solo distingue "sin movimientos" (`EmptyState`) de
+  "con movimientos"; el caso intermedio (solo transferencias) no tiene su
+  propio texto.
 - `AC-REP-20` — Ninguna acción de este módulo escribe datos financieros.
-  Evidencia: `CODE`.
+  Evidencia: `CODE`. Cierra en `W-14`: las rutas de `reports`,
+  `saved-reports` y `exports` son lectura, configuración de vista o
+  generación de archivo — ninguna escribe en `movements`, `accounts` ni
+  tablas equivalentes.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

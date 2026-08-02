@@ -57,6 +57,12 @@ export const LISTA_BLANCA_PERMANENTE: EntradaLista[] = [
     justificacion:
       "Eliminación de cuenta: debe borrar datos de todas las tablas, incluidas las que el usuario no puede escribir (`15` §4).",
   },
+  {
+    patron: "v1/exports/*/link",
+    justificacion:
+      "El bucket de exportaciones es privado; el enlace firmado de un solo uso (RUL-REP-13, `37`/`35` §11) lo emite el " +
+      "trabajador de Storage, no el cliente del usuario. La propiedad del trabajo ya se verificó con RLS antes de firmar.",
+  },
 ];
 
 const MIGRA_CON_CONTRATOS_DE_API =

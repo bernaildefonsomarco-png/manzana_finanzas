@@ -195,8 +195,50 @@ export const NUDGE_TYPES = [
   "progress_positive",
   "budget_goal",
   "reengagement",
+  // W-14 (37_modulo_recordatorios_in_app.md RUL-NOTIF-01): los diez tipos
+  // de la bandeja. Nombres en español porque son vocabulario de producto,
+  // distinto del vocabulario en inglés de los avisos proactivos anteriores
+  // (WEB-D247: no se funden los dos catálogos).
+  "pago_proximo",
+  "pago_vencido",
+  "cuota_proxima",
+  "cuota_vencida",
+  "presupuesto_umbral",
+  "pendientes_acumulados",
+  "sin_registrar",
+  "correo_desconectado",
+  "descarga_lista",
+  "confirmar_hecho",
 ] as const;
 export type NudgeType = (typeof NUDGE_TYPES)[number];
+
+// Los diez tipos de RUL-NOTIF-01, en las cuatro clases de la tabla.
+export const REMINDER_KINDS = [
+  "pago_proximo",
+  "pago_vencido",
+  "cuota_proxima",
+  "cuota_vencida",
+  "presupuesto_umbral",
+  "pendientes_acumulados",
+  "sin_registrar",
+  "correo_desconectado",
+  "descarga_lista",
+  "confirmar_hecho",
+] as const satisfies readonly NudgeType[];
+export type ReminderKind = (typeof REMINDER_KINDS)[number];
+
+export const REMINDER_CLASS_BY_KIND: Record<ReminderKind, "T" | "V" | "A" | "U"> = {
+  descarga_lista: "T",
+  correo_desconectado: "T",
+  confirmar_hecho: "T",
+  pago_proximo: "V",
+  pago_vencido: "V",
+  cuota_proxima: "V",
+  cuota_vencida: "V",
+  presupuesto_umbral: "V",
+  pendientes_acumulados: "A",
+  sin_registrar: "U",
+};
 
 export const NUDGE_STATUSES = [
   "candidate",
@@ -552,6 +594,102 @@ export type NudgeDelivery = {
   responded_at: string | null;
   response_summary: string | null;
   created_at: string;
+  metadata: Record<string, unknown>;
+};
+
+// W-14 / 37: la bandeja visible. WEB-D247.
+export type InAppNotification = {
+  id: string;
+  user_id: string;
+  kind: ReminderKind;
+  subject_key: string;
+  title: string;
+  body: string;
+  action_url: string | null;
+  read_at: string | null;
+  dismissed_at: string | null;
+  resolved_at: string | null;
+  snoozed_until: string | null;
+  created_at: string;
+  expires_at: string;
+};
+
+export type ReminderStatus =
+  | "en_bandeja"
+  | "leido"
+  | "pospuesto"
+  | "resuelto"
+  | "descartado"
+  | "caducado";
+
+export function computeReminderStatus(
+  reminder: Pick<
+    InAppNotification,
+    "dismissed_at" | "resolved_at" | "snoozed_until" | "read_at" | "expires_at"
+  >,
+  now: Date = new Date(),
+): ReminderStatus {
+  if (reminder.dismissed_at) return "descartado";
+  if (reminder.resolved_at) return "resuelto";
+  if (new Date(reminder.expires_at).getTime() <= now.getTime()) return "caducado";
+  if (reminder.snoozed_until && new Date(reminder.snoozed_until).getTime() > now.getTime()) {
+    return "pospuesto";
+  }
+  if (reminder.read_at) return "leido";
+  return "en_bandeja";
+}
+
+// W-14 / 38: búsqueda guardada.
+export type SavedSearch = {
+  id: string;
+  user_id: string;
+  name: string;
+  query: string;
+  filters: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};
+
+// W-14 / 35: reportes y exportación.
+export type SavedReport = {
+  id: string;
+  user_id: string;
+  name: string;
+  config: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
+};
+
+export const EXPORT_KINDS = ["movimientos", "datos_completos", "reporte"] as const;
+export type ExportKind = (typeof EXPORT_KINDS)[number];
+
+export const EXPORT_FORMATS = ["csv", "xlsx", "pdf", "json"] as const;
+export type ExportFormat = (typeof EXPORT_FORMATS)[number];
+
+export const EXPORT_STATUSES = [
+  "pendiente",
+  "procesando",
+  "listo",
+  "expirado",
+  "fallido",
+] as const;
+export type ExportStatus = (typeof EXPORT_STATUSES)[number];
+
+export type ExportJob = {
+  id: string;
+  user_id: string;
+  kind: ExportKind;
+  format: ExportFormat;
+  status: ExportStatus;
+  row_count: number | null;
+  idempotency_key: string | null;
+  storage_path: string | null;
+  requested_at: string;
+  completed_at: string | null;
+  expires_at: string | null;
+  failure_reason: string | null;
   metadata: Record<string, unknown>;
 };
 

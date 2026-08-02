@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   Bell,
+  BellRing,
   CalendarDays,
   Compass,
   Eye,
@@ -37,7 +38,8 @@ export type AppView =
   | "budgets"
   | "reports"
   | "projections"
-  | "assistant";
+  | "assistant"
+  | "reminders";
 
 type NavItem = {
   id: AppView;
@@ -110,6 +112,12 @@ const navItems: NavItem[] = [
     label: "Asistente",
     href: "/asistente",
     icon: <MessageCircle className="h-4 w-4" />,
+  },
+  {
+    id: "reminders",
+    label: "Recordatorios",
+    href: "/recordatorios",
+    icon: <BellRing className="h-4 w-4" />,
   },
 ];
 
@@ -250,14 +258,7 @@ export function AppShell({
                   Buscar
                 </Button>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                icon={<Bell className="h-4 w-4" />}
-                onClick={() => onNavigate?.("pending")}
-              >
-                Abrir notificaciones pendientes
-              </Button>
+              <ReminderBadgeButton onNavigate={onNavigate} />
               <Button
                 variant="ghost"
                 size="icon"
@@ -471,5 +472,53 @@ function MobileNavLink({
       {item.icon}
       <span className="max-w-full truncate">{item.mobileLabel ?? item.label}</span>
     </a>
+  );
+}
+
+// SCR-NOTIF-02: punto con conteo hasta "9+", sin `aria-label` genérico ni
+// icono de alarma. Sin conteo, el punto no aparece (RUL-NOTIF-09).
+function ReminderBadgeButton({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
+  const [count, setCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/v1/reminders/count", { credentials: "same-origin" })
+      .then((response) => response.json())
+      .then((payload: { ok: boolean; data?: { count: number; exceeds_display_max: boolean } }) => {
+        if (!active || !payload.ok || !payload.data) return;
+        setCount(payload.data.exceeds_display_max ? 10 : payload.data.count);
+      })
+      .catch(() => {
+        // El badge es informativo: si la petición falla, simplemente no se
+        // muestra, no se rompe la navegación.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const display = count !== null && count > 9 ? "9+" : count;
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      icon={
+        <span className="relative inline-flex">
+          <Bell className="h-4 w-4" />
+          {count !== null && count > 0 ? (
+            <span
+              aria-hidden="true"
+              className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-brand px-1 text-[10px] font-semibold leading-none text-text-inverse"
+            >
+              {display}
+            </span>
+          ) : null}
+        </span>
+      }
+      onClick={() => onNavigate?.("reminders")}
+    >
+      {count && count > 0 ? `${count} recordatorios sin leer` : "Recordatorios"}
+    </Button>
   );
 }

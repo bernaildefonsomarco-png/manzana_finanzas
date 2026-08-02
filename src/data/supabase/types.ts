@@ -1270,6 +1270,54 @@ export type Database = {
         }
         Relationships: []
       }
+      export_jobs: {
+        Row: {
+          completed_at: string | null
+          expires_at: string | null
+          failure_reason: string | null
+          format: Database["public"]["Enums"]["export_format"]
+          id: string
+          idempotency_key: string | null
+          kind: Database["public"]["Enums"]["export_kind"]
+          metadata: Json
+          requested_at: string
+          row_count: number | null
+          status: Database["public"]["Enums"]["export_status"]
+          storage_path: string | null
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          expires_at?: string | null
+          failure_reason?: string | null
+          format: Database["public"]["Enums"]["export_format"]
+          id?: string
+          idempotency_key?: string | null
+          kind: Database["public"]["Enums"]["export_kind"]
+          metadata?: Json
+          requested_at?: string
+          row_count?: number | null
+          status?: Database["public"]["Enums"]["export_status"]
+          storage_path?: string | null
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          expires_at?: string | null
+          failure_reason?: string | null
+          format?: Database["public"]["Enums"]["export_format"]
+          id?: string
+          idempotency_key?: string | null
+          kind?: Database["public"]["Enums"]["export_kind"]
+          metadata?: Json
+          requested_at?: string
+          row_count?: number | null
+          status?: Database["public"]["Enums"]["export_status"]
+          storage_path?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       external_event_log: {
         Row: {
           created_at: string
@@ -1525,6 +1573,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      in_app_notifications: {
+        Row: {
+          action_url: string | null
+          body: string
+          created_at: string
+          dismissed_at: string | null
+          expires_at: string
+          id: string
+          kind: Database["public"]["Enums"]["nudge_type"]
+          read_at: string | null
+          resolved_at: string | null
+          snoozed_until: string | null
+          subject_key: string
+          title: string
+          user_id: string
+        }
+        Insert: {
+          action_url?: string | null
+          body: string
+          created_at?: string
+          dismissed_at?: string | null
+          expires_at: string
+          id?: string
+          kind: Database["public"]["Enums"]["nudge_type"]
+          read_at?: string | null
+          resolved_at?: string | null
+          snoozed_until?: string | null
+          subject_key: string
+          title: string
+          user_id: string
+        }
+        Update: {
+          action_url?: string | null
+          body?: string
+          created_at?: string
+          dismissed_at?: string | null
+          expires_at?: string
+          id?: string
+          kind?: Database["public"]["Enums"]["nudge_type"]
+          read_at?: string | null
+          resolved_at?: string | null
+          snoozed_until?: string | null
+          subject_key?: string
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
       }
       insight_action_receipts: {
         Row: {
@@ -3132,6 +3228,90 @@ export type Database = {
         }
         Relationships: []
       }
+      reminder_pauses: {
+        Row: {
+          created_at: string
+          paused_until: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          paused_until: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          paused_until?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      saved_reports: {
+        Row: {
+          config: Json
+          created_at: string
+          deleted_at: string | null
+          id: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          config: Json
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          config?: Json
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      saved_searches: {
+        Row: {
+          created_at: string
+          deleted_at: string | null
+          filters: Json
+          id: string
+          name: string
+          query: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          deleted_at?: string | null
+          filters?: Json
+          id?: string
+          name: string
+          query: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          deleted_at?: string | null
+          filters?: Json
+          id?: string
+          name?: string
+          query?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       sender_suggestions: {
         Row: {
           created_at: string
@@ -4260,6 +4440,36 @@ export type Database = {
           subcategory_id: string
         }[]
       }
+      create_export_job: {
+        Args: {
+          p_format: Database["public"]["Enums"]["export_format"]
+          p_idempotency_key: string
+          p_kind: Database["public"]["Enums"]["export_kind"]
+          p_metadata?: Json
+          p_user_id: string
+        }
+        Returns: {
+          completed_at: string | null
+          expires_at: string | null
+          failure_reason: string | null
+          format: Database["public"]["Enums"]["export_format"]
+          id: string
+          idempotency_key: string | null
+          kind: Database["public"]["Enums"]["export_kind"]
+          metadata: Json
+          requested_at: string
+          row_count: number | null
+          status: Database["public"]["Enums"]["export_status"]
+          storage_path: string | null
+          user_id: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "export_jobs"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       decide_learning_candidate: {
         Args: {
           p_actor_type: string
@@ -4320,6 +4530,10 @@ export type Database = {
         }
         Returns: Json
       }
+      dismiss_reminder: {
+        Args: { p_id: string; p_user_id: string }
+        Returns: undefined
+      }
       enqueue_gmail_history_notification: {
         Args: {
           p_email_address: string
@@ -4377,6 +4591,10 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      mark_all_reminders_read: {
+        Args: { p_user_id: string }
+        Returns: undefined
       }
       mark_outbox_failed: {
         Args: {
@@ -4440,6 +4658,14 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      mark_reminder_read: {
+        Args: { p_id: string; p_user_id: string }
+        Returns: undefined
+      }
+      pause_reminders: {
+        Args: { p_until: string; p_user_id: string }
+        Returns: undefined
       }
       prepare_user_account_deletion: {
         Args: { p_trace_id: string; p_user_id: string }
@@ -4710,6 +4936,7 @@ export type Database = {
         }
         Returns: Json
       }
+      resume_reminders: { Args: { p_user_id: string }; Returns: undefined }
       reverse_debt_payment: {
         Args: {
           p_mode: string
@@ -4808,6 +5035,15 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      set_reminder_preference: {
+        Args: {
+          p_channel: string
+          p_enabled: boolean
+          p_nudge_type: Database["public"]["Enums"]["nudge_type"]
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       set_whatsapp_nudge_consent: {
         Args: {
           p_debt_due: boolean
@@ -4819,6 +5055,12 @@ export type Database = {
           p_user_id: string
         }
         Returns: Json
+      }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
+      snooze_reminder: {
+        Args: { p_id: string; p_until: string; p_user_id: string }
+        Returns: undefined
       }
       undo_classification_batch: {
         Args: {
@@ -4886,6 +5128,14 @@ export type Database = {
         | "paid"
         | "cancelled"
         | "archived"
+      export_format: "csv" | "xlsx" | "pdf" | "json"
+      export_kind: "movimientos" | "datos_completos" | "reporte"
+      export_status:
+        | "pendiente"
+        | "procesando"
+        | "listo"
+        | "expirado"
+        | "fallido"
       goal_status: "activa" | "alcanzada" | "pausada" | "archivada"
       insight_feedback: "util" | "no_util"
       insight_status:
@@ -4977,6 +5227,16 @@ export type Database = {
         | "progress_positive"
         | "budget_goal"
         | "reengagement"
+        | "pago_proximo"
+        | "pago_vencido"
+        | "cuota_proxima"
+        | "cuota_vencida"
+        | "presupuesto_umbral"
+        | "pendientes_acumulados"
+        | "sin_registrar"
+        | "correo_desconectado"
+        | "descarga_lista"
+        | "confirmar_hecho"
       onboarding_status:
         | "not_started"
         | "started"
@@ -5185,6 +5445,15 @@ export const Constants = {
         "cancelled",
         "archived",
       ],
+      export_format: ["csv", "xlsx", "pdf", "json"],
+      export_kind: ["movimientos", "datos_completos", "reporte"],
+      export_status: [
+        "pendiente",
+        "procesando",
+        "listo",
+        "expirado",
+        "fallido",
+      ],
       goal_status: ["activa", "alcanzada", "pausada", "archivada"],
       insight_feedback: ["util", "no_util"],
       insight_status: [
@@ -5283,6 +5552,16 @@ export const Constants = {
         "progress_positive",
         "budget_goal",
         "reengagement",
+        "pago_proximo",
+        "pago_vencido",
+        "cuota_proxima",
+        "cuota_vencida",
+        "presupuesto_umbral",
+        "pendientes_acumulados",
+        "sin_registrar",
+        "correo_desconectado",
+        "descarga_lista",
+        "confirmar_hecho",
       ],
       onboarding_status: [
         "not_started",
