@@ -1,77 +1,109 @@
 import type { Movement } from "@/shared/types/domain";
-import type { InitialOnboardingSummary } from "@/core/onboarding/onboarding-activation";
 
-export type HomeMoneySummary = {
-  total_balance: number;
-  separated_balance: number;
-  free_balance: number;
-  currency: "PEN";
-  account_count: number;
-  box_count: number;
+export type HomeState = "vacio" | "temprano" | "funcional" | "completo";
+
+export type HomeBlockKind =
+  | "free_money"
+  | "next_action"
+  | "pending"
+  | "month"
+  | "upcoming"
+  | "insight"
+  | "movements";
+
+export type HomeBlockStatus = "ok" | "error" | "unavailable";
+
+export type HomeFreeMoneyData =
+  | {
+      has_accounts: true;
+      total_balance: number;
+      separated_balance: number;
+      free_balance: number;
+      account_count: number;
+      box_count: number;
+    }
+  | { has_accounts: false; reason?: "no_accounts" };
+
+export type HomeReminderKind =
+  | "pago_proximo"
+  | "pago_vencido"
+  | "cuota_proxima"
+  | "cuota_vencida"
+  | "presupuesto_umbral"
+  | "pendientes_acumulados"
+  | "sin_registrar"
+  | "correo_desconectado"
+  | "descarga_lista"
+  | "confirmar_hecho";
+
+export type HomeNextAction = {
+  id: string;
+  kind: HomeReminderKind;
+  title: string;
+  body: string;
+  action_url: string | null;
 };
 
-export type HomePendingSummary = {
+export type HomePendingData = {
   active_count: number;
   needs_completion_count: number;
   high_risk_count: number;
 };
 
-export type HomeCommitmentSummary = {
+export type HomeBudgetSummary = {
+  id: string;
+  category_name: string | null;
+  amount: number;
+  currency: string;
+  spent: number;
+  percentage: number;
+  band: string;
+};
+
+export type HomeMonthData =
+  | { variant: "budgets_projection"; budgets: HomeBudgetSummary[]; projection: { free_money: number; projected_close: number | null; currency: "PEN" } | null }
+  | { variant: "period_total"; period_total: { gasto_total: number; ingreso_total: number } };
+
+export type HomeCommitmentItem = {
   id: string;
   title: string;
   amount: number;
+  currency: "PEN" | "USD";
   due_at: string;
-  kind: "debt" | "recurring" | "box";
+  kind: "recurring" | "debt";
 };
 
-export type HomeInsightCard = {
-  title: string;
-  body: string;
-  evidence: string;
-  tone: "progress" | "useful" | "attention";
+export type HomeUpcomingData = {
+  items: HomeCommitmentItem[];
+  total: number;
+  count: number;
 };
 
-export type HomeSuggestedAction = {
-  label: string;
-  description: string;
-  target_view: "movements" | "pending" | "money" | "insights";
-  priority: "primary" | "secondary";
-};
-
-export type HomeDashboardNudge = {
+export type HomeInsightData = {
   id: string;
-  type:
-    | "payment_due"
-    | "overdue_payment"
-    | "pending_review"
-    | "debt_due"
-    | "insight_prompt";
   title: string;
   body: string;
-  evidence: string | null;
-  action_label: string;
-  target_view: "upcoming" | "pending" | "debts" | "insights";
-  priority: number;
-  scheduled_for: string | null;
-  debt_id: string | null;
-  installment_id: string | null;
+  evidence_text: string;
 };
 
-export type HomeDataQualitySummary = {
-  confirmed_movements_count: number;
-  movements_without_account_count: number;
-  has_accounts: boolean;
-  message: string;
+export type HomeBlockDataByKind = {
+  free_money: HomeFreeMoneyData;
+  next_action: HomeNextAction;
+  pending: HomePendingData;
+  month: HomeMonthData;
+  upcoming: HomeUpcomingData;
+  insight: HomeInsightData;
+  movements: Movement[];
 };
 
-export type HomeDashboardSummary = {
-  money_summary: HomeMoneySummary | null;
-  pending_summary: HomePendingSummary;
-  recent_movements: Movement[];
-  next_commitments: HomeCommitmentSummary[];
-  dashboard_nudges: HomeDashboardNudge[];
-  featured_insight: HomeInsightCard | null;
-  suggested_action: HomeSuggestedAction | null;
-  data_quality: HomeDataQualitySummary;
-  onboarding: InitialOnboardingSummary;
+export type HomeBlock<K extends HomeBlockKind = HomeBlockKind> = {
+  kind: K;
+  status: HomeBlockStatus;
+  retryable?: boolean;
+  data?: HomeBlockDataByKind[K];
+};
+
+export type HomeComposition = {
+  state: HomeState;
+  blocks: HomeBlock[];
 };

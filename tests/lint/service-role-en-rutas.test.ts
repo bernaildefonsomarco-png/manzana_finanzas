@@ -13,7 +13,7 @@ describe("AC-SEG-01: service-role solo con justificación registrada", () => {
     expect(resultado.entradasObsoletas).toEqual([]);
   });
 
-  it("la lista de excepciones temporales tiene 58 rutas: W-13 retiró cuatro rutas ya migradas a sesión", () => {
+  it("la lista de excepciones temporales tiene 57 rutas: W-15 retira dashboard/home, reemplazado por v1/home", () => {
     // /api/v1/onboarding y /api/v1/privacy/account están entre las 48 que
     // 15 §1 mide como "usan createServiceClient", pero 15 §4 ya las
     // justifica como categoría permanente (registro sin sesión completa,
@@ -34,7 +34,12 @@ describe("AC-SEG-01: service-role solo con justificación registrada", () => {
     // W-13 retira tres acciones de Descubrimientos y la colección de Memoria:
     // ya operan con el cliente autenticado y RLS, por lo que conservarlas en
     // la lista sería una excepción obsoleta, no documentación preventiva.
-    expect(EXCEPCIONES_TEMPORALES.length).toBe(58);
+    // W-14 no cambia el total: sus nuevas rutas usan cliente autenticado.
+    // W-15 retira `v1/dashboard/home`: el Home legacy que lo usaba se borra
+    // y `GET /home` (su reemplazo) escribe `service_role` por una razón
+    // estructural distinta (tabla "no client write"), así que entra en la
+    // lista blanca permanente, no en esta — ver `v1/home` arriba.
+    expect(EXCEPCIONES_TEMPORALES.length).toBe(57);
   });
 
   it("AC-SEG-07 (agregado): la lista temporal no está vacía todavía — no cierra en W-02 (WEB-D168)", () => {

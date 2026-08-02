@@ -749,45 +749,132 @@ producto que sabe lo que no sabe y uno que rellena.
 
 - `AC-HOME-01` — El dinero libre del Inicio es **idéntico** al de Mi Dinero y
   al que responde el asistente, y los tres salen de la misma llamada.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `integracion`. Cierra en `W-15` la identidad
+  Inicio↔Mi Dinero: `calculateMoneyLayersForCurrency` se extrajo de
+  `/api/v1/money` a `core/finance/money-layers.ts` para que ambos endpoints
+  llamen exactamente la misma función, y `free-money-identity.test.ts` llama
+  a los dos `route.ts` con los mismos datos y compara `free_balance`
+  (`640` sobre una cuenta de `1140` con `500` en cajas), verificado con
+  `RUL-HECHO-02` (mutado `+1`, la prueba falló, restaurado). No cierra
+  completo: el asistente (`41`) no existe todavía (`W-17`), así que la
+  identidad de **tres** no es demostrable hasta entonces.
 - `AC-HOME-02` — Nunca se muestra `S/0.00` como dinero libre cuando no se
-  puede calcular; se dice qué falta. Evidencia: `TEST` + `USER`.
+  puede calcular; se dice qué falta. Evidencia: `TEST` + `USER`. Clase:
+  `unidad`. Cierra en `W-15` la parte `TEST`: `home-composer.test.ts` y
+  `home-screen.test.tsx` prueban el caso sin cuentas, y se confirmó con un
+  usuario real sin cuentas (`GET /home` devolvió `status:"unavailable"`,
+  nunca `S/0.00`). No cierra la parte `USER`: sin sesión de usuario real
+  todavía.
 - `AC-HOME-03` — El dinero libre nunca aparece sin su composición.
-  Evidencia: `TEST` + `USER`.
-- `AC-HOME-04` — Ningún bloque vacío se renderiza. Evidencia: `TEST`.
+  Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra en `W-15` la parte
+  `TEST`: el tipo `FreeMoneyComposition` no permite un `free_balance` sin
+  `total_balance`/`separated_balance`, y `home-screen.tsx` los renderiza
+  siempre juntos. No cierra la parte `USER`.
+- `AC-HOME-04` — Ningún bloque vacío se renderiza. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-15`: `home-composer.test.ts` ("RUL-HOME-05") y
+  `home-screen.test.tsx`.
 - `AC-HOME-05` — El orden de los bloques respeta la precedencia declarada de
-  `RUL-HOME-03`, y es reproducible en un test. Evidencia: `TEST`.
+  `RUL-HOME-03`, y es reproducible en un test. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-15`: `home-composer.test.ts`
+  ("AC-HOME-05 orden declarado y reproducible") y `home-screen.test.tsx`
+  ("AC-HOME-18 orden del DOM").
 - `AC-HOME-06` — Se muestra **como máximo una** "siguiente cosa que hacer", y
-  ninguna si no hay nada de los niveles 1 a 4. Evidencia: `TEST`.
+  ninguna si no hay nada de los niveles 1 a 4. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-15`: `home-precedence.test.ts`,
+  `home-composer.test.ts`, `home-screen.test.tsx`.
 - `AC-HOME-07` — Ninguna "siguiente cosa que hacer" es una acción de uso del
-  producto. Evidencia: `TEST` + `USER`.
+  producto. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra en `W-15` la
+  parte `TEST`: `home-precedence.test.ts` prueba que `sin_registrar` (la
+  única acción de crecimiento del catálogo de recordatorios) y
+  `descarga_lista` no tienen nivel y nunca compiten como "lo siguiente"
+  (`WEB-D250`). No cierra la parte `USER`.
 - `AC-HOME-08` — Registrar un movimiento está a un clic en los cuatro estados
   progresivos y en los dos tamaños de pantalla. Evidencia: `TEST` + `USER`.
+  No cierra ninguna parte: el botón "Registrar" vive en
+  `AppShell.primaryAction`/`mobilePrimaryAction`, fuera del árbol
+  condicional de carga/error/vacío/con-contenido — por construcción está
+  presente en los cuatro estados — pero no hay una prueba de componente que
+  monte explícitamente los cuatro estados y confirme el botón en cada uno,
+  ni una prueba de los dos tamaños de pantalla (requiere un viewport real,
+  no `jsdom`, y `USER` exige sesión real).
 - `AC-HOME-09` — Ningún bloque del Inicio ejecuta una operación de dinero; el
-  asistente lo hace solo con confirmación explícita. Evidencia: `CODE` + `TEST`.
+  asistente lo hace solo con confirmación explícita.
+  Evidencia: `CODE` + `TEST`. Cierra en `W-15` la parte `CODE` del Inicio:
+  los únicos `fetch` de `home-api.ts` son `GET /home`, `GET /home/next`, `POST .../postpone` y
+  `PATCH /home/preferences` — ninguno del catálogo de escritura de `26`,
+  `30`, `31` o `32`; todo lo demás navega. No cierra la parte `TEST`: no hay
+  una prueba automatizada que verifique la ausencia de escritura de dinero
+  (solo inspección de código). No cierra la parte del asistente: `41` no
+  existe todavía (`W-17`).
 - `AC-HOME-10` — El fallo de un bloque no impide que los demás se muestren, y
-  registrar sigue disponible aunque fallen todos. Evidencia: `TEST`.
+  registrar sigue disponible aunque fallen todos. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-15`: `route.test.ts` ("RUL-HOME-09"),
+  `home-composer.test.ts`, `home-screen.test.tsx`
+  ("RUL-HOME-09 error por bloque"); el botón de registrar vive fuera del
+  árbol de bloques, así que sigue disponible aunque `GET /home` falle por
+  completo (`ERR-HOME-03`).
 - `AC-HOME-11` — `GET /home` responde con cada bloque y su estado propio en
-  una sola llamada, con las consultas en paralelo. Evidencia: `CODE` + `TEST`.
+  una sola llamada, con las consultas en paralelo.
+  Evidencia: `CODE` + `TEST`. Clase: `integracion`. Cierra en `W-15`:
+  `route.ts` lanza trece consultas con `Promise.allSettled` (cuentas, cajas, compromisos
+  recurrentes, cuotas de deuda, pendientes, presupuestos, proyección,
+  periodo, hallazgos, recordatorios, movimientos recientes, conteo de
+  movimientos, bloques ocultos), probado en `route.test.ts` y confirmado con
+  `curl` contra Postgres real: una sola petición devolvió la composición
+  completa.
 - `AC-HOME-12` — La respuesta de `GET /home` no es cacheable por ningún
-  intermediario. Evidencia: `TEST`.
+  intermediario. Evidencia: `TEST`. Clase: `unidad` + `integracion`. Cierra
+  en `W-15`: cabecera `private, no-store` en `home`, `home/next` y
+  `home/preferences`, probado en los tres `route.test.ts` y confirmado con
+  `curl -D -` contra Postgres real.
 - `AC-HOME-13` — La primera cifra visible aparece por debajo de 800 ms.
-  Evidencia: `METRIC`.
+  Evidencia: `METRIC`. No cierra: requiere medición de producción con
+  usuarios reales; este corte no construye instrumentación de rendimiento.
 - `AC-HOME-14` — El Inicio **no añade ningún índice ni tabla**: si los
-  necesitara, estaría calculando por su cuenta. Evidencia: `CODE`.
+  necesitara, estaría calculando por su cuenta. Evidencia: `CODE`. Cierra en
+  `W-15`: `39` es "el único módulo del corpus que no necesita migración"
+  (§4.2, literal) — no existe ningún `supabase/migrations/065_*` ni
+  posterior para este corte, verificable listando el directorio.
 - `AC-HOME-15` — El estado vacío no ofrece ningún canal externo y ofrece tres
-  puertas propias. Evidencia: `TEST` + `USER`.
+  puertas propias. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra en
+  `W-15` la parte `TEST`: `home-screen.test.tsx` ("SCR-HOME-02 estado
+  vacío") prueba las tres puertas y la ausencia de enlaces
+  `wa.me`/`mailto:`. No cierra la parte `USER`.
 - `AC-HOME-16` — No hay ningún saludo con nombre, emoji de celebración ni
-  signo de exclamación. Evidencia: `TEST` + `USER`.
+  signo de exclamación. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra
+  en `W-15` la parte `TEST`: `home-screen.test.tsx` ("RUL-HOME-11 sin
+  saludo") revisa el texto completo renderizado contra `!`/`¡` y emojis de
+  celebración. No cierra la parte `USER`.
 - `AC-HOME-17` — En modo discreto la estructura se conserva y los montos se
-  ocultan, incluido el asistente. Evidencia: `TEST`.
-- `AC-HOME-18` — El orden del DOM coincide con el orden visual.
-  Evidencia: `TEST`.
+  ocultan, incluido el asistente. Evidencia: `TEST`. No cierra: el Inicio
+  hereda el modo discreto porque todos sus montos pasan por `MoneyText`
+  (cero literales de moneda fuera de ese componente en `home-screen.tsx`,
+  verificado por inspección — no es una prueba automatizada de `W-15`); la
+  ocultación en sí ya está probada por `money.tsx`/
+  `discreet-mode-context.tsx` en cortes anteriores, pero no hay una prueba
+  de `W-15` que monte `HomeScreen` en modo discreto y confirme
+  `aria-label="Monto oculto"`. "Incluido el asistente" tampoco es
+  verificable: `41` no existe. Bug de paso encontrado y corregido en este
+  corte: `experience-preferences-client.ts` no enviaba `Idempotency-Key` al
+  guardar preferencias, por lo que el propio interruptor de modo discreto de
+  la cabecera devolvía `400` en cualquier intento — sin este arreglo,
+  `RUL-HOME-10` habría sido imposible de operar desde el Inicio.
+- `AC-HOME-18` — El orden del DOM coincide con el orden visual. Evidencia:
+  `TEST`. Clase: `unidad`. Cierra en `W-15`: `home-screen.test.tsx`
+  ("AC-HOME-18 orden del DOM").
 - `AC-HOME-19` — Un bloque oculto por el usuario no reaparece por ninguna
-  observación de uso. Evidencia: `TEST`.
+  observación de uso. Evidencia: `TEST`. Clase: `unidad` + `integracion`.
+  Cierra en `W-15`: `home-composer.test.ts` ("WEB-D064"),
+  `home.repository.test.ts`, y confirmado con datos reales
+  (`PATCH /home/preferences` con `hidden:true` seguido de `GET /home`
+  mostró la composición sin ese bloque).
 - `AC-HOME-20` — Ningún gráfico aparece en el Inicio. Evidencia: `CODE`.
+  Cierra en `W-15`: `home-screen.tsx` no importa ninguna librería de
+  gráficos; la única barra de "Este mes" es un `<div>` de progreso lineal
+  sin ejes ni series, igual que en `32`.
 - `AC-HOME-21` — Un usuario con dinero libre S/0.00 real **sí** ve la cifra.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-15`:
+  `home-composer.test.ts` (caso 2 de §19) y `home-screen.test.tsx`.
 
 ## 21. Fuera de alcance y puente a WhatsApp
 

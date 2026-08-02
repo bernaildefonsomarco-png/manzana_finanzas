@@ -207,10 +207,10 @@ test las distingue por familia.
 | `e2e` | 7 |
 | `presupuesto` | 2 |
 | `contenido` | 1 |
-| `integracion` | 81 |
-| `unidad` | 118 |
-| **Con clase** | **309** |
-| **Con `TEST` y sin clase** | **311** |
+| `integracion` | 83 |
+| `unidad` | 131 |
+| **Con clase** | **324** |
+| **Con `TEST` y sin clase** | **296** |
 | **Total con `TEST`** | **620** |
 
 `lint` sube de 13 a 14 en `W-01`: `AC-INV-10` recibe su clase al escribir su
@@ -237,8 +237,22 @@ con su razón, conservando la `Evidencia:` que sí les corresponde — quitarla
 del todo los habría sacado silenciosamente del censo de portones (`708` deja
 de cuadrar si `G1+G2+G3` no suma el total).
 
+`W-15` añade 15 filas con clase en `39` (el Inicio): dos `integracion`
+(`AC-HOME-01`, una prueba que llama a `/api/v1/money` y `/api/v1/home` con
+los mismos datos y compara el dinero libre; `AC-HOME-11`, las nueve fuentes
+de la composición lanzadas con `Promise.allSettled`) y trece `unidad`
+(composición de bloques, precedencia de "lo siguiente", estado vacío, sin
+saludo, orden del DOM, bloques ocultos que no regresan por observación,
+dinero libre en cero real). Igual que `W-14`, varios criterios de `39`
+declaraban `Evidencia: TEST` o `TEST + USER` en la redacción original sin
+que nada los verificara todavía; varios de esos siguen sin cerrar porque
+dependen del asistente conversacional (`41`, `W-17`, que todavía no existe)
+o de sesión de usuario real — se anotaron `No cierra: …` conservando la
+`Evidencia:` declarada, por la misma razón que `W-14`: quitarla los sacaría
+en silencio del censo de portones.
+
 Ningún criterio declara clase sin exigir `TEST`, que es el otro error de forma
-posible. De los 399 criterios que todavía no tienen clase, 311 ya declaran
+posible. De los 384 criterios que todavía no tienen clase, 296 ya declaran
 `TEST` y quedan pendientes de asignación explícita; los otros 88 aún no tienen
 evidencia de prueba. `AC-HECHO-03` impide que cualquiera llegue a `verificado`
 sin clase.

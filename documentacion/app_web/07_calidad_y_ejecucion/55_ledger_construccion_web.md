@@ -201,20 +201,21 @@ exactamente esa.
 
 ## 6. Estado actual
 
-**La construcción avanza.** `W-01` a `W-14` cerraron `G1`. Ninguno tiene
-criterios de `G3` propios cerrados. En `W-13` y `W-14`, “verificado” incluye
+**La construcción avanza.** `W-01` a `W-15` cerraron `G1`. Ninguno tiene
+criterios de `G3` propios cerrados. Desde `W-13`, “verificado” incluye
 la parte `TEST` que el criterio realmente cubre; las mitades `USER` sin
 sesión y los criterios explícitamente diferidos siguen marcados como
-abiertos en sus documentos. `W-14` es el primer corte que, además, retira
-`Evidencia:` falsa donde no correspondía: varios criterios de `35`/`37`/`38`
-tenían `TEST` declarado desde su redacción original sin que nada los
-verificara — se corrigieron a `No cierra: <razón>` conservando el nivel de
-evidencia que sí les toca, no ocultándolo (ver `W-14` §"qué sorprendió").
+abiertos en sus documentos. Desde `W-14`, además, se retira `Evidencia:`
+falsa donde no correspondía: varios criterios de `35`/`37`/`38` y, en
+`W-15`, de `39`, tenían `TEST`/`USER` declarado desde su redacción original
+sin que nada los verificara — se corrigieron a `No cierra: <razón>`
+conservando el nivel de evidencia que sí les toca, no ocultándolo (ver
+`W-14`/`W-15` §"qué sorprendió").
 
 | | |
 |---|---|
-| Cortes cerrados | 14 de 20 |
-| Criterios `verificado` | 225 de 708 |
+| Cortes cerrados | 15 de 20 |
+| Criterios `verificado` | 240 de 708 |
 | Criterios `validado` | 0 de 135 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -1235,6 +1236,162 @@ ningún documento lo decía antes de este corte.
 - `scripts/gates/service-role-lista.ts`: `v1/exports/*/link` añadido a la
   lista blanca permanente (enlace firmado de Storage, `15` §4).
 - `03_decisiones_producto_web.md`: `WEB-D246` a `WEB-D249` (nuevas).
+
+---
+
+## W-15 — El Inicio responde "¿dónde estoy?" en una pantalla
+
+**Cerrado:** 2026-08-02
+**Portones:** G1 ✓ (parcial, ver abajo) · G2 no aplica a este corte · G3 no
+cierra: no hubo sesiones `USER` ni cohorte para `METRIC`
+**Matriz regenerada:** 2026-08-02, con `npm run matriz:generar`; hash del
+commit sustantivo: `PENDIENTE` (hash real registrado en el commit de
+seguimiento de este cierre).
+
+### Qué se entregó
+
+El Inicio (`39`): `GET /home` compone trece consultas en paralelo con
+`Promise.allSettled` (cuentas, cajas, compromisos recurrentes, cuotas de
+deuda, pendientes, presupuestos, proyección, periodo, hallazgos,
+recordatorios, movimientos recientes, conteo de movimientos, bloques
+ocultos) en siete tipos de bloque — dinero libre, lo siguiente, pendientes,
+este mes, próximos, hallazgo destacado, movimientos recientes — con la
+precedencia declarada de `RUL-HOME-03` (`core/home/home-precedence.ts`), que
+reutiliza la bandeja de recordatorios de `37` en vez de recalcular
+vencimientos por su cuenta (`WEB-D250`). **Cero migraciones nuevas**: es el
+único módulo del corpus que no las necesita (§4.2, verificado — no existe
+ningún `supabase/migrations/065_*`). Las preferencias de bloques ocultos se
+persisten en `learned_preferences` (migración `061`, módulo `36`), el primer
+escritor de usuario directo sobre esa tabla vía `service_role` con la
+propiedad verificada antes por RLS. Cuatro rutas nuevas: `GET /home`,
+`GET /home/next`, `POST /home/next/[id]/postpone` (reutiliza literalmente
+`dismissReminder` de `37`) y `GET`/`PATCH /home/preferences`; dos entraron a
+la lista blanca permanente de `service-role` por el mismo motivo que
+`v1/exports/*/link` en `W-14`.
+
+Dinero libre unificado: `calculateMoneyLayersForCurrency` se extrajo de
+`/api/v1/money` a `core/finance/money-layers.ts` para que Inicio y Mi Dinero
+llamen exactamente la misma función (`RUL-HOME-02`), verificado con una
+prueba de integración que llama a los dos `route.ts` con los mismos datos y
+compara la cifra (`free-money-identity.test.ts`, `RUL-HECHO-02`).
+
+Frontend nuevo en `/inicio`, reemplazando entero el Home heredado del
+baseline pre-reconstrucción (`WEB-D164`): `home-screen.tsx` con
+`SCR-HOME-01`/`02`/`04`, modo discreto heredado automáticamente porque todos
+los montos pasan por `MoneyText`, estado vacío con tres puertas propias sin
+canal externo, sin saludo ni celebración (`RUL-HOME-11`), y el asistente
+como una burbuja que enlaza al placeholder de `/asistente` — el motor
+conversacional (`41`) no existe hasta `W-17`.
+
+Dos decisiones nuevas (`WEB-D250`, reutilizar la bandeja de `37` para "lo
+siguiente"; `WEB-D251`, construir `SCR-HOME-02` ahora sin esperar a `44`).
+78 pruebas nuevas en nueve archivos: 35 unitarias de `core/home`
+(precedencia, composición, todos los casos borde de §19), 7 del repositorio
+de preferencias, 10 de componente (`home-screen.test.tsx`, React Testing
+Library), y 26 de ruta API entre los cuatro endpoints nuevos más la
+identidad de dinero libre (`free-money-identity.test.ts`) — con
+`RUL-HECHO-02` sobre la lógica de mutación y las condiciones de borde más
+sensibles (nivel de precedencia, tope de presupuestos, atajo de estado
+vacío, no-op de ocultar dos veces, identidad de dinero libre). Verificado
+además con datos reales
+contra Postgres local (`curl` con token de sesión real): estado vacío para
+un usuario sin nada, estado `funcional` con cuenta, caja, quince
+movimientos, un presupuesto y un pendiente reales (dinero libre `640` =
+`1140 - 500`, igual en `/home` y `/money`), y el ciclo completo de
+`PATCH /home/preferences` ocultando y mostrando un bloque. `npx tsc --noEmit`
+y `npx eslint .` en verde. `npm run build` compila y genera las 145 rutas de
+`/api/v1` con las cuatro nuevas de `home` visibles en la salida. `npm test`:
+334/335 archivos y 2238/2239 pruebas, por el mismo timeout frío conocido de
+`movements/route.test.ts` desde `W-09` (aislado con `--testTimeout=20000`
+pasa 6/6). RLS: 18/18 archivos, 284/284 pruebas — este corte no añade tablas,
+así que no añade archivo de RLS propio; la suite completa se re-verificó
+para confirmar que nada se rompió.
+
+Bug de paso encontrado y corregido:
+`src/shared/privacy/experience-preferences-client.ts` no enviaba
+`Idempotency-Key` al guardar preferencias, así que el interruptor de modo
+discreto de la cabecera —usado en **todas** las pantallas, no solo el
+Inicio— devolvía `400` en cualquier intento de activarlo. Sin este arreglo,
+`RUL-HOME-10` habría sido imposible de operar desde el Inicio.
+
+### Qué sorprendió
+
+La primera: la reutilización de la bandeja de recordatorios (`37`) para "lo
+siguiente" no estaba prescrita en `39`, que solo dice que la fuente incluye
+`37`. Al leer `reminders-evaluate.repository.ts` para decidir cómo construir
+la precedencia, resultó que su ventana de "próximo" ya es exactamente los
+tres días que `RUL-HOME-03` nivel 3 pide — reutilizar la bandeja en vez de
+recalcular evitó una segunda función de "¿qué está por vencer?" que pudiera
+divergir (`WEB-D250`).
+
+La segunda: el bug de `Idempotency-Key` en `experience-preferences-client.ts`
+no es de este corte — es un defecto pre-existente de un corte anterior (la
+pantalla de ajustes que primero montó el interruptor de modo discreto), pero
+se encontró aquí porque el Inicio es la primera pantalla cuyo criterio de
+aceptación (`AC-HOME-17`) depende de poder operar ese interruptor durante la
+verificación.
+
+La tercera: verificar en el navegador contra Supabase local no funcionó por
+una razón distinta a la de `W-14` (que fue caché de PostgREST en *staging*).
+Aquí el problema fue que el `fetch()` del cliente hacia
+`127.0.0.1:55321` fallaba con "Failed to fetch" sin ni siquiera aparecer en
+la lista de peticiones de red del navegador, mientras que una **navegación**
+directa a esa misma URL sí llegaba y devolvía una respuesta real de
+Postgres — indicando una restricción de la sandbox del navegador sobre
+`fetch`/XHR cross-origin, no un problema del servidor ni del código. Se
+verificó en su lugar con `curl` y un token de sesión real, igual que la
+verificación de datos reales de `W-14`.
+
+La cuarta: Docker se puso inestable durante la siembra de datos
+(`supabase_kong_manzana` salió con código `137`, y `supabase_vector_manzana`
+quedó reiniciándose en bucle) — probablemente por presión de memoria con dos
+proyectos de Supabase local corriendo a la vez en la máquina. Se recuperó
+con el mismo procedimiento documentado en `W-14`
+(`docker start supabase_kong_manzana`, esperar a `healthy`).
+
+### Qué quedó abierto
+
+El asistente (`41`, `W-17`) no existe todavía: `AC-HOME-01` (la identidad de
+**tres** cifras, no solo dos), la mitad de `AC-HOME-09` y la cláusula "incluido
+el asistente" de `AC-HOME-17` no cierran por esa razón, documentado
+explícitamente en vez de darlos por buenos. `AC-HOME-08` no tiene una prueba
+de componente que confirme el botón de registrar en los cuatro estados
+progresivos ni en los dos tamaños de pantalla (requiere un viewport real,
+`jsdom` no alcanza). `AC-HOME-13` (primera cifra bajo 800 ms) exige
+instrumentación de producción que este corte no construye. Ningún criterio
+con evidencia `USER` cierra: sin sesión de usuario real todavía.
+`ACT-HOME-04`/"Ya la pagué" (confirmar un pago sin salir del Inicio) no se
+construyó — el botón de "lo siguiente" navega al módulo dueño en vez de
+resolver en una sola acción, así que el usuario completa el registro en el
+destino, no en el Inicio mismo.
+
+No hubo sesiones `USER` ni serie `METRIC`. `AC-DEUDA-06`: ninguna sorpresa de
+este corte apunta a un documento que debería haber advertido algo y no lo
+hizo — las cuatro fueron decisiones de implementación razonables o
+inestabilidad de entorno, no vacíos del corpus.
+
+### Documentos corregidos
+
+- `39` §20: los veintiún criterios anotados contra código y pruebas reales;
+  seis conservan `Evidencia: TEST + USER` con `No cierra` explicando la
+  parte `USER`, siguiendo el mismo patrón que corrigió `W-14` (conservar la
+  evidencia declarada en vez de recortarla al cerrar solo una parte).
+- `03_decisiones_producto_web.md`: `WEB-D250`, `WEB-D251` (nuevas).
+- `50` §3.1: censo regenerado (324 con clase, no 309; `integracion` 83, no
+  81; `unidad` 131, no 118; portón sin cambios, `563/10/135`, porque se
+  preservaron las líneas `Evidencia:` originales de los criterios que no
+  cierran del todo).
+- `tests/corpus/matriz.test.ts`: expectativas de censo actualizadas.
+- `tests/lint/seg-04-404-no-403.test.ts`: conteo de rutas actualizado a 145
+  (cuatro nuevas de `home`, una menos por `dashboard/home` borrado).
+- `tests/lint/readme-arbol-real.test.ts` / `README.md`: `core/home/`
+  documentado en el árbol real.
+- `scripts/gates/service-role-lista.ts`: `v1/home` y `v1/home/preferences`
+  añadidos a la lista blanca permanente; `v1/dashboard/home` retirado de las
+  excepciones temporales (la ruta se borró con el Home legacy).
+- `src/shared/privacy/experience-preferences-client.ts`: agregado el header
+  `Idempotency-Key` que faltaba (bug pre-existente de un corte anterior,
+  corregido aquí porque bloqueaba la verificación de `AC-HOME-17`).
 
 ---
 

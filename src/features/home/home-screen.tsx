@@ -1,888 +1,607 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
-  Bell,
   CalendarDays,
-  CheckCircle2,
-  Clock3,
   Compass,
   ListChecks,
+  Mail,
   MessageCircle,
-  PencilLine,
   Plus,
   RefreshCw,
   ShieldCheck,
   WalletCards,
-  X,
 } from "lucide-react";
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
-import type { DebtScreenIntent } from "@/features/debts/debts-types";
-import {
-  isIncomeType,
-  isTransferType,
-  toMovementViewItem,
-  type MovementViewItem,
-} from "@/features/movements/movement-view-model";
+import { toMovementViewItem } from "@/features/movements/movement-view-model";
 import { ApiClientError } from "@/features/movements/movements-api";
-import { startDashboardOnboarding } from "@/features/onboarding/onboarding-api";
+import type { Movement } from "@/shared/types/domain";
 import { Button } from "@/ui/primitivas/button";
 import { cn } from "@/ui/primitivas/cn";
 import { MoneyText } from "@/ui/primitivas/money";
 import { ErrorState, LoadingBlock } from "@/ui/primitivas/states";
-import { dismissHomeNudge, getHomeDashboard } from "./home-api";
+import { getHome, postponeNextAction, setHomeBlockHidden } from "./home-api";
 import type {
-  HomeDashboardSummary,
-  HomeCommitmentSummary,
-  HomeDataQualitySummary,
-  HomeDashboardNudge,
-  HomeInsightCard,
-  HomeMoneySummary,
-  HomePendingSummary,
-  HomeSuggestedAction,
+  HomeBlock,
+  HomeBlockKind,
+  HomeComposition,
+  HomeMonthData,
+  HomeNextAction,
+  HomePendingData,
+  HomeUpcomingData,
+  HomeFreeMoneyData,
+  HomeInsightData,
+  HomeReminderKind,
 } from "./home-types";
-import {
-  getMoneyExplanation,
-  getMoneyHeadline,
-  getPendingTone,
-  getSuggestedAction,
-} from "./home-view-model";
 
 type LoadState = "loading" | "loaded" | "error";
 
-type UiError = {
-  title: string;
-  message: string;
+const NEXT_ACTION_LABEL: Record<HomeReminderKind, string> = {
+  correo_desconectado: "Revisar la conexión",
+  pago_vencido: "Registrar el pago",
+  cuota_vencida: "Registrar el pago",
+  pago_proximo: "Ver el pago",
+  cuota_proxima: "Ver la cuota",
+  pendientes_acumulados: "Revisarlos",
+  confirmar_hecho: "Revisar",
+  presupuesto_umbral: "Ver presupuesto",
+  sin_registrar: "Registrar",
+  descarga_lista: "Ver exportación",
+};
+
+const BLOCK_TITLES: Record<HomeBlockKind, string> = {
+  free_money: "Tienes libres",
+  next_action: "Lo siguiente",
+  pending: "Pendientes",
+  month: "Este mes",
+  upcoming: "Te vienen",
+  insight: "Algo que noté",
+  movements: "Últimos movimientos",
 };
 
 export function HomeScreen({
   onSignOut,
   onNavigate,
-  onOpenDebt,
   onStartMovement,
 }: {
   onSignOut?: () => void;
   onNavigate?: (view: AppView) => void;
-  onOpenDebt?: (intent: DebtScreenIntent) => void;
   onStartMovement?: () => void;
 }) {
-  const [summary, setSummary] = useState<HomeDashboardSummary | null>(null);
+  const [composition, setComposition] = useState<HomeComposition | null>(null);
   const [loadState, setLoadState] = useState<LoadState>("loading");
-  const [uiError, setUiError] = useState<UiError | null>(null);
-  const [dismissingNudgeId, setDismissingNudgeId] = useState<string | null>(null);
-  const [startingOnboarding, setStartingOnboarding] = useState(false);
+  const [uiError, setUiError] = useState<string | null>(null);
+  const [busyBlock, setBusyBlock] = useState<HomeBlockKind | null>(null);
 
-  const reloadHome = useCallback(async () => {
+  const reload = useCallback(() => {
     setLoadState("loading");
     setUiError(null);
-
-    try {
-      const nextSummary = await getHomeDashboard();
-      setSummary(nextSummary);
-      setLoadState("loaded");
-    } catch (error) {
-      setLoadState("error");
-      setUiError(toUiError(error));
-    }
+    getHome()
+      .then((next) => {
+        setComposition(next);
+        setLoadState("loaded");
+      })
+      .catch((error: unknown) => {
+        setLoadState("error");
+        setUiError(toUiMessage(error));
+      });
   }, []);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadInitialHome() {
-      try {
-        const nextSummary = await getHomeDashboard();
+    getHome()
+      .then((next) => {
         if (cancelled) return;
-        setSummary(nextSummary);
+        setComposition(next);
         setLoadState("loaded");
-      } catch (error) {
+      })
+      .catch((error: unknown) => {
         if (cancelled) return;
         setLoadState("error");
-        setUiError(toUiError(error));
-      }
-    }
-
-    void loadInitialHome();
-
+        setUiError(toUiMessage(error));
+      });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const handleDismissNudge = useCallback(async (nudgeId: string) => {
-    setDismissingNudgeId(nudgeId);
-
-    try {
-      await dismissHomeNudge(nudgeId);
-      setSummary((current) =>
-        current
-          ? {
-              ...current,
-              dashboard_nudges: current.dashboard_nudges.filter(
-                (nudge) => nudge.id !== nudgeId
-              ),
-            }
-          : current
-      );
-    } catch (error) {
-      setUiError(toUiError(error));
-    } finally {
-      setDismissingNudgeId(null);
-    }
-  }, []);
-
-  const movements = useMemo(
-    () => summary?.recent_movements.map(toMovementViewItem) ?? [],
-    [summary]
+  const handlePostpone = useCallback(
+    (id: string) => {
+      setBusyBlock("next_action");
+      postponeNextAction(id)
+        .then(() => reload())
+        .catch((error: unknown) => setUiError(toUiMessage(error)))
+        .finally(() => setBusyBlock(null));
+    },
+    [reload],
   );
-  const suggestedAction = summary ? getSuggestedAction(summary) : null;
 
-  const handleStartOnboarding = useCallback(async () => {
-    setStartingOnboarding(true);
-    setUiError(null);
+  const handleHideBlock = useCallback(
+    (kind: HomeBlockKind) => {
+      setBusyBlock(kind);
+      setHomeBlockHidden(kind, true)
+        .then(() => {
+          setComposition((current) =>
+            current ? { ...current, blocks: current.blocks.filter((block) => block.kind !== kind) } : current,
+          );
+        })
+        .catch((error: unknown) => setUiError(toUiMessage(error)))
+        .finally(() => setBusyBlock(null));
+    },
+    [],
+  );
 
-    try {
-      const result = await startDashboardOnboarding();
-      setSummary((current) =>
-        current ? { ...current, onboarding: result.onboarding } : current
-      );
-      if (onStartMovement) onStartMovement();
-      else onNavigate?.("movements");
-    } catch (error) {
-      setUiError(toUiError(error));
-    } finally {
-      setStartingOnboarding(false);
-    }
-  }, [onNavigate, onStartMovement]);
+  const startMovement = () => (onStartMovement ? onStartMovement() : onNavigate?.("movements"));
+  const registerButton = (mobile: boolean) => (
+    <Button
+      size={mobile ? "icon" : undefined}
+      aria-label="Registrar un movimiento"
+      icon={<Plus className={mobile ? "h-5 w-5" : "h-4 w-4"} />}
+      onClick={startMovement}
+      className={mobile ? "h-12 w-12 rounded-full shadow-lg" : undefined}
+    >
+      {mobile ? "Registrar" : "Registrar"}
+    </Button>
+  );
+
+  const failedBlocks = composition?.blocks.filter((block) => block.status === "error") ?? [];
 
   return (
     <AppShell
-      title="Home"
-      subtitle="Tu estado financiero de hoy, sin ruido."
+      title="Inicio"
       activeView="home"
       onNavigate={onNavigate}
       onSignOut={onSignOut}
-      primaryAction={
-        <Button
-          icon={<Plus className="h-4 w-4" />}
-          onClick={() =>
-            onStartMovement ? onStartMovement() : onNavigate?.("movements")
-          }
-        >
-          Nuevo movimiento
-        </Button>
-      }
-      mobilePrimaryAction={
-        <Button
-          size="icon"
-          aria-label="Nuevo movimiento"
-          icon={<Plus className="h-5 w-5" />}
-          onClick={() =>
-            onStartMovement ? onStartMovement() : onNavigate?.("movements")
-          }
-          className="h-12 w-12 rounded-full shadow-lg"
-        >
-          Nuevo movimiento
-        </Button>
-      }
+      primaryAction={registerButton(false)}
+      mobilePrimaryAction={registerButton(true)}
     >
-      <div id="home" className="mx-auto max-w-[1040px] pb-8 pt-2 lg:pt-4">
-        {loadState === "loading" ? (
-          <LoadingBlock label="Ordenando tu resumen" />
-        ) : uiError || !summary ? (
+      <div id="home" className="mx-auto max-w-[880px] space-y-5 pb-8 pt-2 lg:pt-4">
+        {loadState === "loading" && !composition ? (
+          <LoadingBlock label="Ordenando tu Inicio" />
+        ) : loadState === "error" && !composition ? (
           <ErrorState
-            title={uiError?.title}
-            description={uiError?.message}
-            onRetry={() => void reloadHome()}
+            title="No pude cargar tu información"
+            description={uiError ?? "Vuelve a intentarlo. Registrar sigue disponible."}
+            onRetry={reload}
           />
-        ) : (
-          <div className="space-y-6">
-            {summary.onboarding.show_initial_prompt ? (
-              <OnboardingWelcomeCard
-                loading={startingOnboarding}
-                onStart={() => void handleStartOnboarding()}
-              />
+        ) : composition?.state === "vacio" ? (
+          <EmptyHome onStartMovement={startMovement} onNavigate={onNavigate} />
+        ) : composition ? (
+          <>
+            {failedBlocks.length > 0 ? (
+              <p role="status" aria-live="polite" className="sr-only">
+                {failedBlocks.length === 1
+                  ? "Una parte del Inicio no pudo cargar."
+                  : `${failedBlocks.length} partes del Inicio no pudieron cargar.`}
+              </p>
             ) : null}
-
-            {summary.onboarding.show_first_value_tip ? (
-              <FirstValueControlTip
-                kind={summary.onboarding.first_value_kind}
+            {composition.blocks.map((block) => (
+              <HomeBlockSection
+                key={block.kind}
+                block={block}
+                busy={busyBlock === block.kind}
                 onNavigate={onNavigate}
+                onRetry={reload}
+                onPostpone={handlePostpone}
+                onHide={handleHideBlock}
               />
-            ) : null}
-
-            <section
-              className={cn(
-                "grid gap-5",
-                !summary.onboarding.show_initial_prompt &&
-                  "lg:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)]"
-              )}
-            >
-              <MoneyHero money={summary.money_summary} />
-              {!summary.onboarding.show_initial_prompt ? (
-                <SuggestedActionCard
-                  action={suggestedAction}
-                  pending={summary.pending_summary}
-                  onNavigate={onNavigate}
-                />
-              ) : null}
-            </section>
-
-            <section className="grid gap-5 lg:grid-cols-[minmax(0,1.1fr)_minmax(300px,0.9fr)]">
-              <RecentMovementsCard
-                movements={movements}
-                onNavigate={onNavigate}
-              />
-              <div className="space-y-5">
-                <DashboardNudgesCard
-                  nudges={summary.dashboard_nudges}
-                  dismissingId={dismissingNudgeId}
-                  onDismiss={(id) => void handleDismissNudge(id)}
-                  onNavigate={onNavigate}
-                  onOpenDebt={onOpenDebt}
-                />
-                <PendingProtectionCard
-                  pending={summary.pending_summary}
-                  onNavigate={onNavigate}
-                />
-                <NextCommitmentsCard
-                  commitments={summary.next_commitments}
-                  onNavigate={onNavigate}
-                />
-                <DataQualityCard quality={summary.data_quality} />
-                <InsightCard
-                  insight={summary.featured_insight}
-                  onNavigate={onNavigate}
-                />
-              </div>
-            </section>
-          </div>
-        )}
+            ))}
+          </>
+        ) : null}
       </div>
+
+      <AssistantBubble onNavigate={onNavigate} />
     </AppShell>
   );
 }
 
-function OnboardingWelcomeCard({
-  loading,
-  onStart,
+function HomeBlockSection({
+  block,
+  busy,
+  onNavigate,
+  onRetry,
+  onPostpone,
+  onHide,
 }: {
-  loading: boolean;
-  onStart: () => void;
+  block: HomeBlock;
+  busy: boolean;
+  onNavigate?: (view: AppView) => void;
+  onRetry: () => void;
+  onPostpone: (id: string) => void;
+  onHide: (kind: HomeBlockKind) => void;
 }) {
-  return (
-    <section className="overflow-hidden rounded-xl border border-brand-subtle bg-brand-subtle/40 shadow-xs">
-      <div className="grid gap-6 p-6 sm:p-7 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-center">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-text-brand">
-            Tu primera accion
-          </p>
-          <h1 className="mt-3 max-w-2xl font-heading text-3xl font-semibold leading-tight text-text sm:text-4xl">
-            Empieza por una sola cosa
-          </h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-text-secondary sm:text-base">
-            Registra un gasto o ingreso real. No necesitas crear cuentas,
-            configurar categorias ni conectar otros canales para empezar.
-          </p>
-          <Button
-            className="mt-6"
-            icon={<PencilLine className="h-4 w-4" />}
-            loading={loading}
-            onClick={onStart}
-          >
-            Registrar primer movimiento
+  if (block.status === "error") {
+    return (
+      <BlockShell kind={block.kind} onHide={onHide}>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-sm text-text-secondary">No pude cargar esta parte.</p>
+          <Button variant="secondary" size="sm" icon={<RefreshCw className="h-4 w-4" />} onClick={onRetry}>
+            Reintentar
           </Button>
         </div>
+      </BlockShell>
+    );
+  }
 
-        <div className="rounded-xl border border-border/80 bg-bg-surface-raised p-5">
-          <div className="flex items-center gap-2 text-sm font-semibold text-text">
-            <MessageCircle className="h-4 w-4 text-brand" />
-            Tambien puedes escribir por WhatsApp
-          </div>
-          <p className="mt-3 rounded-lg bg-bg-primary px-4 py-3 text-sm text-text-secondary">
-            “Gaste 8 en cafe”
-          </p>
-          <p className="mt-3 text-xs leading-5 text-text-muted">
-            Si algo queda mal, puedes corregirlo. Manzana no te obliga a
-            completar una configuracion antes de darte valor.
-          </p>
-        </div>
-      </div>
-    </section>
-  );
+  if (block.kind === "free_money") {
+    return <FreeMoneyBlock data={block.data as HomeFreeMoneyData} onNavigate={onNavigate} />;
+  }
+  if (block.kind === "next_action") {
+    return (
+      <NextActionBlock
+        data={block.data as HomeNextAction}
+        busy={busy}
+        onNavigate={onNavigate}
+        onPostpone={onPostpone}
+        onHide={onHide}
+      />
+    );
+  }
+  if (block.kind === "pending") {
+    return (
+      <BlockShell kind="pending" onHide={onHide}>
+        <PendingBlockBody data={block.data as HomePendingData} onNavigate={onNavigate} />
+      </BlockShell>
+    );
+  }
+  if (block.kind === "month") {
+    return (
+      <BlockShell kind="month" onHide={onHide}>
+        <MonthBlockBody data={block.data as HomeMonthData} />
+      </BlockShell>
+    );
+  }
+  if (block.kind === "upcoming") {
+    return (
+      <BlockShell kind="upcoming" onHide={onHide}>
+        <UpcomingBlockBody data={block.data as HomeUpcomingData} onNavigate={onNavigate} />
+      </BlockShell>
+    );
+  }
+  if (block.kind === "insight") {
+    return (
+      <BlockShell kind="insight" onHide={onHide}>
+        <InsightBlockBody data={block.data as HomeInsightData} onNavigate={onNavigate} />
+      </BlockShell>
+    );
+  }
+  if (block.kind === "movements") {
+    return (
+      <BlockShell kind="movements" onHide={onHide}>
+        <MovementsBlockBody data={(block.data as Movement[]) ?? []} onNavigate={onNavigate} />
+      </BlockShell>
+    );
+  }
+  return null;
 }
 
-function FirstValueControlTip({
+function BlockShell({
   kind,
-  onNavigate,
+  onHide,
+  children,
 }: {
-  kind: "movement" | "debt" | null;
-  onNavigate?: (view: AppView) => void;
+  kind: HomeBlockKind;
+  onHide: (kind: HomeBlockKind) => void;
+  children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-success-subtle bg-success-subtle/45 px-5 py-4 shadow-xs sm:px-6">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-surface-raised text-success">
-          <CheckCircle2 className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <h2 className="font-heading text-lg font-semibold text-text">
-            {kind === "debt"
-              ? "Tu primera deuda ya esta ordenada"
-              : "Tu primer registro ya esta en Manzana"}
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-text-secondary">
-            Si algo no quedo bien, puedes corregirlo sin empezar de nuevo. Tus
-            cambios siguen pasando por el Core y quedan auditados.
-          </p>
-          <button
-            type="button"
-            className="mt-2 text-sm font-semibold text-success transition hover:opacity-80"
-            onClick={() => onNavigate?.(kind === "debt" ? "debts" : "movements")}
-          >
-            Revisar {kind === "debt" ? "deuda" : "movimiento"}
-          </button>
-        </div>
+    <section
+      aria-labelledby={`home-${kind}-title`}
+      className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs sm:p-6"
+    >
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 id={`home-${kind}-title`} className="font-heading text-lg font-semibold text-text">
+          {BLOCK_TITLES[kind]}
+        </h2>
+        <button
+          type="button"
+          className="text-xs font-medium text-text-muted transition hover:text-text"
+          onClick={() => onHide(kind)}
+        >
+          Ocultar
+        </button>
       </div>
+      {children}
     </section>
   );
 }
 
-function MoneyHero({ money }: { money: HomeMoneySummary | null }) {
+function FreeMoneyBlock({ data, onNavigate }: { data: HomeFreeMoneyData; onNavigate?: (view: AppView) => void }) {
+  if (!data.has_accounts) {
+    return (
+      <section aria-labelledby="home-free-money-title" className="rounded-xl border border-border bg-bg-surface-raised p-6 shadow-xs sm:p-7">
+        <h1 id="home-free-money-title" className="font-heading text-2xl font-semibold text-text sm:text-3xl">
+          Para decirte cuánto tienes libre necesito el saldo de al menos una cuenta.
+        </h1>
+        <Button className="mt-5" icon={<ArrowRight className="h-4 w-4" />} onClick={() => onNavigate?.("money")}>
+          Agregar cuenta
+        </Button>
+      </section>
+    );
+  }
+
+  const composition = `De ${formatMoney(data.total_balance)} en tus cuentas: ${formatMoney(data.separated_balance)} están apartados en cajas.`;
+
   return (
-    <section className="rounded-xl border border-border bg-bg-surface-raised p-6 shadow-xs sm:p-7">
+    <section aria-labelledby="home-free-money-title" className="rounded-xl border border-border bg-bg-surface-raised p-6 shadow-xs sm:p-7">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-text-muted">
-            {getMoneyHeadline(money)}
-          </p>
-          <div className="mt-4">
-            {money ? (
-              <MoneyText
-                value={money.free_balance}
-                sign="none"
-                className="font-heading text-5xl font-semibold leading-none text-text sm:text-6xl"
-              />
-            ) : (
-              <p className="max-w-md font-heading text-3xl font-semibold leading-tight text-text sm:text-4xl">
-                Falta una cuenta para calcularlo
-              </p>
-            )}
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-text-muted">Tienes libres</p>
+          <h1 id="home-free-money-title" className="sr-only">
+            {`Tienes libres ${formatMoney(data.free_balance)}. ${composition}`}
+          </h1>
+          <div aria-hidden="true" className="mt-4">
+            <MoneyText value={data.free_balance} sign="none" className="font-heading text-5xl font-semibold leading-none text-text sm:text-6xl" />
           </div>
-          <p className="mt-4 max-w-xl text-sm leading-6 text-text-secondary">
-            {getMoneyExplanation(money)}
+          <p aria-hidden="true" className="mt-4 max-w-xl text-sm leading-6 text-text-secondary">
+            {composition}
           </p>
         </div>
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-brand-subtle text-brand">
           <WalletCards className="h-6 w-6" />
         </div>
       </div>
-
-      {money ? (
-        <div className="mt-7 grid gap-3 sm:grid-cols-3">
-          <MoneyFact label="Saldo registrado" value={money.total_balance} />
-          <MoneyFact label="Separado" value={money.separated_balance} />
-          <MoneyFact label="Cuentas" value={money.account_count} plain />
-        </div>
-      ) : (
-        <div className="mt-7 rounded-lg border border-brand-subtle bg-brand-subtle/45 px-4 py-3 text-sm leading-6 text-text-secondary">
-          Los gastos de WhatsApp pueden quedar confirmados aunque no tengan cuenta.
-          Simplemente no mueven saldos hasta que agregues una cuenta.
-        </div>
-      )}
-    </section>
-  );
-}
-
-function MoneyFact({
-  label,
-  value,
-  plain,
-}: {
-  label: string;
-  value: number;
-  plain?: boolean;
-}) {
-  return (
-    <div className="rounded-lg border border-border bg-bg-primary px-4 py-3">
-      <p className="text-xs text-text-muted">{label}</p>
-      {plain ? (
-        <p className="mt-1 font-heading text-xl font-semibold text-text">
-          {value}
-        </p>
-      ) : (
-        <MoneyText
-          value={value}
-          sign="none"
-          className="mt-1 block font-heading text-xl font-semibold text-text"
-        />
-      )}
-    </div>
-  );
-}
-
-function SuggestedActionCard({
-  action,
-  pending,
-  onNavigate,
-}: {
-  action: HomeSuggestedAction | null;
-  pending: HomePendingSummary;
-  onNavigate?: (view: AppView) => void;
-}) {
-  const tone = getPendingTone(pending);
-  const target = action?.target_view ?? "movements";
-  const title = action?.label ?? tone.title;
-  const body = action?.description ?? tone.body;
-
-  return (
-    <section className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs">
-      <div className="flex items-start gap-3">
-        <div
-          className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-full",
-            pending.active_count > 0
-              ? "bg-warning-subtle text-warning"
-              : "bg-success-subtle text-success"
-          )}
-        >
-          {pending.active_count > 0 ? (
-            <AlertCircle className="h-5 w-5" />
-          ) : (
-            <CheckCircle2 className="h-5 w-5" />
-          )}
-        </div>
-        <div className="min-w-0">
-          <h2 className="font-heading text-lg font-semibold tracking-normal text-text">
-            {title}
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-text-secondary">{body}</p>
-        </div>
-      </div>
-
-      <Button
-        className="mt-5 w-full"
-        variant={action?.priority === "secondary" ? "secondary" : "primary"}
-        icon={<ArrowRight className="h-4 w-4" />}
-        onClick={() => onNavigate?.(target)}
-      >
-        {action?.label ?? "Ver movimientos"}
-      </Button>
-    </section>
-  );
-}
-
-function RecentMovementsCard({
-  movements,
-  onNavigate,
-}: {
-  movements: MovementViewItem[];
-  onNavigate?: (view: AppView) => void;
-}) {
-  return (
-    <section className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs sm:p-6">
-      <div className="flex items-center justify-between gap-4 border-b border-border/70 pb-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-subtle text-brand">
-            <ListChecks className="h-5 w-5" />
-          </div>
-          <div>
-            <h2 className="font-heading text-xl font-semibold tracking-normal text-text">
-              Movimientos recientes
-            </h2>
-            <p className="mt-1 text-sm text-text-secondary">
-              Confirmados por Core, con origen trazable.
-            </p>
-          </div>
-        </div>
-        <button
-          type="button"
-          className="hidden text-sm font-medium text-text-brand hover:text-brand-hover sm:block"
-          onClick={() => onNavigate?.("movements")}
-        >
-          Ver todos
-        </button>
-      </div>
-
-      {movements.length > 0 ? (
-        <div className="divide-y divide-border/70">
-          {movements.slice(0, 5).map((movement) => (
-            <HomeMovementRow key={movement.id} movement={movement} />
-          ))}
-        </div>
-      ) : (
-        <div className="flex min-h-52 flex-col items-center justify-center px-4 py-10 text-center">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-brand-subtle text-brand">
-            <Plus className="h-5 w-5" />
-          </div>
-          <h3 className="mt-4 font-heading text-lg font-semibold text-text">
-            Aun no hay movimientos
-          </h3>
-          <p className="mt-2 max-w-sm text-sm leading-6 text-text-secondary">
-            Escribe por WhatsApp o registra uno desde el Dashboard. Cuando quede
-            confirmado, aparecera aqui.
-          </p>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function HomeMovementRow({ movement }: { movement: MovementViewItem }) {
-  const isIncome = isIncomeType(movement.type);
-  const isTransfer = isTransferType(movement.type);
-
-  return (
-    <article className="flex min-w-0 items-center gap-4 py-4">
-      <div
-        className={cn(
-          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full",
-          isIncome
-            ? "bg-success-subtle text-success"
-            : isTransfer
-            ? "bg-info-subtle text-info"
-            : "bg-bg-surface text-text-secondary"
-        )}
-      >
-        {isIncome ? (
-          <ArrowRight className="h-5 w-5 rotate-[-45deg]" />
-        ) : (
-          <ListChecks className="h-5 w-5" />
-        )}
-      </div>
-      <div className="min-w-0">
-        <h3 className="truncate font-heading text-base font-semibold text-text">
-          {movement.title}
-        </h3>
-        <p className="mt-1 truncate text-sm text-text-secondary">
-          {movement.categoryLabel} · {movement.accountLabel}
-        </p>
-      </div>
-      <div className="ml-auto shrink-0 text-right">
-        <MoneyText
-          value={movement.amount}
-          sign={isIncome ? "positive" : isTransfer ? "none" : "negative"}
-          className={cn(
-            "font-heading text-base font-semibold",
-            isIncome ? "text-success" : "text-text"
-          )}
-        />
-        <p className="mt-1 text-xs text-text-muted">{movement.timeLabel}</p>
-      </div>
-    </article>
-  );
-}
-
-function PendingProtectionCard({
-  pending,
-  onNavigate,
-}: {
-  pending: HomePendingSummary;
-  onNavigate?: (view: AppView) => void;
-}) {
-  const tone = getPendingTone(pending);
-
-  return (
-    <section className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-subtle text-brand">
-          <ShieldCheck className="h-5 w-5" />
-        </div>
-        <div>
-          <h2 className="font-heading text-lg font-semibold text-text">
-            {tone.title}
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-text-secondary">
-            {tone.body}
-          </p>
-        </div>
-      </div>
-      {pending.active_count > 0 ? (
-        <button
-          type="button"
-          className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-text-brand hover:text-brand-hover"
-          onClick={() => onNavigate?.("pending")}
-        >
-          Abrir pendientes
-          <ArrowRight className="h-4 w-4" />
-        </button>
-      ) : null}
-    </section>
-  );
-}
-
-function NextCommitmentsCard({
-  commitments,
-  onNavigate,
-}: {
-  commitments: HomeCommitmentSummary[];
-  onNavigate?: (view: AppView) => void;
-}) {
-  if (commitments.length === 0) return null;
-
-  const first = commitments[0];
-  const total = commitments.reduce(
-    (sum, commitment) => sum + Number(commitment.amount),
-    0
-  );
-
-  return (
-    <section className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-info-subtle text-info">
-          <CalendarDays className="h-5 w-5" />
-        </div>
-        <div className="min-w-0">
-          <h2 className="font-heading text-lg font-semibold text-text">
-            Pagos que vienen
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-text-secondary">
-            Proximo: {first.title} · {formatHomeDate(first.due_at)}
-          </p>
-        </div>
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <MiniStat label="En vista" value={commitments.length} />
-        <div className="rounded-lg border border-border bg-bg-primary px-3 py-3">
-          <p className="text-xs text-text-muted">Estimado</p>
-          <MoneyText
-            value={total}
-            sign="none"
-            className="mt-1 block font-heading text-xl font-semibold text-text"
-          />
-        </div>
-      </div>
       <button
         type="button"
-        className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-text-brand hover:text-brand-hover"
-        onClick={() => onNavigate?.("upcoming")}
+        className="mt-5 text-sm font-semibold text-brand transition hover:text-brand-hover"
+        onClick={() => onNavigate?.("money")}
       >
-        Ver pagos
-        <ArrowRight className="h-4 w-4" />
+        Ver el desglose
       </button>
     </section>
   );
 }
 
-function DashboardNudgesCard({
-  nudges,
-  dismissingId,
-  onDismiss,
+function NextActionBlock({
+  data,
+  busy,
   onNavigate,
-  onOpenDebt,
+  onPostpone,
+  onHide,
 }: {
-  nudges: HomeDashboardNudge[];
-  dismissingId: string | null;
-  onDismiss: (id: string) => void;
+  data: HomeNextAction;
+  busy: boolean;
   onNavigate?: (view: AppView) => void;
-  onOpenDebt?: (intent: DebtScreenIntent) => void;
+  onPostpone: (id: string) => void;
+  onHide: (kind: HomeBlockKind) => void;
 }) {
-  if (nudges.length === 0) return null;
-
   return (
-    <section className="rounded-xl border border-warning-subtle bg-warning-subtle/35 p-5 shadow-xs">
+    <section aria-labelledby="home-next_action-title" className="rounded-xl border border-warning-subtle bg-warning-subtle/35 p-5 shadow-xs sm:p-6">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 id="home-next_action-title" className="font-heading text-lg font-semibold text-text">
+          Lo siguiente
+        </h2>
+        <button type="button" className="text-xs font-medium text-text-muted transition hover:text-text" onClick={() => onHide("next_action")}>
+          Ocultar
+        </button>
+      </div>
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-surface-raised text-warning">
-          <Bell className="h-5 w-5" />
+          <AlertCircle className="h-5 w-5" />
         </div>
         <div className="min-w-0">
-          <h2 className="font-heading text-lg font-semibold text-text">
-            Avisos utiles
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-text-secondary">
-            Lo que conviene mirar hoy.
-          </p>
+          <h3 className="font-heading text-base font-semibold text-text">{data.title}</h3>
+          <p className="mt-1 text-sm leading-6 text-text-secondary">{data.body}</p>
         </div>
       </div>
-
-      <div className="mt-4 divide-y divide-border/70">
-        {nudges.map((nudge) => (
-          <article key={nudge.id} className="py-4 first:pt-0 last:pb-0">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-bg-surface-raised text-warning">
-                <Clock3 className="h-4 w-4" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h3 className="font-heading text-base font-semibold text-text">
-                  {nudge.title}
-                </h3>
-                <p className="mt-1 text-sm leading-6 text-text-secondary">
-                  {nudge.body}
-                </p>
-                {nudge.evidence ? (
-                  <p className="mt-2 text-xs font-medium uppercase tracking-[0.1em] text-text-muted">
-                    {nudge.evidence}
-                  </p>
-                ) : null}
-              </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                aria-label="Ocultar aviso"
-                title="Ocultar aviso"
-                icon={<X className="h-4 w-4" />}
-                loading={dismissingId === nudge.id}
-                onClick={() => onDismiss(nudge.id)}
-              >
-                Ocultar aviso
-              </Button>
-            </div>
-
-            <Button
-              className="mt-3"
-              variant="secondary"
-              size="sm"
-              icon={<ArrowRight className="h-4 w-4" />}
-              onClick={() => {
-                if (nudge.debt_id && nudge.installment_id && onOpenDebt) {
-                  onOpenDebt({
-                    debtId: nudge.debt_id,
-                    installmentId: nudge.installment_id,
-                    action: "detail",
-                  });
-                  return;
-                }
-
-                onNavigate?.(nudge.target_view);
-              }}
-            >
-              {nudge.action_label}
-            </Button>
-          </article>
-        ))}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          icon={<ArrowRight className="h-4 w-4" />}
+          onClick={() => (data.action_url ? followUrl(data.action_url, onNavigate) : undefined)}
+        >
+          {NEXT_ACTION_LABEL[data.kind]}
+        </Button>
+        <Button size="sm" variant="ghost" loading={busy} onClick={() => onPostpone(data.id)}>
+          Ahora no
+        </Button>
       </div>
     </section>
   );
 }
 
-function DataQualityCard({ quality }: { quality: HomeDataQualitySummary }) {
-  return (
-    <section className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-info-subtle text-info">
-          <RefreshCw className="h-5 w-5" />
-        </div>
-        <div>
-          <h2 className="font-heading text-lg font-semibold text-text">
-            Calidad de datos
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-text-secondary">
-            {quality.message}
-          </p>
-        </div>
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <MiniStat label="Confirmados" value={quality.confirmed_movements_count} />
-        <MiniStat label="Sin cuenta" value={quality.movements_without_account_count} />
-      </div>
-    </section>
-  );
-}
-
-function InsightCard({
-  insight,
-  onNavigate,
-}: {
-  insight: HomeInsightCard | null;
-  onNavigate?: (view: AppView) => void;
-}) {
-  if (!insight) {
-    return (
-      <section className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs">
-        <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-surface text-text-secondary">
-            <Compass className="h-5 w-5" />
-          </div>
-          <div>
-            <h2 className="font-heading text-lg font-semibold text-text">
-              Descubrimientos
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-text-secondary">
-              Todavia estamos juntando evidencia. Mejor esperar un poco que
-              mostrarte un patron flojo.
-            </p>
-            <button
-              type="button"
-              className="mt-3 text-sm font-semibold text-brand transition hover:text-brand-hover"
-              onClick={() => onNavigate?.("insights")}
-            >
-              Abrir Descubrimientos
-            </button>
-          </div>
-        </div>
-      </section>
-    );
+function followUrl(url: string, onNavigate?: (view: AppView) => void) {
+  const target = urlToView(url);
+  if (target && onNavigate) {
+    onNavigate(target);
+    return;
   }
-
-  return (
-    <section className="rounded-xl border border-brand-subtle bg-brand-subtle/35 p-5 shadow-xs">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-bg-surface-raised text-brand">
-          <Compass className="h-5 w-5" />
-        </div>
-        <div>
-          <h2 className="font-heading text-lg font-semibold text-text">
-            {insight.title}
-          </h2>
-          <p className="mt-2 text-sm leading-6 text-text-secondary">
-            {insight.body}
-          </p>
-          <p className="mt-3 text-xs font-medium uppercase tracking-[0.1em] text-text-muted">
-            {insight.evidence}
-          </p>
-          <button
-            type="button"
-            className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-brand transition hover:text-brand-hover"
-            onClick={() => onNavigate?.("insights")}
-          >
-            Entender por qué
-            <ArrowRight className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-    </section>
-  );
+  window.location.assign(url);
 }
 
-function formatHomeDate(value: string): string {
-  const date = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(date.getTime())) return "fecha por revisar";
-
-  return new Intl.DateTimeFormat("es-PE", {
-    day: "numeric",
-    month: "short",
-  }).format(date);
+function urlToView(url: string): AppView | null {
+  if (url.startsWith("/pagos-que-vienen")) return "upcoming";
+  if (url.startsWith("/deudas")) return "debts";
+  if (url.startsWith("/pendientes")) return "pending";
+  return null;
 }
 
-function MiniStat({ label, value }: { label: string; value: number }) {
+function PendingBlockBody({ data, onNavigate }: { data: HomePendingData; onNavigate?: (view: AppView) => void }) {
   return (
-    <div className="rounded-lg border border-border bg-bg-primary px-3 py-3">
-      <p className="text-xs text-text-muted">{label}</p>
-      <p className="mt-1 font-heading text-xl font-semibold text-text">{value}</p>
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-sm leading-6 text-text-secondary">
+        {data.active_count} movimiento{data.active_count === 1 ? "" : "s"} del banco sin confirmar.
+      </p>
+      <Button size="sm" variant="secondary" icon={<ShieldCheck className="h-4 w-4" />} onClick={() => onNavigate?.("pending")}>
+        Revisarlos
+      </Button>
     </div>
   );
 }
 
-function toUiError(error: unknown): UiError {
-  if (error instanceof ApiClientError) {
-    if (error.code === "AUTH_REQUIRED" || error.status === 401) {
-      return {
-        title: "Sesion requerida",
-        message:
-          "Necesitas iniciar sesion para ver tu resumen real. Vuelve a entrar y Manzana recargara tu Home.",
-      };
-    }
-
-    return {
-      title: "No pude cargar Home",
-      message: error.message,
-    };
+function MonthBlockBody({ data }: { data: HomeMonthData }) {
+  if (data.variant === "period_total") {
+    return (
+      <div className="grid grid-cols-2 gap-3">
+        <MoneyFact label="Gastos del periodo" value={data.period_total.gasto_total} />
+        <MoneyFact label="Ingresos del periodo" value={data.period_total.ingreso_total} />
+      </div>
+    );
   }
 
-  return {
-    title: "No pude cargar Home",
-    message: "Intenta de nuevo en un momento.",
-  };
+  return (
+    <div className="space-y-3">
+      {data.budgets.map((budget) => (
+        <div key={budget.id}>
+          <div className="flex items-center justify-between text-sm">
+            <span className="font-medium text-text">{budget.category_name ?? "General"}</span>
+            <span className="text-text-secondary">
+              <MoneyText value={budget.spent} sign="none" /> de <MoneyText value={budget.amount} sign="none" />
+            </span>
+          </div>
+          <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-bg-primary">
+            <div
+              className={cn("h-full rounded-full", budget.percentage > 100 ? "bg-danger" : "bg-brand")}
+              style={{ width: `${Math.min(100, budget.percentage)}%` }}
+            />
+          </div>
+        </div>
+      ))}
+      {data.projection ? (
+        <p className="text-sm leading-6 text-text-secondary">
+          {data.projection.projected_close !== null
+            ? `A este ritmo cerrarías el mes con unos ${formatMoney(data.projection.projected_close)}.`
+            : "Todavía no tengo suficiente historial para proyectar el cierre del mes."}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+function UpcomingBlockBody({ data, onNavigate }: { data: HomeUpcomingData; onNavigate?: (view: AppView) => void }) {
+  return (
+    <div className="space-y-3">
+      <div className="divide-y divide-border/70">
+        {data.items.map((item) => (
+          <div key={item.id} className="flex items-center justify-between gap-3 py-2 first:pt-0 last:pb-0">
+            <div className="flex items-center gap-2 text-sm text-text-secondary">
+              <CalendarDays className="h-4 w-4 shrink-0" />
+              {formatShortDate(item.due_at)} · {item.title}
+            </div>
+            <MoneyText value={item.amount} sign="none" className="text-sm font-medium text-text" />
+          </div>
+        ))}
+      </div>
+      <button type="button" className="text-sm font-medium text-text-brand hover:text-brand-hover" onClick={() => onNavigate?.("upcoming")}>
+        Ver todos ({data.count})
+      </button>
+    </div>
+  );
+}
+
+function InsightBlockBody({ data, onNavigate }: { data: HomeInsightData; onNavigate?: (view: AppView) => void }) {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-subtle text-brand">
+        <Compass className="h-5 w-5" />
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm leading-6 text-text-secondary">{data.body}</p>
+        <p className="mt-2 text-xs font-medium uppercase tracking-[0.1em] text-text-muted">{data.evidence_text}</p>
+        <button type="button" className="mt-3 text-sm font-semibold text-brand hover:text-brand-hover" onClick={() => onNavigate?.("insights")}>
+          Entender por qué
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MovementsBlockBody({ data, onNavigate }: { data: Movement[]; onNavigate?: (view: AppView) => void }) {
+  const items = data.map(toMovementViewItem);
+  return (
+    <div>
+      <div className="divide-y divide-border/70">
+        {items.map((movement) => (
+          <article key={movement.id} className="flex min-w-0 items-center gap-3 py-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-bg-surface text-text-secondary">
+              <ListChecks className="h-4 w-4" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-sm font-medium text-text">{movement.title}</p>
+              <p className="truncate text-xs text-text-secondary">{movement.categoryLabel} · {movement.timeLabel}</p>
+            </div>
+            <MoneyText value={movement.amount} sign="auto" className="shrink-0 text-sm font-semibold text-text" />
+          </article>
+        ))}
+      </div>
+      <button type="button" className="mt-3 text-sm font-medium text-text-brand hover:text-brand-hover" onClick={() => onNavigate?.("movements")}>
+        Ver todos
+      </button>
+    </div>
+  );
+}
+
+function EmptyHome({
+  onStartMovement,
+  onNavigate,
+}: {
+  onStartMovement: () => void;
+  onNavigate?: (view: AppView) => void;
+}) {
+  return (
+    <section className="rounded-xl border border-border bg-bg-surface-raised p-7 shadow-xs sm:p-8">
+      <h1 className="font-heading text-2xl font-semibold text-text sm:text-3xl">Empecemos por lo tuyo.</h1>
+      <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+        <Button icon={<Plus className="h-4 w-4" />} onClick={onStartMovement}>
+          Registrar mi primer movimiento
+        </Button>
+        <Button variant="secondary" icon={<Mail className="h-4 w-4" />} onClick={() => onNavigate?.("settings")}>
+          Conectar mi correo
+        </Button>
+        <Button variant="secondary" icon={<WalletCards className="h-4 w-4" />} onClick={() => onNavigate?.("money")}>
+          Agregar una cuenta
+        </Button>
+      </div>
+      <p className="mt-6 max-w-xl text-sm leading-6 text-text-secondary">
+        Cuando tenga tus cuentas te diré cuánto tienes libre de verdad: lo que queda después de lo que ya está
+        comprometido.
+      </p>
+    </section>
+  );
+}
+
+function AssistantBubble({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
+  return (
+    <button
+      type="button"
+      aria-label="Abrir el asistente"
+      className="fixed bottom-24 right-4 z-sticky flex h-14 w-14 items-center justify-center rounded-full bg-brand text-text-inverse shadow-lg transition hover:opacity-90 lg:bottom-6 lg:right-6"
+      onClick={() => onNavigate?.("assistant")}
+    >
+      <MessageCircle className="h-6 w-6" />
+    </button>
+  );
+}
+
+function MoneyFact({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-border bg-bg-primary px-4 py-3">
+      <p className="text-xs text-text-muted">{label}</p>
+      <MoneyText value={value} sign="none" className="mt-1 block font-heading text-xl font-semibold text-text" />
+    </div>
+  );
+}
+
+function formatMoney(value: number): string {
+  return new Intl.NumberFormat("es-PE", { style: "currency", currency: "PEN", minimumFractionDigits: 2 })
+    .format(value)
+    .replace(/^(\D+)\s+/, "$1");
+}
+
+function formatShortDate(value: string): string {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "fecha por revisar";
+  return new Intl.DateTimeFormat("es-PE", { day: "numeric", month: "short" }).format(date);
+}
+
+function toUiMessage(error: unknown): string {
+  if (error instanceof ApiClientError) {
+    if (error.code === "AUTH_REQUIRED" || error.status === 401) {
+      return "Necesitas iniciar sesión para ver tu Inicio.";
+    }
+    return error.message;
+  }
+  return "Intenta de nuevo en un momento.";
 }

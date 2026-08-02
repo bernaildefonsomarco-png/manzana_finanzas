@@ -116,6 +116,16 @@ describe("generador de la matriz de trazabilidad", () => {
     // construida (la paleta de comandos, los cuatro gráficos restantes,
     // modo discreto en reportes) o de módulos que aún no existen (`41`,
     // `45`/`46`) — documentado en el §20 de cada módulo, no en silencio.
+    // W-15 añade quince clases del Inicio: dos `integracion`
+    // (`AC-HOME-01`, la identidad de dinero libre entre `/home` y `/money`
+    // verificada con una prueba que llama a los dos endpoints; `AC-HOME-11`,
+    // las nueve fuentes en paralelo con `Promise.allSettled`) y trece
+    // `unidad` (composición de bloques, precedencia de "lo siguiente",
+    // estado vacío, sin saludo, orden del DOM, bloques ocultos que no
+    // regresan, dinero libre en cero real). Quedan explícitamente sin clase
+    // los criterios que exigen sesión de usuario real (`USER`), medición de
+    // producción (`METRIC`) o el asistente conversacional que `41`/`W-17`
+    // todavía no construye — documentado en el §20 de `39`, no en silencio.
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 16,
@@ -123,11 +133,11 @@ describe("generador de la matriz de trazabilidad", () => {
       e2e: 7,
       presupuesto: 2,
       contenido: 1,
-      integracion: 81,
-      unidad: 118,
+      integracion: 83,
+      unidad: 131,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(309);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(311);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(324);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(296);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {

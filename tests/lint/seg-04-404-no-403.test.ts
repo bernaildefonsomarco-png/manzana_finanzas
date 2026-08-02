@@ -1,7 +1,7 @@
 // `AC-SEG-04` (`15` §8): un recurso de otro usuario devuelve 404, nunca 403.
-// Criterio agregado (`51` §5): su conjunto son las 142 rutas de `/api/v1`
+// Criterio agregado (`51` §5): su conjunto son las 145 rutas de `/api/v1`
 // (`AC-SEG-04` no se cierra con una prueba, se cierra con la unión de que
-// ninguna de las 142 use 403 para "no es tuyo" — que es exactamente lo que
+// ninguna de las 145 use 403 para "no es tuyo" — que es exactamente lo que
 // produce el patrón de repositorio del proyecto: toda consulta de un
 // recurso filtra por `user_id` e `id` a la vez, así que un recurso ajeno
 // simplemente no aparece, nunca se detecta y se rechaza aparte). W-08 sumó
@@ -32,6 +32,12 @@
 // exports) prueban aislamiento por alcance (WEB-D230); las rutas con recurso
 // mapean "ajeno" a `REMINDER_FORBIDDEN`/`EXPORT_FORBIDDEN` u ownership de RLS,
 // y en los dos casos la ruta HTTP responde 404, nunca 403.
+// W-15 retira `dashboard/home` (Home legacy borrado) y suma cuatro:
+// `home`, `home/next`, `home/next/[id]/postpone`, `home/preferences` — neto
+// +3, de 142 a 145. `home`/`home/next` son colecciones sin recurso
+// identificable y prueban aislamiento por alcance (WEB-D230); `postpone`
+// mapea "ajeno" a `REMINDER_FORBIDDEN` igual que `reminders/[id]/dismiss`,
+// del que reutiliza el mapeo de errores.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -50,11 +56,11 @@ function recorrer(directorio: string, acumulado: string[]): string[] {
   return acumulado;
 }
 
-describe("AC-SEG-04 (agregado): ninguna de las 142 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
+describe("AC-SEG-04 (agregado): ninguna de las 145 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
   const rutas = recorrer(RAIZ_V1, []);
 
-  it("el conjunto declarado tiene 142 rutas — si cambia, hay que revisar esta prueba", () => {
-    expect(rutas.length).toBe(142);
+  it("el conjunto declarado tiene 145 rutas — si cambia, hay que revisar esta prueba", () => {
+    expect(rutas.length).toBe(145);
   });
 
   it.each(rutas.map((rutaAbsoluta) => [relative(RAIZ_V1, rutaAbsoluta).split("\\").join("/"), rutaAbsoluta]))(

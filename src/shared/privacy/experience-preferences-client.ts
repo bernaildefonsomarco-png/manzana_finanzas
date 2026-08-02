@@ -29,7 +29,9 @@ export async function requestExperiencePreferences(
   const response = await fetch("/api/v1/preferences/experience", {
     method: preferences ? "PUT" : "GET",
     credentials: "same-origin",
-    headers: preferences ? { "content-type": "application/json" } : undefined,
+    headers: preferences
+      ? { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() }
+      : undefined,
     body: preferences ? JSON.stringify(preferences) : undefined,
   });
   const payload = (await response.json()) as {

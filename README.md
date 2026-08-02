@@ -63,6 +63,7 @@ src/
     reminders/      # Reminder Engine (37): candidatos deterministas de la bandeja
     reports/        # Report Engine (35): agregación reutilizada de Presupuestos, CSV
     search/         # Query parser y sugerencia ortográfica deterministas (38)
+    home/           # Home Composer (39): precedencia RUL-HOME-03 y composición de bloques, sin aritmética propia
     onboarding/, disclosure/, risk/, events/
     commands/, engines/, validators/  # vacías: marcador para el diseño de `core/` (documentacion/app_web/02_fundaciones/12)
   adapters/

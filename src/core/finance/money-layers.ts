@@ -118,3 +118,54 @@ function sum(values: number[]): number {
 
 /** `09_modelo_mental_dinero.md` §7: horizonte de compromisos proximos. */
 export const COMMITMENT_HORIZON_DAYS = 30;
+
+export type MoneyLayersCurrencyAccount = {
+  id: string;
+  current_balance: number;
+  currency: string;
+};
+export type MoneyLayersCurrencyBox = {
+  id: string;
+  account_id: string;
+  current_balance: number;
+};
+export type MoneyLayersCurrencyCommitment = {
+  id?: string;
+  amount: number;
+  linked_box_id: string | null;
+  due_at?: string;
+  currency: string;
+};
+
+/**
+ * Filtra cuentas, cajas y compromisos a una sola moneda y calcula sus capas
+ * (`RUL-CUENTAS-01` a `04`). Extraida de `/api/v1/money` para que el Inicio
+ * (`39` `RUL-HOME-01/02`) llame exactamente esta misma funcion en vez de
+ * reimplementar el filtro por moneda: el dinero libre del Inicio, el de Mi
+ * Dinero y el que responde el asistente deben salir de la misma llamada.
+ */
+export function calculateMoneyLayersForCurrency(
+  currency: "PEN" | "USD",
+  accounts: MoneyLayersCurrencyAccount[],
+  boxes: MoneyLayersCurrencyBox[],
+  commitments: MoneyLayersCurrencyCommitment[]
+): MoneyLayers {
+  const currencyAccounts = accounts.filter((account) => account.currency === currency);
+  const accountIds = new Set(currencyAccounts.map((account) => account.id));
+  const currencyBoxes = boxes.filter((box) => accountIds.has(box.account_id));
+
+  return calculateMoneyLayers({
+    accounts: currencyAccounts.map((account) => ({
+      current_balance: account.current_balance,
+    })),
+    boxes: currencyBoxes.map((box) => ({ id: box.id, current_balance: box.current_balance })),
+    commitments: commitments
+      .filter((commitment) => commitment.currency === currency)
+      .map((commitment) => ({
+        id: commitment.id,
+        amount: commitment.amount,
+        linked_box_id: commitment.linked_box_id,
+        due_at: commitment.due_at,
+      })),
+  });
+}

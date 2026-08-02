@@ -63,6 +63,20 @@ export const LISTA_BLANCA_PERMANENTE: EntradaLista[] = [
       "El bucket de exportaciones es privado; el enlace firmado de un solo uso (RUL-REP-13, `37`/`35` §11) lo emite el " +
       "trabajador de Storage, no el cliente del usuario. La propiedad del trabajo ya se verificó con RLS antes de firmar.",
   },
+  {
+    patron: "v1/home",
+    justificacion:
+      "`GET /home` registra `insight_deliveries` (RLS \"no client write\", igual que en el `dashboard/home` heredado) " +
+      "para no repetir el mismo hallazgo destacado; la propiedad del usuario ya se verificó con el cliente autenticado " +
+      "antes de esa escritura de `service_role` (`39` §10/§11).",
+  },
+  {
+    patron: "v1/home/preferences",
+    justificacion:
+      "Ocultar o mostrar un bloque escribe en `learned_preferences` (RLS \"no client write\", `36` migración `061`), " +
+      "que ningún cliente puede escribir directo. El `userId` se toma del cliente autenticado antes de la escritura de " +
+      "`service_role`, mismo patrón que `v1/exports/*/link` (`39` §4.2, `RUL-HOME-06`, `WEB-D064`).",
+  },
 ];
 
 const MIGRA_CON_CONTRATOS_DE_API =
@@ -84,7 +98,6 @@ export const EXCEPCIONES_TEMPORALES: EntradaLista[] = [
   "v1/boxes",
   "v1/boxes/*",
   "v1/money/actions",
-  "v1/dashboard/home",
   // Categorías (25)
   "v1/subcategories",
   "v1/subcategories/*",
