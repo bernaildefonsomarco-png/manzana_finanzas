@@ -1398,8 +1398,7 @@ inestabilidad de entorno, no vacíos del corpus.
 **Portones:** G1 ✓ (parcial, ver abajo) · G2 no aplica a este corte · G3 no
 cierra: no hubo sesiones `USER` ni cohorte para `METRIC`
 **Matriz regenerada:** 2026-08-03, con `npm run matriz:generar`; hash del
-commit sustantivo: `PENDIENTE` (hash real registrado en el commit de
-seguimiento de este cierre).
+commit sustantivo: `0c88e21`.
 
 ### Qué se entregó
 
