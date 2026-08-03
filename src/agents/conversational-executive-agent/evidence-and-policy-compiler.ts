@@ -1,4 +1,5 @@
 import type { ConversationToolResult } from "@/agents/conversation-agent/types";
+import { esComandoConocido } from "@/core/catalog";
 import type {
   ConversationalExecutiveContextPack,
   ConversationalExecutiveOutput,
@@ -18,7 +19,11 @@ export type ExecutivePolicyIssue = {
     | "missing_grounded_claims"
     | "premature_write_claim"
     | "invalid_composition_stage"
-    | "debt_action_without_specialized_hint";
+    | "debt_action_without_specialized_hint"
+    | "command_outside_catalog"
+    | "figure_without_assumptions"
+    | "world_knowledge_promoted"
+    | "focus_expired";
   path: string;
   message: string;
 };
@@ -100,23 +105,61 @@ export function compileExecutiveEvidenceAndPolicy(input: {
           "Las acciones de deuda deben transportar el hint para un comando especializado.",
       });
     }
+
+    if (action.command_id !== null && !esComandoConocido(action.command_id)) {
+      issues.push({
+        code: "command_outside_catalog",
+        path: `financial_proposals.result[${index}].command_id`,
+        message: `El comando ${action.command_id} no existe en el catalogo de 40 S7.`,
+      });
+    }
   });
+
+  if (
+    input.output.correction_proposal.command_id !== null &&
+    !esComandoConocido(input.output.correction_proposal.command_id)
+  ) {
+    issues.push({
+      code: "command_outside_catalog",
+      path: "correction_proposal.command_id",
+      message: `El comando ${input.output.correction_proposal.command_id} no existe en el catalogo de 40 S7.`,
+    });
+  }
 
   if (
     focus &&
     input.output.reference_resolution.resolution === "focus_set"
   ) {
-    const focusIds = new Set(focus.ordered_ids);
-    const outsideFocus =
-      input.output.reference_resolution.candidate_movement_ids.filter(
-        (id) => !focusIds.has(id),
-      );
-    if (outsideFocus.length > 0) {
+    // `23` S5b.1/`AC-RT-12`: un foco caducado no resuelve referencias. Se
+    // compara contra `received_at` del turno, no contra el reloj de la
+    // verificacion, para que la comprobacion sea determinista y probable.
+    const turnReceivedAt = Date.parse(
+      input.contextPack.conversation_context.received_at,
+    );
+    const focusExpiresAt = Date.parse(focus.expires_at);
+    if (
+      Number.isFinite(turnReceivedAt) &&
+      Number.isFinite(focusExpiresAt) &&
+      focusExpiresAt <= turnReceivedAt
+    ) {
       issues.push({
-        code: "reference_outside_focus",
-        path: "reference_resolution.candidate_movement_ids",
-        message: `La referencia incluyo IDs fuera del focus_set: ${outsideFocus.join(", ")}.`,
+        code: "focus_expired",
+        path: "reference_resolution.resolution",
+        message: `El foco caduco el ${focus.expires_at}; no puede resolver referencias (23 S5b.1).`,
       });
+    } else {
+      const focusIds = new Set(focus.ordered_ids);
+      const outsideFocus =
+        input.output.reference_resolution.candidate_movement_ids.filter(
+          (id) => !focusIds.has(id),
+        );
+      if (outsideFocus.length > 0) {
+        issues.push({
+          code: "reference_outside_focus",
+          path: "reference_resolution.candidate_movement_ids",
+          message: `La referencia incluyo IDs fuera del focus_set: ${outsideFocus.join(", ")}.`,
+        });
+      }
     }
   }
 
@@ -175,6 +218,29 @@ export function compileExecutiveEvidenceAndPolicy(input: {
           message: `El claim atribuye una tool no ejecutada: ${toolName}.`,
         });
       }
+    }
+    if (claim.claim_type === "projection" && claim.assumptions.length === 0) {
+      issues.push({
+        code: "figure_without_assumptions",
+        path: `response_composition.grounded_claims[${index}].assumptions`,
+        message:
+          "Toda proyeccion debe citar los supuestos ademas de los datos base (22 S2).",
+      });
+    }
+  });
+
+  input.output.findings.forEach((finding, index) => {
+    if (finding.level !== "impresion" || !finding.has_figure) return;
+    const groundedInThisTurn =
+      finding.evidence_refs.length > 0 &&
+      finding.evidence_refs.every((ref) => knownEvidenceSet.has(ref));
+    if (!groundedInThisTurn) {
+      issues.push({
+        code: "world_knowledge_promoted",
+        path: `findings[${index}].evidence_refs`,
+        message:
+          "Una impresion con cifra debe venir de datos consultados en este turno (22 S9).",
+      });
     }
   });
 

@@ -8,7 +8,6 @@ const baseContext: DataContextPack = {
   user_id: "00000000-0000-4000-8000-000000000001",
   locale: "es-PE",
   timezone: "America/Lima",
-  channel: "whatsapp",
   discreet_mode: false,
   preferences_summary: {},
   risk_context: {},
@@ -168,6 +167,7 @@ describe("DataAgent", () => {
       result: [
         {
           action_id: "action_1",
+          command_id: null,
           movement_type: "pago_deuda",
           amount: null,
           currency: "PEN",

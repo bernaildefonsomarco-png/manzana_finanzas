@@ -553,7 +553,6 @@ function conversationContext(input: {
     user_id: "agentic-flow-user",
     locale: "es-PE",
     timezone: "America/Lima",
-    channel: "whatsapp",
     original_message: input.message,
     received_at: input.receivedAt,
     query: {
@@ -640,7 +639,6 @@ function dataContext(message: string): DataContextPack {
     user_id: "agentic-flow-user",
     locale: "es-PE",
     timezone: "America/Lima",
-    channel: "whatsapp",
     discreet_mode: false,
     preferences_summary: {},
     risk_context: {},

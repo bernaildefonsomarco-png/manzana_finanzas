@@ -39,6 +39,7 @@ const movementOutput: DataAgentOutput = {
   result: [
     {
       action_id: "action_1",
+      command_id: null,
       movement_type: "gasto",
       amount: 20,
       currency: "PEN",

@@ -32,6 +32,10 @@ export const ConversationToolNameSchema = z.enum([
   "get_record_provenance",
   "get_user_context_summary",
   "get_spending_summary",
+  // `20b` S5: la consulta abierta — de/donde/agrupar_por/medir/ordenar,
+  // compilada contra el modelo del dominio de `src/core/semantics`. Unica
+  // entidad compilable hoy: `movimientos` (`WEB-D257`, `WEB-D259`).
+  "consultar_datos_abiertos",
 ]);
 export type ConversationToolName = z.infer<typeof ConversationToolNameSchema>;
 
@@ -331,7 +335,6 @@ export const ConversationContextPackSchema = z.object({
   user_id: z.string(),
   locale: z.literal("es-PE"),
   timezone: z.string(),
-  channel: z.enum(["whatsapp", "dashboard"]),
   original_message: z.string(),
   received_at: z.string(),
   query: ConversationQuerySchema,

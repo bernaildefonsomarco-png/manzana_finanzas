@@ -64,6 +64,10 @@ src/
     reports/        # Report Engine (35): agregación reutilizada de Presupuestos, CSV
     search/         # Query parser y sugerencia ortográfica deterministas (38)
     home/           # Home Composer (39): precedencia RUL-HOME-03 y composición de bloques, sin aritmética propia
+    catalog/        # Catálogo de comandos y vocabulario de lectura, generado de `40` (W-16, WEB-D254)
+    semantics/      # Capa semántica de `20b`: lenguaje de consulta, compilador, cálculo aislado (W-16)
+    profile/        # Perfil del usuario de `20c`: capas, política de confirmación, temas sensibles (W-16)
+    degradation/    # Los cuatro grados de degradación de `23` §7 (W-16)
     onboarding/, disclosure/, risk/, events/
     commands/, engines/, validators/  # vacías: marcador para el diseño de `core/` (documentacion/app_web/02_fundaciones/12)
   adapters/

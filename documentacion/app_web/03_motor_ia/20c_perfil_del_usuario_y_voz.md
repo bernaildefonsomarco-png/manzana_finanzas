@@ -363,31 +363,65 @@ beneficio. Se revisa y se deja de recoger.
 ## 10. Criterios de aceptación
 
 - `AC-PERF-01` — Un hecho observado no se da por cierto sin confirmación del
-  usuario. Evidencia: `TEST` + `USER`.
+  usuario. Evidencia: `TEST` + `USER`. Ya cerraba antes de `W-16` la parte
+  `TEST`: `user_profile_facts_observed_confirmed` (`062_w13_insights_memory.sql`)
+  impone por `check` que todo hecho `observado_confirmado` tenga
+  `last_confirmed_at`; un hecho `observado` sin confirmar no puede existir
+  en la tabla, solo como candidato (`W-13`). `W-16` no repite esa prueba, la
+  documenta correctamente por primera vez (`WEB-D260`, doc `13` §7.5b
+  corregido). No cierra la parte `USER`.
 - `AC-PERF-02` — Máximo una confirmación de perfil por conversación, nunca en
-  el primer turno. Evidencia: `TEST`.
+  el primer turno. Evidencia: `TEST`. Cierra en `W-16` fase 6:
+  `src/core/profile/confirmation-gate.ts` implementa la regla exacta
+  (`confirmation-gate.test.ts`, `RUL-HECHO-02` sobre las tres reglas: primer
+  turno, una vez por conversación, dos intentos ignorados). No cierra
+  completo: nada en el motor real llama todavía a esta función — no hay
+  pipeline que genere candidatos desde una conversación real (`WEB-D260`).
 - `AC-PERF-03` — Todo hecho lleva origen, fecha, vigencia y estado.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Ya cerraba antes de `W-16`: son columnas obligatorias
+  de `user_profile_facts` (`062_w13_insights_memory.sql`), con `check`s de
+  valores conocidos para `origin`/`status`/`validity`.
 - `AC-PERF-04` — Un hecho contradicho pasa a *en duda*; no se borra ni se
-  mantiene como cierto. Evidencia: `TEST`.
+  mantiene como cierto. Evidencia: `TEST`. Cierra parcial, y ya cerraba
+  antes de `W-16`: `expire_stale_memory` (`062_w13_insights_memory.sql`)
+  pasa un hecho `revisable` a `en_duda` a los 6 meses sin reconfirmar
+  (caducidad temporal). No cierra la contradicción por **datos**: nada
+  compara un hecho declarado (p. ej. "cobra quincenal") contra el patrón
+  real de movimientos para detectar que dejó de encajar — esa detección no
+  existe en ninguna fase de `W-16`.
 - `AC-PERF-05` — Los rasgos invariantes de la voz no cambian con ningún
-  perfil. Evidencia: `TEST` + `USER`.
+  perfil. Evidencia: `TEST` + `USER`. No tocado por `W-16`: es
+  comportamiento del modelo en el turno, no verificable sin una sesión real
+  contra el prompt de producción.
 - `AC-PERF-06` — Dos usuarios con estilos opuestos reciben respuestas de
-  registro claramente distinto ante los mismos datos. Evidencia: `USER`.
+  registro claramente distinto ante los mismos datos. Evidencia: `USER`. No
+  tocado por `W-16`.
 - `AC-PERF-07` — Una respuesta corta es tan exacta y tan explicable como una
-  larga. Evidencia: `TEST`.
+  larga. Evidencia: `TEST`. No tocado por `W-16`.
 - `AC-PERF-08` — Mensajes fragmentados se componen en una sola intención
-  cuando el estilo del usuario lo indica. Evidencia: `TEST` + `USER`.
+  cuando el estilo del usuario lo indica. Evidencia: `TEST` + `USER`. No
+  tocado por `W-16`.
 - `AC-PERF-09` — Un mensaje emocional se responde a la persona antes que al
-  dato. Evidencia: `USER`.
+  dato. Evidencia: `USER`. No tocado por `W-16`.
 - `AC-PERF-10` — Las categorías sensibles no generan hechos de perfil
-  automáticos. Evidencia: `TEST`.
+  automáticos. Evidencia: `TEST`. Cierra en `W-16` fase 6:
+  `src/core/profile/sensitive-topics.ts`, `puedeGenerarHechoDePerfilAutomatico`,
+  probado con `RUL-HECHO-02` en las cuatro capas
+  (`sensitive-topics.test.ts`). No cierra completo: la función existe y está
+  probada, pero nada la invoca todavía porque el pipeline que generaría
+  hechos automáticos desde una conversación no existe (mismo hueco que
+  `AC-PERF-02`).
 - `AC-PERF-11` — El usuario puede ver, corregir, borrar y desactivar todo el
-  perfil, y la app sigue funcionando. Evidencia: `TEST` + `USER`.
+  perfil, y la app sigue funcionando. Evidencia: `TEST` + `USER`. Ya cerraba
+  antes de `W-16` la parte `TEST`: `/api/v1/memory/candidates` y su
+  `[id]/[action]` (`W-13`) cubren ver/confirmar/rechazar candidatos. No
+  cierra la parte `USER`.
 - `AC-PERF-12` — Se revisan periódicamente los hechos que nunca se usan y se
-  deja de recogerlos. Evidencia: `METRIC`.
+  deja de recogerlos. Evidencia: `METRIC`. No tocado por `W-16`.
 - `AC-PERF-13` — El asistente nunca responde "solo puedo ayudarte con temas
   financieros" a un comentario o pregunta conversacional. Evidencia: `TEST` + `USER`.
+  No tocado por `W-16`: comportamiento del modelo en el turno.
 - `AC-PERF-14` — Un hecho de vida mencionado al pasar (cambio de trabajo,
   mudanza, viaje) se registra y se usa después, sin interrumpir el momento
-  para preguntar. Evidencia: `TEST` + `USER`.
+  para preguntar. Evidencia: `TEST` + `USER`. No tocado por `W-16`: depende
+  del mismo pipeline de generación de candidatos que falta en `AC-PERF-02`.

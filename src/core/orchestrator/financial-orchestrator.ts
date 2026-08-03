@@ -971,6 +971,7 @@ export class FinancialOrchestrator {
           );
       await rememberConversationTurn({
         client: this.client,
+        channel,
         contextPack: conversationContextPack,
         answer: conversationAgentResult.output,
         sourceRef: externalEvent.id,
@@ -1619,6 +1620,7 @@ export class FinancialOrchestrator {
 
       await rememberConversationTurn({
         client: this.client,
+        channel: params.channel,
         contextPack,
         answer: result.output,
         sourceRef: params.externalEvent.id,
@@ -1785,6 +1787,7 @@ export class FinancialOrchestrator {
             toolName,
             userId: params.externalEvent.user_id!,
             query: toolInput.query,
+            semanticQuery: toolInput.semantic_query,
             activeMemoryState: activeState,
             turnState: {
               ...params.conversationTurn.turn_state,
@@ -1882,7 +1885,6 @@ export class FinancialOrchestrator {
       user_id: externalEvent.user_id!,
       locale: "es-PE" as const,
       timezone: knownTimezone ?? profile?.timezone ?? "America/Lima",
-      channel,
       discreet_mode: preferenceRow?.discreet_mode_enabled ?? false,
       preferences_summary: {
         tone_style: preferenceRow?.tone_style ?? null,

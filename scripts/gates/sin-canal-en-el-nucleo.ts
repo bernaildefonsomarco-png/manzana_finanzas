@@ -29,6 +29,7 @@ import { pathToFileURL } from "node:url";
 const RAIZ_CORE = join("src", "core");
 
 export const FICHEROS_EXENTOS = [
+  "src/core/catalog/generated.ts",
   "src/core/channel/types.ts",
   "src/core/conversation/grounded-response-composer.ts",
   "src/core/conversation/tool-gateway.ts",

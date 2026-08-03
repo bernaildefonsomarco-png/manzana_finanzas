@@ -520,10 +520,10 @@ saber que una cuota puede aparecer en dos módulos.
 | `aceptar_sugerencia_recurrente` | Tarjeta con evidencia |
 | `marcar_pagado` | Tarjeta con monto editable |
 | `saltar_periodo` | Tarjeta |
-| `pausar_recurrente` / `reactivar` | Tarjeta |
+| `pausar_recurrente` / `reactivar_recurrente` | Tarjeta |
 | `cancelar_recurrente` | **Riesgo** |
 | `actualizar_monto_esperado` | Tarjeta |
-| `vincular_caja_a_compromiso` / `vincular_deuda` | Tarjeta |
+| `vincular_caja_a_compromiso` | Tarjeta |
 
 ### 14.3 Qué se puede pedir en lenguaje natural
 

@@ -115,7 +115,7 @@ leído `docs/` debe poder implementarlos sin una sola pregunta de producto.
 
 | # | Documento | Estado | Notas |
 |---|---|---|---|
-| 40 | `40_catalogo_de_tools_y_comandos.md` | aprobado | **Agregación, no diseño.** 95 comandos, 145 entradas de lectura. Leer se compone; escribir se enumera. Seis niveles de confirmación. **Cierra `C-03`.** |
+| 40 | `40_catalogo_de_tools_y_comandos.md` | aprobado | **Agregación, no diseño.** 99 comandos, 156 entradas de lectura (verificado mecánicamente en `W-16`, `WEB-D254`). Leer se compone; escribir se enumera. Seis niveles de confirmación. **Cierra `C-03`.** |
 | 41 | `41_asistente_ia_en_la_app.md` | aprobado | **El presentador web.** Invierte `05c` §15: la IA escribe, siempre con confirmación. Solo la prosa se transmite; las cifras no. |
 | 42 | `42_reutilizacion_del_codigo_existente_motor.md` | aprobado | **Primer contacto con `src/agents/`.** Casi la mitad sobrevive. Lo que se reemplaza son 150 líneas: el enum de 15 tools, el canal en el núcleo y el arnés. |
 

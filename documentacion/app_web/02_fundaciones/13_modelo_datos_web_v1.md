@@ -429,58 +429,79 @@ Tres decisiones de diseño con consecuencias:
 `channel` existe desde el principio con valor `'web'` para que la fase 2 no
 requiera migrar datos.
 
-### 7.5b Perfil del usuario — migración `054`
+### 7.5b Perfil del usuario — migración `062` (`W-16`, `WEB-D260`)
 
 Requerido por `20c_perfil_del_usuario_y_voz.md`. Es lo que hace que dos
 usuarios con los mismos movimientos no reciban la misma conversación.
 
+Esta sección describía originalmente una migración `054` con columnas
+`layer`/`key`/`value`/`first_seen_at`/`deleted_at` que nunca se
+implementaron así: `W-13` construyó el esquema real en
+`062_w13_insights_memory.sql`, con nombres distintos y sin columna `layer`
+propia. Lo de abajo es el esquema tal como existe (`WEB-D260`).
+
 **`user_profile_facts`** — un hecho conocido sobre la persona.
 
 ```text
-id                  uuid pk
-user_id             uuid not null
-layer               profile_layer not null    -- estilo | vida | vinculo | hilo
-key                 text not null             -- 'cobro_frecuencia', 'trabajo', 'longitud_mensaje'
-value               jsonb not null
-origin              profile_origin not null   -- dicho | observado_confirmado
-validity            profile_validity not null -- permanente | revisable | volatil
-status              profile_status not null   -- vigente | en_duda | suspendido | caducado
-first_seen_at       timestamptz not null default now()
-last_confirmed_at   timestamptz null
-expires_at          timestamptz null
-evidence_refs       text[] not null default '{}'
-created_at, updated_at, deleted_at, metadata
+id                        uuid pk
+user_id                   uuid not null
+subject_key               text not null   -- 'vida:trabajo', 'estilo:longitud'; capa = prefijo antes de ':'
+statement                 text not null   -- el hecho en lenguaje natural, no una columna value tipada
+origin                    text not null   -- dicho | observado_confirmado
+status                    text not null default 'vigente'
+                                          -- vigente | en_duda | suspendido | olvidado | caducado | reemplazado
+validity                  text not null default 'revisable'
+                                          -- permanente | revisable | volatil
+last_confirmed_at         timestamptz null
+expires_at                timestamptz null
+positive_evidence_refs    text[] not null default '{}'
+negative_evidence_refs    text[] not null default '{}'
+positive_evidence_count   integer not null default 0   -- = cardinality(positive_evidence_refs)
+negative_evidence_count   integer not null default 0   -- = cardinality(negative_evidence_refs)
+supersedes_fact_id        uuid null references user_profile_facts(id)
+created_at, updated_at, metadata
 ```
 
-Único por `(user_id, layer, key)` cuando no está borrado: un hecho nuevo
-sobre la misma clave **reemplaza y archiva** al anterior, no se acumula.
+Único (índice parcial) por `(user_id, subject_key)` mientras `status` esté
+en `vigente`/`en_duda`: un hecho nuevo sobre la misma clave **reemplaza y
+archiva** al anterior (`supersedes_fact_id`) en vez de acumularse. La capa
+(`estilo`/`vida`/`vinculo`/`hilo` de `20c` §2) no es una columna: es el
+prefijo de `subject_key` antes de `:` — convención que ya usa el código de
+`W-13` y que `src/core/profile/layers.ts` (`W-16`) formaliza en una función
+pura en vez de dejarla implícita.
 
 Cuatro campos merecen justificación, porque son los que evitan que el perfil
 haga daño:
 
 | Campo | Por qué existe |
 |---|---|
-| `origin` | Distingue lo que el usuario contó de lo que el motor dedujo. Un hecho `observado` sin confirmar **no se guarda aquí** — vive como candidato hasta que se confirma. |
-| `validity` | Lo permanente (cómo escribe) no caduca; lo revisable (su trabajo) se reconfirma; lo volátil (un viaje en curso) caduca solo. |
+| `origin` | Distingue lo que el usuario contó de lo que el motor dedujo. Un `check` de la tabla (`user_profile_facts_observed_confirmed`) obliga a que todo hecho `observado_confirmado` tenga `last_confirmed_at` — un hecho `observado` sin confirmar **no puede existir aquí**: vive como candidato hasta que se confirma. |
+| `validity` | Lo permanente (cómo escribe) no caduca; lo revisable (su trabajo) se reconfirma a los 6 meses (`23` §5b.3, función `expire_stale_memory` de esta migración); lo volátil (un viaje en curso) caduca solo. |
 | `status` | Ante contradicción pasa a `en_duda`, **no se borra**. Así el usuario puede decir "no, sigue igual" y el hecho se restaura con su historia. |
-| `evidence_refs` | De dónde salió: qué dijo, o qué observó el motor y cuándo lo confirmó. Exigido por el principio de procedencia. |
+| `positive_evidence_refs`/`negative_evidence_refs` | De dónde salió y qué lo contradice. Exigido por el principio de procedencia. |
 
 **`user_profile_candidates`** — lo observado que aún no se confirmó.
 
 ```text
-id, user_id, layer, key, proposed_value jsonb,
-evidence_refs text[], observed_at, asked_at timestamptz null,
+id, user_id, subject_key, statement,
+evidence_refs text[] (no vacío),
+status text default 'observado'  -- observado | pending_confirmation | accepted | rejected | never_ask
 ask_count integer not null default 0,
-status candidate_status not null   -- pendiente | confirmado | rechazado | abandonado
+last_asked_at timestamptz null,
+decided_at timestamptz null,
+created_at, updated_at, metadata
 ```
 
-`ask_count` implementa la regla de `20c` §3: si el usuario ignora dos veces,
-no se vuelve a preguntar por ese hecho.
+Único por `(user_id, subject_key)`. `ask_count` implementa la regla de
+`20c` §3: si el usuario ignora dos veces, no se vuelve a preguntar por ese
+hecho — la política que decide *cuándo* preguntar dentro de un turno vive en
+`src/core/profile/confirmation-gate.ts` (`W-16`); esta tabla solo guarda el
+conteo.
 
-**`user_profile_events`** — auditoría de cambios, con el mismo patrón que
-`experience_preference_events` (migración `045`): estado anterior, estado
-siguiente, actor e idempotencia. Necesario porque el usuario puede corregir
-y borrar, y esas acciones deben ser trazables.
+**Auditoría**: no hay una tabla `user_profile_events` separada. Los cambios
+de `user_profile_facts`/`candidates` se registran en la tabla compartida
+`memory_events` (misma migración) con `scope = 'perfil'`, el mismo patrón
+que usan los otros ámbitos de memoria (`clasificacion`, `preferencia`).
 
 ### 7.5c Panorama financiero — migración `055`
 

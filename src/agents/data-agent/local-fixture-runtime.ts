@@ -101,6 +101,7 @@ export function extractDataAgentOutput(context: DataContextPack): DataAgentOutpu
     account_destination_id: null,
     box_origin_id: null,
     box_destination_id: null,
+    command_id: null,
     debt_hint: null,
     recurring_hint: null,
     related_person_hint: null,

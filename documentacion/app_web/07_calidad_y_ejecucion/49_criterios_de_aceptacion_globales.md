@@ -398,8 +398,8 @@ dos verdades, y es lo que este documento acaba de reprochar en §3.
 `AC-MOTOR-10` — *"cualquier cosa que se pueda hacer en la interfaz se puede
 pedir hablando"* — venía anotado como "cobertura del catálogo" y es
 exactamente un test de corpus: cruza los `ACT-` declarados en las §9 de los
-dieciséis módulos contra los 95 comandos de `40` §7. Sigue además exigiendo
-`USER`, así que vive en `G3`.
+dieciséis módulos contra los 99 comandos de `40` §7 (`WEB-D254`). Sigue
+además exigiendo `USER`, así que vive en `G3`.
 
 La única de clase `contenido` es `AC-CONF-08`, que verifica la mención de
 Limited Use **contra el texto publicado en `/privacidad`**, no contra el que

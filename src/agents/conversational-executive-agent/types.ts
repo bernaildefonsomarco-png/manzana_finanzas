@@ -20,6 +20,7 @@ import {
   type OrchestrationPlanningContextPack,
 } from "@/agents/orchestration-planning-agent/types";
 import type { TurnWorkspace } from "@/core/conversation/turn-workspace";
+import { SemanticQuerySchema } from "@/core/semantics/query";
 
 export const TurnInterpreterSchema = z.object({
   goal: PlanningGoalSchema,
@@ -85,12 +86,29 @@ export const GroundedClaimSchema = z.object({
     "list_membership",
     "status",
     "explanation",
+    "projection",
     "non_financial",
   ]),
   evidence_refs: z.array(z.string().trim().min(1).max(240)).min(1).max(12),
   source_tools: z.array(ConversationToolNameSchema).max(8),
+  // `22` §2: "Una proyección | Los datos base y los supuestos" — obligatorio
+  // solo para claim_type "projection"; vacío para el resto.
+  assumptions: z.array(z.string().trim().min(1).max(200)).max(6).default([]),
 });
 export type GroundedClaim = z.infer<typeof GroundedClaimSchema>;
+
+// `22` §9: dos niveles de hallazgo. `afirmacion` viene de un motor
+// determinístico; `impresion` es observación del modelo y no puede contener
+// una cifra que no salga de datos consultados en este turno. Máximo uno por
+// turno (`22` §9, "Máximo un hallazgo por turno").
+export const FindingSchema = z.object({
+  finding_id: z.string().trim().min(1).max(80),
+  level: z.enum(["afirmacion", "impresion"]),
+  text: z.string().trim().min(1).max(320),
+  has_figure: z.boolean(),
+  evidence_refs: z.array(z.string().trim().min(1).max(240)).max(12),
+});
+export type Finding = z.infer<typeof FindingSchema>;
 
 export const ResponseCompositionSchema = ConversationalAnswerSchema.extend({
   grounded_claims: z.array(GroundedClaimSchema).max(24),
@@ -110,6 +128,7 @@ export const ConversationalExecutiveOutputSchema = z.object({
   correction_proposal: CorrectionProposalSchema,
   response_composition: ResponseCompositionSchema,
   orchestration_plan: OrchestrationPlanSchema,
+  findings: z.array(FindingSchema).max(1).default([]),
   confidence: z.number().min(0).max(1),
   safety_flags: z.array(z.string().trim().min(1).max(160)).max(16),
 });
@@ -118,7 +137,11 @@ export type ConversationalExecutiveOutput = z.infer<
 >;
 
 export const ExecutiveToolCallInputSchema = z.object({
-  query: ConversationQuerySchema,
+  // Nulo para "consultar_datos_abiertos" — esa tool usa `semantic_query`,
+  // no el vocabulario cerrado de `ConversationQuery` (`20b` S5, `WEB-D259`).
+  query: ConversationQuerySchema.nullable(),
+  // Solo para "consultar_datos_abiertos" (`20b` S5.2).
+  semantic_query: SemanticQuerySchema.nullable().default(null),
   should_use_active_memory: z.boolean(),
 });
 export type ExecutiveToolCallInput = z.infer<

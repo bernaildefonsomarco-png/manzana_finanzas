@@ -275,6 +275,7 @@ describe("CorrectionAgent", () => {
     const agent = new CorrectionAgent(
       semanticRuntime({
         is_correction: true,
+        command_id: null,
         operation: "delete",
         correction_type: "delete",
         candidate_movement_ids: ["00000000-0000-4000-8000-000000000010"],
@@ -315,6 +316,7 @@ describe("CorrectionAgent", () => {
     const agent = new CorrectionAgent(
       semanticRuntime({
         is_correction: true,
+        command_id: null,
         operation: "delete",
         correction_type: "delete",
         candidate_movement_ids: ["00000000-0000-4000-8000-000000000099"],

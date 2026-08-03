@@ -78,6 +78,7 @@ export type DebtHint = z.infer<typeof DebtHintSchema>;
 
 export const ProposedActionSchema = z.object({
   action_id: z.string(),
+  command_id: z.string().trim().min(1).max(80).nullable().default(null),
   movement_type: z.enum(MOVEMENT_TYPES),
   amount: z.number().positive().nullable(),
   currency: z.enum(["PEN", "USD"]),
@@ -115,7 +116,6 @@ export type DataContextPack = {
   user_id: string;
   locale: "es-PE";
   timezone: string;
-  channel: "whatsapp" | "dashboard" | "email" | "worker";
   discreet_mode: boolean;
   preferences_summary: Record<string, unknown>;
   risk_context: Record<string, unknown>;

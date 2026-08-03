@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
 
-import type { Channel } from "@/core/channel/types";
 import type { ConversationContextPack } from "@/agents/conversation-agent/types";
 import type { DataContextPack } from "@/agents/data-agent/types";
 import type { OrchestrationPlanningContextPack } from "@/agents/orchestration-planning-agent/types";
@@ -19,7 +18,6 @@ export type TurnWorkspace = {
   version: "v1";
   turn_id: string;
   user_id: string;
-  channel: Channel;
   user_message: string;
   received_at: string;
   timezone: string;
@@ -134,7 +132,6 @@ export function buildTurnWorkspace(input: {
     version: "v1" as const,
     turn_id: input.turnId,
     user_id: input.planningContext.user_id,
-    channel: input.planningContext.channel,
     user_message: input.planningContext.original_message,
     received_at: input.planningContext.received_at,
     timezone: input.planningContext.timezone,

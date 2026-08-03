@@ -1,9 +1,11 @@
-import { describe, expect, it } from "vitest";
-import type { ConversationQuery } from "@/agents/conversation-agent";
+import { describe, expect, it, vi } from "vitest";
+import type { ConversationQuery, ConversationTurnState } from "@/agents/conversation-agent";
 import type { ConversationMemoryState } from "@/data/repositories/conversation-memory.repository";
+import type { SemanticQuery } from "@/core/semantics/query";
 import {
   filterMovementsForConversationQuery,
   shouldUseActiveReferencedMovements,
+  ToolGateway,
 } from "./tool-gateway";
 
 const followUpQuery: ConversationQuery = {
@@ -291,3 +293,129 @@ function activeCaptureMemory(): ConversationMemoryState {
     },
   };
 }
+
+const userId = "00000000-0000-4000-8000-000000000001";
+const turnState: ConversationTurnState = {
+  act: "financial_question",
+  continuity: "new_topic",
+  emotional_state: "curious",
+  experience_mode: "read_only_answer",
+  should_use_active_memory: false,
+  should_route_to_conversation_agent: true,
+  should_ask_clarification_first: false,
+  response_guidance: [],
+  personalization_cues: [],
+  risk_notes: [],
+};
+
+/** Mock encadenable minimo del query builder de supabase-js. */
+function fakeSupabaseClient(rows: unknown[]) {
+  const calls: Array<{ method: string; args: unknown[] }> = [];
+  const builder: Record<string, unknown> = {};
+  const chainMethods = ["select", "eq", "neq", "gt", "gte", "lt", "lte", "in", "ilike", "order"];
+  for (const method of chainMethods) {
+    builder[method] = vi.fn((...args: unknown[]) => {
+      calls.push({ method, args });
+      return builder;
+    });
+  }
+  builder.limit = vi.fn((n: number) => {
+    calls.push({ method: "limit", args: [n] });
+    return builder;
+  });
+  builder.then = (resolve: (value: { data: unknown[]; error: null }) => unknown) =>
+    resolve({ data: rows, error: null });
+
+  return { client: { from: vi.fn(() => builder) }, calls };
+}
+
+describe("ToolGateway.executeAuthorizedTool: consultar_datos_abiertos (20b S5, W-16 fase 5)", () => {
+  it("compila y ejecuta una consulta abierta real, con referencias", async () => {
+    const { client } = fakeSupabaseClient([{ id: "m1", amount: 20 }, { id: "m2", amount: 8 }]);
+    const gateway = new ToolGateway(client as never);
+    const semanticQuery: SemanticQuery = {
+      de: "movimientos",
+      donde: { kind: "comparacion", dimension: "tipo_movimiento", comparador: "=", valor: "gasto" },
+      agrupar_por: [],
+      medir: ["suma"],
+      ordenar: null,
+      limitar: null,
+      comparar_con: null,
+      a_partir_de: null,
+    };
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "consultar_datos_abiertos",
+      userId,
+      query: null,
+      semanticQuery,
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.data.referencias).toEqual(["movimientos:m1", "movimientos:m2"]);
+    expect(result.facts).toContain("filas=2");
+  });
+
+  it("falla limpio (sin lanzar) cuando la consulta no compila", async () => {
+    const { client } = fakeSupabaseClient([]);
+    const gateway = new ToolGateway(client as never);
+    const semanticQuery: SemanticQuery = {
+      de: "movimientos",
+      donde: { kind: "comparacion", dimension: "signo_zodiacal", comparador: "=", valor: "leo" },
+      agrupar_por: [],
+      medir: ["suma"],
+      ordenar: null,
+      limitar: null,
+      comparar_con: null,
+      a_partir_de: null,
+    };
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "consultar_datos_abiertos",
+      userId,
+      query: null,
+      semanticQuery,
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(result.warnings.some((w) => w.includes("dimension_desconocida"))).toBe(true);
+  });
+
+  it("falla limpio cuando se llama sin semantic_query", async () => {
+    const { client } = fakeSupabaseClient([]);
+    const gateway = new ToolGateway(client as never);
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "consultar_datos_abiertos",
+      userId,
+      query: null,
+      semanticQuery: null,
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("failed");
+  });
+
+  it("una tool cerrada sin query devuelve failed sin tocar el cliente de datos", async () => {
+    const { client } = fakeSupabaseClient([]);
+    const gateway = new ToolGateway(client as never);
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_balance_snapshot",
+      userId,
+      query: null,
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("failed");
+    // La comprobacion ocurre antes de llegar al switch: si esto se rompe,
+    // "get_balance_snapshot" seguiria adelante y llamaria al cliente real.
+    expect(client.from).not.toHaveBeenCalled();
+  });
+});

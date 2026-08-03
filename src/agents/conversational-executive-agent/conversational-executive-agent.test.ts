@@ -14,9 +14,15 @@ import type {
   AgentRuntimeResponse,
 } from "@/agents/runtime";
 import { ConversationalExecutiveAgent } from "./conversational-executive-agent";
-import { compileExecutiveEvidenceAndPolicy } from "./evidence-and-policy-compiler";
+import {
+  buildKnownEvidenceRefs,
+  compileExecutiveEvidenceAndPolicy,
+} from "./evidence-and-policy-compiler";
 import { LocalFixtureConversationalExecutiveAgentRuntime } from "./local-fixture-runtime";
-import type { ConversationalExecutiveContextPack } from "./types";
+import type {
+  ConversationalExecutiveContextPack,
+  ConversationalExecutiveOutput,
+} from "./types";
 import { buildTurnWorkspace } from "@/core/conversation/turn-workspace";
 
 const query: ConversationQuery = {
@@ -341,6 +347,377 @@ describe("ConversationalExecutiveAgent", () => {
   });
 });
 
+describe("evidence-and-policy-compiler: extensiones de W-16 fase 3", () => {
+  it("rechaza un command_id de propuesta que no existe en el catalogo de 40 S7", async () => {
+    const result = await new ConversationalExecutiveAgent().run(
+      contextForTurn({
+        message: "gaste 20 soles en desayuno",
+        act: "financial_capture",
+      }),
+      "trace-catalog-invalid",
+      noToolExpected,
+    );
+    const output = structuredClone(
+      result.output,
+    ) as ConversationalExecutiveOutput;
+    output.financial_proposals.result[0]!.command_id =
+      "comando_que_no_existe_en_el_catalogo";
+
+    const compilation = compileExecutiveEvidenceAndPolicy({
+      contextPack: contextPack(),
+      output,
+      toolResults: result.tool_results,
+    });
+
+    expect(compilation.accepted).toBe(false);
+    expect(compilation.issues.map((issue) => issue.code)).toContain(
+      "command_outside_catalog",
+    );
+  });
+
+  it("acepta un command_id de propuesta que si existe en el catalogo", async () => {
+    const result = await new ConversationalExecutiveAgent().run(
+      contextForTurn({
+        message: "gaste 20 soles en desayuno",
+        act: "financial_capture",
+      }),
+      "trace-catalog-valid",
+      noToolExpected,
+    );
+    const output = structuredClone(
+      result.output,
+    ) as ConversationalExecutiveOutput;
+    output.financial_proposals.result[0]!.command_id = "crear_movimiento";
+
+    const compilation = compileExecutiveEvidenceAndPolicy({
+      contextPack: contextPack(),
+      output,
+      toolResults: result.tool_results,
+    });
+
+    expect(compilation.issues.map((issue) => issue.code)).not.toContain(
+      "command_outside_catalog",
+    );
+  });
+
+  it("rechaza una proyeccion sin supuestos declarados", async () => {
+    const agent = new ConversationalExecutiveAgent();
+    const result = await agent.run(
+      contextPack(),
+      "trace-projection-missing-assumptions",
+      async () => ({
+        tool_name: "query_movements",
+        status: "called",
+        facts: ["movement_count=5"],
+        warnings: [],
+        data: { movements: [] },
+      }),
+    );
+    const output = structuredClone(
+      result.output,
+    ) as ConversationalExecutiveOutput;
+    const knownRef = buildKnownEvidenceRefs(result.tool_results)[0]!;
+    output.response_composition.grounded_claims.push({
+      claim_id: "projection-without-assumptions",
+      text: "A este ritmo terminarias el mes con S/180 libres.",
+      claim_type: "projection",
+      evidence_refs: [knownRef],
+      source_tools: [],
+      assumptions: [],
+    });
+
+    const compilation = compileExecutiveEvidenceAndPolicy({
+      contextPack: contextPack(),
+      output,
+      toolResults: result.tool_results,
+    });
+
+    expect(compilation.accepted).toBe(false);
+    expect(compilation.issues.map((issue) => issue.code)).toContain(
+      "figure_without_assumptions",
+    );
+  });
+
+  it("acepta una proyeccion cuando declara sus supuestos", async () => {
+    const agent = new ConversationalExecutiveAgent();
+    const result = await agent.run(
+      contextPack(),
+      "trace-projection-with-assumptions",
+      async () => ({
+        tool_name: "query_movements",
+        status: "called",
+        facts: ["movement_count=5"],
+        warnings: [],
+        data: { movements: [] },
+      }),
+    );
+    const output = structuredClone(
+      result.output,
+    ) as ConversationalExecutiveOutput;
+    const knownRef = buildKnownEvidenceRefs(result.tool_results)[0]!;
+    output.response_composition.grounded_claims.push({
+      claim_id: "projection-with-assumptions",
+      text: "A este ritmo terminarias el mes con S/180 libres.",
+      claim_type: "projection",
+      evidence_refs: [knownRef],
+      source_tools: [],
+      assumptions: ["ritmo de gasto de los ultimos 15 dias se mantiene igual"],
+    });
+
+    const compilation = compileExecutiveEvidenceAndPolicy({
+      contextPack: contextPack(),
+      output,
+      toolResults: result.tool_results,
+    });
+
+    expect(compilation.issues.map((issue) => issue.code)).not.toContain(
+      "figure_without_assumptions",
+    );
+  });
+
+  it("rechaza una impresion con cifra que no viene de datos consultados en el turno", async () => {
+    const agent = new ConversationalExecutiveAgent();
+    const result = await agent.run(
+      contextPack(),
+      "trace-impression-not-grounded",
+      async () => ({
+        tool_name: "query_movements",
+        status: "called",
+        facts: ["movement_count=5"],
+        warnings: [],
+        data: { movements: [] },
+      }),
+    );
+    const output = structuredClone(
+      result.output,
+    ) as ConversationalExecutiveOutput;
+    output.findings = [
+      {
+        finding_id: "finding-1",
+        level: "impresion",
+        text: "sueles gastar 30% mas los viernes",
+        has_figure: true,
+        evidence_refs: [],
+      },
+    ];
+
+    const compilation = compileExecutiveEvidenceAndPolicy({
+      contextPack: contextPack(),
+      output,
+      toolResults: result.tool_results,
+    });
+
+    expect(compilation.accepted).toBe(false);
+    expect(compilation.issues.map((issue) => issue.code)).toContain(
+      "world_knowledge_promoted",
+    );
+  });
+
+  it("acepta una impresion con cifra cuando cita datos consultados en el turno", async () => {
+    const agent = new ConversationalExecutiveAgent();
+    const result = await agent.run(
+      contextPack(),
+      "trace-impression-grounded",
+      async () => ({
+        tool_name: "query_movements",
+        status: "called",
+        facts: ["movement_count=5"],
+        warnings: [],
+        data: { movements: [] },
+      }),
+    );
+    const output = structuredClone(
+      result.output,
+    ) as ConversationalExecutiveOutput;
+    const knownRef = buildKnownEvidenceRefs(result.tool_results)[0]!;
+    output.findings = [
+      {
+        finding_id: "finding-1",
+        level: "impresion",
+        text: "sueles gastar 30% mas los viernes",
+        has_figure: true,
+        evidence_refs: [knownRef],
+      },
+    ];
+
+    const compilation = compileExecutiveEvidenceAndPolicy({
+      contextPack: contextPack(),
+      output,
+      toolResults: result.tool_results,
+    });
+
+    expect(compilation.issues.map((issue) => issue.code)).not.toContain(
+      "world_knowledge_promoted",
+    );
+  });
+
+  it("una impresion sin cifra nunca dispara world_knowledge_promoted", async () => {
+    const agent = new ConversationalExecutiveAgent();
+    const result = await agent.run(
+      contextPack(),
+      "trace-impression-no-figure",
+      async () => ({
+        tool_name: "query_movements",
+        status: "called",
+        facts: ["movement_count=5"],
+        warnings: [],
+        data: { movements: [] },
+      }),
+    );
+    const output = structuredClone(
+      result.output,
+    ) as ConversationalExecutiveOutput;
+    output.findings = [
+      {
+        finding_id: "finding-1",
+        level: "impresion",
+        text: "parece que sales mas los viernes",
+        has_figure: false,
+        evidence_refs: [],
+      },
+    ];
+
+    const compilation = compileExecutiveEvidenceAndPolicy({
+      contextPack: contextPack(),
+      output,
+      toolResults: result.tool_results,
+    });
+
+    expect(compilation.issues.map((issue) => issue.code)).not.toContain(
+      "world_knowledge_promoted",
+    );
+  });
+});
+
+describe("evidence-and-policy-compiler: extensiones de W-16 fase 7 (23 S5b.1)", () => {
+  function focusSet(overrides: Partial<ReturnType<typeof baseFocusSet>> = {}) {
+    return { ...baseFocusSet(), ...overrides };
+  }
+
+  function baseFocusSet() {
+    return {
+      version: "v1" as const,
+      revision: 1,
+      focus_id: "focus-food",
+      subject: "movements" as const,
+      ordered_ids: ["food-1", "food-2"],
+      visible_order: "tool_result_order" as const,
+      query,
+      tool_provenance: [],
+      slot_provenance: [],
+      state_hash: "fnv1a32:12345678",
+      created_at: "2026-07-24T10:00:00.000-05:00",
+      updated_at: "2026-07-24T10:00:00.000-05:00",
+      expires_at: "2026-07-24T10:30:00.000-05:00",
+    };
+  }
+
+  it("rechaza resolver referencias contra un foco ya caducado (AC-RT-12)", async () => {
+    const agent = new ConversationalExecutiveAgent();
+    const result = await agent.run(
+      contextPack(),
+      "trace-focus-expired",
+      async () => ({
+        tool_name: "query_movements",
+        status: "called",
+        facts: ["movement_count=2"],
+        warnings: [],
+        data: { movements: [] },
+      }),
+    );
+    const pack = contextPack();
+    pack.conversation_context.received_at = "2026-07-24T11:00:00.000-05:00";
+    pack.conversation_context.active_conversation_state.working_set = {
+      version: "v1",
+      topic: null,
+      goal: null,
+      last_user_message_summary: null,
+      last_assistant_result_summary: null,
+      last_action: null,
+      unresolved_slots: [],
+      movement_referents: [],
+      entity_referents: [],
+      active_read_operation: null,
+      // El foco expiro a las 10:30 y este turno llega a las 11:00.
+      focus_set: focusSet({ expires_at: "2026-07-24T10:30:00.000-05:00" }),
+      conversation_style: null,
+      updated_at: "2026-07-24T10:30:00.000-05:00",
+    };
+    const output = structuredClone(
+      result.output,
+    ) as ConversationalExecutiveOutput;
+    output.reference_resolution = {
+      ...output.reference_resolution,
+      resolution: "focus_set",
+      focus_id: "focus-food",
+      candidate_movement_ids: ["food-1"],
+    };
+
+    const compilation = compileExecutiveEvidenceAndPolicy({
+      contextPack: pack,
+      output,
+      toolResults: result.tool_results,
+    });
+
+    expect(compilation.accepted).toBe(false);
+    expect(compilation.issues.map((issue) => issue.code)).toContain(
+      "focus_expired",
+    );
+  });
+
+  it("acepta resolver contra un foco vigente dentro de su ventana", async () => {
+    const agent = new ConversationalExecutiveAgent();
+    const result = await agent.run(
+      contextPack(),
+      "trace-focus-valid",
+      async () => ({
+        tool_name: "query_movements",
+        status: "called",
+        facts: ["movement_count=2"],
+        warnings: [],
+        data: { movements: [] },
+      }),
+    );
+    const pack = contextPack();
+    pack.conversation_context.received_at = "2026-07-24T10:15:00.000-05:00";
+    pack.conversation_context.active_conversation_state.working_set = {
+      version: "v1",
+      topic: null,
+      goal: null,
+      last_user_message_summary: null,
+      last_assistant_result_summary: null,
+      last_action: null,
+      unresolved_slots: [],
+      movement_referents: [],
+      entity_referents: [],
+      active_read_operation: null,
+      // El turno llega a las 10:15, antes de que el foco expire a las 10:30.
+      focus_set: focusSet({ expires_at: "2026-07-24T10:30:00.000-05:00" }),
+      conversation_style: null,
+      updated_at: "2026-07-24T10:00:00.000-05:00",
+    };
+    const output = structuredClone(
+      result.output,
+    ) as ConversationalExecutiveOutput;
+    output.reference_resolution = {
+      ...output.reference_resolution,
+      resolution: "focus_set",
+      focus_id: "focus-food",
+      candidate_movement_ids: ["food-1"],
+    };
+
+    const compilation = compileExecutiveEvidenceAndPolicy({
+      contextPack: pack,
+      output,
+      toolResults: result.tool_results,
+    });
+
+    expect(compilation.issues.map((issue) => issue.code)).not.toContain(
+      "focus_expired",
+    );
+  });
+});
+
 async function noToolExpected(): Promise<never> {
   throw new Error("No se esperaba una tool para este turno.");
 }
@@ -404,7 +781,6 @@ function contextPack(): ConversationalExecutiveContextPack {
     user_id: planningContext.user_id,
     locale: "es-PE",
     timezone: planningContext.timezone,
-    channel: "whatsapp",
     original_message: planningContext.original_message,
     received_at: planningContext.received_at,
     query,
@@ -448,7 +824,6 @@ function contextPack(): ConversationalExecutiveContextPack {
     user_id: planningContext.user_id,
     locale: "es-PE",
     timezone: planningContext.timezone,
-    channel: "whatsapp",
     discreet_mode: false,
     preferences_summary: {},
     risk_context: {},

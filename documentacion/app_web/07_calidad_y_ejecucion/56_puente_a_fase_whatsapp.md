@@ -39,7 +39,7 @@ se tomó al principio y se sostuvo durante cincuenta documentos.
 | Prueba de agnosticismo con siete casos | `21`, cerrada en `W-04` |
 | El canal fuera del núcleo, con test que lo impide | `WEB-D105`, `WEB-D162`, `AC-INV-04` |
 | Evidencia por construcción: ninguna cifra sin `evidence_refs` | `22` |
-| Los 95 comandos con su nivel de confirmación | `40` |
+| Los 99 comandos con su nivel de confirmación | `40` |
 | Capa semántica y consulta abierta | `20b` |
 | Perfil del usuario y voz | `20c` |
 

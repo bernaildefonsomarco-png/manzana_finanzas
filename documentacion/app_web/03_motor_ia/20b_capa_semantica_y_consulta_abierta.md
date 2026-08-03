@@ -496,35 +496,92 @@ rubros comerciales ni la estacionalidad.
 ## 9. Criterios de aceptación
 
 - `AC-SEM-01` — El `user_id` lo inyecta el compilador; el lenguaje no puede
-  expresarlo. Evidencia: `TEST`.
+  expresarlo. Evidencia: `TEST`. Cierra en `W-16` fase 4: `SemanticQuery`
+  (`src/core/semantics/query.ts`) no tiene campo `user_id`;
+  `compileSemanticQuery(query, userId)` lo recibe como segundo parámetro,
+  nunca del objeto de consulta (`compiler.test.ts`, "AC-SEM-01"), y
+  `executeSemanticQuery` lo inyecta como único `.eq("user_id", …)` real
+  contra Supabase (`tool-gateway.test.ts`). Cierra solo para `movimientos`
+  (`WEB-D257`).
 - `AC-SEM-02` — El modelo del dominio no contiene conocimiento del mundo
   (feriados, rubros, estacionalidad). Evidencia: `TEST`. Clase: `corpus`.
+  Cierra en `W-16` fase 4: `domain.test.ts` recorre `ENTIDADES_SEMANTICAS`
+  buscando "feriado"/"puente"/"temporada"/"estacional"/"rubro" y falla si
+  aparecen.
 - `AC-SEM-03` — Cuando el motor usa conocimiento del mundo en un cálculo, lo
-  declara como supuesto visible. Evidencia: `TEST` + `USER`.
+  declara como supuesto visible. Evidencia: `TEST` + `USER`. Cierra en `W-16`
+  fase 4 solo la mitad estructural: `runIsolatedCalculation` exige
+  `explicacion` y acepta `supuestos: string[]`, y `figure_without_assumptions`
+  (fase 3) rechaza una proyección sin supuestos. No cierra: nada invoca
+  todavía el sandbox desde el motor real con un cálculo que use conocimiento
+  del mundo — el llamador que declararía el supuesto no existe (`USER`
+  tampoco, sin sesión real).
 - `AC-SEM-04` — El panorama cargado se mantiene por debajo de su presupuesto
   de tokens independientemente de los años de uso. Evidencia: `TEST` + `METRIC`.
+  No tocado por `W-16`: el "panorama cargado" de `20b` §4 (resúmenes
+  mensuales comprimidos, patrones precalculados) no se construyó en ninguna
+  fase — el motor real sigue cargando movimientos recientes vía
+  `DataContextPack`/`ConversationContextPack`, no el panorama de `26k`
+  tokens estables que este documento describe.
 - `AC-SEM-05` — Toda cifra del panorama y de toda consulta lleva sus
-  referencias. Evidencia: `TEST`.
+  referencias. Evidencia: `TEST`. Cierra en `W-16` fase 4 para la consulta
+  abierta: `executeSemanticQuery` siempre devuelve `referencias` junto a
+  `filas` (`compiler.test.ts`, "con evidencia por construccion"). No cierra
+  para "el panorama": no existe todavía (ver `AC-SEM-04`).
 - `AC-SEM-06` — El cálculo aislado no tiene acceso a base de datos, red ni
-  ficheros. Evidencia: `TEST`.
+  ficheros. Evidencia: `TEST`. Cierra en `W-16` fase 4:
+  `src/core/semantics/sandbox.ts` no importa ningún cliente de datos, red ni
+  fichero — garantía estructural, no solo de comportamiento (`grep` del
+  fichero no encuentra ningún `import` fuera de tipos propios).
 - `AC-SEM-07` — Un resultado calculado que falla una comprobación de sanidad
-  no se emite. Evidencia: `TEST`.
+  no se emite. Evidencia: `TEST`. Cierra en `W-16` fase 4: las cinco
+  comprobaciones de `§6.3` están implementadas
+  (`comprobarSumaParcialNoSuperaTotal`, `comprobarConteoNoSuperaFilas`,
+  `comprobarPorcentajeEnRango`, `comprobarFechaEnRangoDeEntrada`, y la
+  comprobación básica de `NaN`/infinito integrada en
+  `runIsolatedCalculation`), probadas con `RUL-HECHO-02` en `sandbox.test.ts`.
 - `AC-SEM-08` — Todo resultado calculado explica su procedimiento y sus
-  supuestos en lenguaje del usuario. Evidencia: `TEST` + `USER`.
+  supuestos en lenguaje del usuario. Evidencia: `TEST` + `USER`. Cierra en
+  `W-16` fase 4 solo la parte estructural: `explicacion` es un campo
+  obligatorio de `IsolatedCalculationInput`. No cierra: nadie llama al
+  sandbox desde el motor real todavía (mismo hueco que `AC-SEM-03`).
 - `AC-SEM-09` — Las siete preguntas de §8 se responden correctamente sin
-  código específico para ninguna. Evidencia: `TEST` + `USER`.
+  código específico para ninguna. Evidencia: `TEST` + `USER`. No cierra:
+  ninguna de las siete depende solo de lo que `W-16` construyó (todas
+  necesitan conocimiento del mundo aportado por el modelo en un cálculo real
+  contra el sandbox, que no está conectado al motor todavía).
 - `AC-SEM-10` — Un usuario de otro país obtiene respuestas correctas sobre
   sus feriados y temporadas sin cargar datos de ese país. Evidencia: `TEST`.
+  No tocado por `W-16` — depende de `AC-SEM-09`.
 - `AC-SEM-11` — Cuando nada alcanza, el motor lo dice y ofrece la
-  alternativa más cercana; nunca estima. Evidencia: `TEST` + `USER`.
+  alternativa más cercana; nunca estima. Evidencia: `TEST` + `USER`. Parcial:
+  el compilador rechaza con un código de error explícito
+  (`dimension_no_compilable`, `medida_no_compilable`, `predicado_no_compilable`)
+  en vez de fallar en silencio o inventar, pero nada en el motor real
+  traduce ese rechazo a una respuesta para el usuario todavía.
 - `AC-SEM-12` — Un cálculo que excede su límite de volumen se reformula
   agregando en la consulta, se acota declarándolo, o se rechaza. **Nunca se
   responde con una muestra presentada como total.** Evidencia: `TEST`.
+  Cierra en `W-16` fase 4 la tercera vía (rechazo limpio, sin resultado
+  parcial): `runIsolatedCalculation` devuelve `emitido:false` cuando
+  `filas.length > 50_000`, probado con `RUL-HECHO-02`
+  (`sandbox.test.ts`, "AC-SEM-12"). No cierra las vías 1 y 2 (reformular,
+  acotar y decirlo): son decisiones del agente en el turno, no del sandbox.
 - `AC-SEM-13` — Un cálculo que excede su límite de tiempo se corta sin
-  devolver resultados parciales. Evidencia: `TEST`.
+  devolver resultados parciales. Evidencia: `TEST`. Cierra en `W-16` fase 4:
+  `runIsolatedCalculation` mide el tiempo real de ejecución contra
+  `LIMITE_TIEMPO_MS_CALCULO_AISLADO` (3.000 ms) y rechaza sin resultado
+  parcial; probado con un cálculo deliberadamente lento (busy-loop real, no
+  simulado) que confirma el corte real (`sandbox.test.ts`, "AC-SEM-13").
 - `AC-SEM-14` — Se registra cada cálculo generado con su frecuencia de uso y
-  número de usuarios, para alimentar el ciclo de promoción. Evidencia: `METRIC`.
+  número de usuarios, para alimentar el ciclo de promoción. Evidencia:
+  `METRIC`. No tocado por `W-16`: ningún registro de uso del sandbox existe
+  todavía — coherente con que nada lo invoca desde el motor real.
 - `AC-SEM-15` — Ningún conocimiento del mundo se promueve al vocabulario,
-  sea cual sea su frecuencia de uso. Evidencia: `TEST`. Clase: `corpus`.
+  sea cual sea su frecuencia de uso. Evidencia: `TEST`. Clase: `corpus`. No
+  cierra: el ciclo de promoción de `§6b` (calcular → contar usos → promover
+  a dimensión) no existe en código; no hay nada que promueva nada todavía,
+  así que la regla es vacuamente cierta, no verificada.
 - `AC-SEM-16` — La proporción de turnos que requieren cálculo aislado se
-  revisa periódicamente y tiende a bajar. Evidencia: `METRIC`.
+  revisa periódicamente y tiende a bajar. Evidencia: `METRIC`. No tocado por
+  `W-16`.

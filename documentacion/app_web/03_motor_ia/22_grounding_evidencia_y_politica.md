@@ -306,26 +306,43 @@ señal debe ser visible.
 ## 12. Criterios de aceptación
 
 - `AC-EVID-01` — Ninguna cifra se emite sin referencias que la sustenten.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Ya cerraba antes de `W-16` para claims del agente
+  (`claim_without_known_evidence`); cierra en `W-16` fase 4 además para la
+  consulta abierta (`AC-SEM-05`).
 - `AC-EVID-02` — Todo filtro temporal supuesto se declara en la respuesta.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. No tocado por `W-16`: no hay código que marque
+  un rango de fechas como `supuesto` en la respuesta.
 - `AC-EVID-03` — Un dato supuesto nunca se presenta como dicho por el
-  usuario. Evidencia: `TEST`.
+  usuario. Evidencia: `TEST`. No tocado por `W-16`: la procedencia
+  `dicho`/`heredado`/`consultado`/`supuesto` de `§3` no tiene representación
+  en `ConversationalExecutiveOutput` — ningún campo distingue las cuatro.
 - `AC-EVID-04` — Un turno sin consulta no establece foco nuevo.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No tocado por `W-16` en esta fase; es responsabilidad de
+  `buildConversationFocusSet` (anterior a este corte).
 - `AC-EVID-05` — Si el foco tiene N elementos, el motor no afirma otro
-  número al referirse a ellos. Evidencia: `TEST`.
+  número al referirse a ellos. Evidencia: `TEST`. No cierra — mismo hueco que
+  `AC-MOTOR-03`: nada compara un número afirmado en el texto contra
+  `ordered_ids.length`.
 - `AC-EVID-06` — Reparar respuesta y corregir dinero son caminos distintos,
-  con registros distintos. Evidencia: `TEST`.
+  con registros distintos. Evidencia: `TEST`. No tocado por `W-16`.
 - `AC-EVID-07` — Ninguna propuesta se muestra sin comando ejecutable
-  verificado. Evidencia: `TEST`.
+  verificado. Evidencia: `TEST`. Cierra en `W-16` fase 3 la comprobación de
+  catálogo (`command_outside_catalog`, `WEB-D256`). No cierra completo: el
+  resto de `22` §6 (campos exigidos, permisos, precondiciones, idempotencia)
+  no se verifica en código.
 - `AC-EVID-08` — Ninguna escritura ocurre sin confirmación explícita.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. No tocado por `W-16`; es responsabilidad del flujo de
+  confirmación del Core (anterior a este corte).
 - `AC-EVID-09` — El conjunto de una operación masiva lo resuelve una
-  consulta, no una estimación. Evidencia: `TEST`.
+  consulta, no una estimación. Evidencia: `TEST`. No tocado por `W-16` —
+  mismo hueco que `AC-MOTOR-07`.
 - `AC-EVID-10` — El motor no emite consejo financiero ni de inversión.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. No tocado por `W-16`: es comportamiento del
+  modelo en el turno, sin verificador estructural que lo detecte.
 - `AC-EVID-11` — Una impresión no contiene cifras no consultadas en el turno.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Cierra en `W-16` fase 3: `world_knowledge_promoted`
+  (`WEB-D256`), mismo mecanismo que `AC-MOTOR-08`.
 - `AC-EVID-12` — Los rechazos del verificador se registran como defectos y
-  son visibles. Evidencia: `LIVE`.
+  son visibles. Evidencia: `LIVE`. No tocado por `W-16`: los rechazos existen
+  (`compilation.issues`) pero no hay un tablero o alerta que los muestre como
+  defectos a investigar.

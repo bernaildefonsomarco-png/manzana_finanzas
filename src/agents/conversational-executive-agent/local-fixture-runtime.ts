@@ -263,6 +263,7 @@ function toSemanticCorrection(
 
   return {
     is_correction: isCorrection,
+    command_id: null,
     operation: first?.operation ?? (isCorrection ? "none" : "none"),
     correction_type:
       first?.correction_type ??

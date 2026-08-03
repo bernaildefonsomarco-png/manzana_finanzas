@@ -382,9 +382,12 @@ export const ORCHESTRATION_CAPABILITY_CATALOG: OrchestrationPlanningContextPack[
   },
 ];
 
+// El planificador legado nunca selecciona "consultar_datos_abiertos"
+// (`20b` S5, `WEB-D259`): ese tool es exclusivo de la sesion unica nueva
+// (`conversational-executive-agent.ts`), y este switch es fijo y cerrado.
 export function defaultToolsForConversationQuery(
   kind: ConversationQuery["kind"]
-): ConversationToolName[] {
+): Exclude<ConversationToolName, "consultar_datos_abiertos">[] {
   switch (kind) {
     case "balance_snapshot":
       return ["get_balance_snapshot"];

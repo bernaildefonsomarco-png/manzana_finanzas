@@ -48,7 +48,6 @@ function postCoreConversationContext(): ConversationContextPack {
     user_id: "00000000-0000-4000-8000-000000000001",
     locale: "es-PE",
     timezone: "America/Lima",
-    channel: "whatsapp",
     original_message: "gaste 20 en desayuno, como voy esta semana?",
     received_at: "2026-07-24T10:00:00-05:00",
     query: {

@@ -455,25 +455,71 @@ umbrales vive en `23_runtime_ia_modos_costo_y_degradacion.md`.
 ## 17. Criterios de aceptación
 
 - `AC-MOTOR-01` — Un turno consume **una sola sesión** con el modelo, con las
-  consultas que necesite dentro de ella. Evidencia: `TEST`.
+  consultas que necesite dentro de ella. Evidencia: `TEST`. Cierra en `W-16`
+  la parte normal: `ConversationalExecutiveAgent.run` llama a
+  `this.runtime.run` una vez por turno en el caso sano
+  (`conversational-executive-agent.test.ts`, primer caso). No cierra
+  completo: el `for (attempt = 1; attempt <= 2)` permite una segunda sesión
+  cuando el verificador rechaza la primera (regeneración estructurada,
+  `WEB-D261`) — dos sesiones, no una, en ese caso; la prueba
+  "regenera una sola vez..." confirma que el tope es 2, no que el caso
+  normal sea siempre 1 en producción con tráfico real (`METRIC` pendiente).
 - `AC-MOTOR-02` — Toda cifra de una respuesta tiene referencias que la
-  sustentan; sin ellas, la respuesta no se emite. Evidencia: `TEST`.
+  sustentan; sin ellas, la respuesta no se emite. Evidencia: `TEST`. Ya
+  cerraba antes de `W-16`: `claim_without_known_evidence` y
+  `missing_grounded_claims` existían en `evidence-and-policy-compiler.ts`
+  desde antes de este corte (`42` §8.4). `W-16` no lo cierra de nuevo; lo
+  extiende con `figure_without_assumptions` (fase 3) para el caso específico
+  de una proyección sin sus supuestos.
 - `AC-MOTOR-03` — Si el foco tiene N elementos, el motor nunca afirma un
-  número distinto de N al referirse a ellos. Evidencia: `TEST`.
+  número distinto de N al referirse a ellos. Evidencia: `TEST`. No cierra en
+  `W-16`: `reference_outside_focus` comprueba que los IDs referenciados
+  estén dentro del `focus_set`, pero ningún código compara un número
+  afirmado en `response_text` contra el tamaño real de `ordered_ids` — sigue
+  sin una prueba que ate la aritmética del texto al foco.
 - `AC-MOTOR-04` — Ninguna propuesta llega al usuario sin que exista un
-  comando real capaz de ejecutarla. Evidencia: `TEST`.
+  comando real capaz de ejecutarla. Evidencia: `TEST`. Cierra en `W-16` fase
+  3: `command_outside_catalog` rechaza `financial_proposals`/
+  `correction_proposal` cuyo `command_id` no está en el catálogo de `40`
+  (`WEB-D256`, `esComandoConocido`). No cierra completo: `command_id` es
+  nulable y el `DataAgent` legado todavía no lo llena (`AC-CATALOGO-10` solo
+  se aplica cuando el campo viene informado).
 - `AC-MOTOR-05` — El agente no puede escribir en la base de datos por
-  ninguna vía. Evidencia: `TEST`.
+  ninguna vía. Evidencia: `TEST`. Ya cerraba antes de `W-16`: las 15
+  herramientas originales son de solo lectura por construcción
+  (`readOnly: true` en `EXECUTIVE_TOOLS`) y así sigue la 16ª
+  (`consultar_datos_abiertos`, fase 5) — `src/core/semantics/compiler.ts`
+  solo hace `select`, nunca `insert`/`update`/`delete`.
 - `AC-MOTOR-06` — Las opciones de una pregunta de desambiguación provienen de
-  los datos reales del usuario. Evidencia: `TEST` + `USER`.
+  los datos reales del usuario. Evidencia: `TEST` + `USER`. No tocado por
+  `W-16`; no cierra la parte `USER` (requiere sesión real).
 - `AC-MOTOR-07` — Una operación masiva muestra conteo y muestra real antes de
-  ejecutarse, y se puede deshacer entera. Evidencia: `TEST` + `USER`.
+  ejecutarse, y se puede deshacer entera. Evidencia: `TEST` + `USER`. No
+  tocado por `W-16`: la resolución determinística de conjuntos masivos
+  (`22` §7.1) no se implementó en ninguna fase de este corte.
 - `AC-MOTOR-08` — Una observación del modelo nunca contiene una cifra que no
-  provenga de datos consultados en ese turno. Evidencia: `TEST`.
+  provenga de datos consultados en ese turno. Evidencia: `TEST`. Cierra en
+  `W-16` fase 3: `world_knowledge_promoted` rechaza un `finding` de nivel
+  `impresion` con `has_figure` y sin `evidence_refs` conocidas de este turno
+  (`WEB-D256`).
 - `AC-MOTOR-09` — Como máximo un hallazgo por turno. Evidencia: `TEST`.
+  Cierra en `W-16` fase 3: `findings` se declaró `z.array(FindingSchema).max(1)`
+  en `ConversationalExecutiveOutputSchema` — el tope es estructural, lo
+  impone Zod al analizar la salida, no una regla del compilador
+  (`WEB-D256`).
 - `AC-MOTOR-10` — Cualquier cosa que se pueda hacer en la interfaz se puede
-  pedir hablando. Evidencia: `TEST` + `USER`. Clase: `corpus`.
+  pedir hablando. Evidencia: `TEST` + `USER`. Clase: `corpus`. No cierra:
+  sigue habiendo 14 de las 15 herramientas originales sin equivalente en el
+  vocabulario abierto para otras entidades que `movimientos`
+  (`WEB-D257`/`WEB-D259`), y ninguna fase de `W-16` amplió el catálogo de
+  comandos en sí (solo lo verificó, fase 1).
 - `AC-MOTOR-11` — El motor no contiene ninguna referencia a un canal
-  concreto fuera del puerto y los presentadores. Evidencia: `TEST`.
+  concreto fuera del puerto y los presentadores. Evidencia: `TEST`. Cierra
+  en `W-16` fase 2: `channel` salió de `TurnWorkspace`,
+  `ConversationContextPackSchema` y `DataContextPack`
+  (`WEB-D105`/`WEB-D252`/`WEB-D255`), verificado por
+  `tests/lint/inv-04-sin-canal-en-el-nucleo.test.ts`.
 - `AC-MOTOR-12` — Ningún texto afirma que algo se registró antes de que el
-  Core lo confirme. Evidencia: `TEST`.
+  Core lo confirme. Evidencia: `TEST`. Ya cerraba antes de `W-16`:
+  `premature_write_claim`/`claimsWriteAlreadyApplied` existían en el
+  verificador desde antes de este corte.

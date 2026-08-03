@@ -44,6 +44,7 @@ export function movementToConversationReference(
 
 export async function rememberConversationTurn(input: {
   client: Client;
+  channel: ConversationMemoryChannel;
   contextPack: ConversationContextPack;
   answer: ConversationalAnswer;
   sourceRef?: string | null;
@@ -66,7 +67,7 @@ export async function rememberConversationTurn(input: {
 
   return upsertConversationMemoryState(input.client, {
     userId: input.contextPack.user_id,
-    channel: input.contextPack.channel as ConversationMemoryChannel,
+    channel: input.channel,
     lastIntent: input.contextPack.query.kind,
     lastQueryKind: input.contextPack.query.kind,
     lastQueryText: input.contextPack.query.normalized_text,

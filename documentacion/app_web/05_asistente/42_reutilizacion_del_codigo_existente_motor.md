@@ -183,7 +183,7 @@ Veinte métodos privados, uno por herramienta: `getBalanceSnapshot`,
 
 **La lógica de acceso a datos sirve entera.** Lo que no sirve es su forma: son
 veinte respuestas fijas, y `WEB-D021` sustituyó eso por un vocabulario
-componible de 145 entradas.
+componible de 156 entradas (`WEB-D254`).
 
 La adaptación no es tirar los métodos: es **cambiar quién decide la forma de
 la respuesta**. Hoy `queryMovements` devuelve lo que decidió `queryMovements`;
@@ -337,26 +337,183 @@ para pruebas, con la prohibición de producción de `23` §3 intacta.
 `fixtures/bcp-sanitized.ts` sirven al módulo `28`, que no es el motor
 conversacional. Se evalúan en `52`, no aquí.
 
-## 8. Lo que no se decide todavía
+## 8. Los ocho, leídos enteros y con veredicto (`W-16`)
 
-Ocho archivos, unas 3.400 líneas, sobre los que **solo se hizo inventario**.
-Emitir un veredicto sobre ellos ahora sería inventarlo.
+Ocho archivos, 3.827 líneas, leídos **completos** al abrir `W-16`, antes de
+tocar nada — tal como exigía `AC-REU-10`. Lo que sigue no es inventario: es
+el veredicto que este documento pospuso.
 
-| Archivo | Líneas | Qué hay que averiguar |
+**El hallazgo que cambia la lectura de los ocho.** `turn-coordinator.ts`
+conecta `ConversationalExecutiveAgent` y `OrchestrationPlanningAgent`, y **al
+segundo lo nombra literalmente `legacyPlanningAgent`**. El código ya
+atravesó una migración interna — de `orchestration-planning-agent` a
+`conversational-executive-agent` — antes de que este rediseño existiera.
+No se parte de cero contra un sistema de cuatro agentes: se continúa una
+migración que ya llevaba un paso de camino.
+
+| Archivo | Pregunta de `§8` original | Veredicto |
 |---|---|---|
-| `correction-agent/correction-agent.ts` | 1.110 | Si su interpretación de correcciones vale como paso determinista sin modelo |
-| `conversation-router.ts` | 507 | Si enruta o si además decide; lo primero se reemplaza, lo segundo puede adaptarse |
-| `conversation-kernel.ts` | 367 | Qué parte es estado de conversación y qué parte es lógica de dominio |
-| `conversational-executive-agent.ts` | 449 | Cuánto de su bucle sirve para la sesión única de `20` |
-| `orchestration-planning-agent/types.ts` | 462 | Qué esquemas sobreviven al cambio de vocabulario |
-| `conversation-agent/types.ts` | 397 | Ídem; contiene el enum que se reemplaza y el perfil de estilo que se conserva |
-| `evals/conversation-eval-corpus.v1.ts` | 297 | Si el corpus de evaluación sirve para el motor nuevo. **Probablemente sí y es valioso** |
-| `data-agent/types.ts` | 238 | Qué parte es contrato de datos y qué parte es contrato de agente |
+| `correction-agent/correction-agent.ts` | ¿Su interpretación vale sin modelo? | **DESCARTAR como agente, REUTILIZAR su lógica** |
+| `conversation-router.ts` | ¿Enruta o decide? | **REEMPLAZAR** la clasificación por enum cerrado; **ADAPTAR** la resolución de fechas y la continuidad de tema |
+| `conversation-kernel.ts` | ¿Estado o lógica de dominio? | **REEMPLAZAR** como mecanismo principal; **ADAPTAR** las heurísticas de riesgo como salvaguarda del verificador |
+| `conversational-executive-agent.ts` | ¿Cuánto sirve de su bucle? | **ADAPTAR — es el esqueleto de la sesión única** |
+| `orchestration-planning-agent/types.ts` | ¿Qué esquemas sobreviven? | **REEMPLAZAR** el archivo; **ADAPTAR** cuatro sub-esquemas |
+| `conversation-agent/types.ts` | Confirmar enum vs. perfil de estilo | **REUTILIZAR** (más de lo esperado — ver abajo) / **REEMPLAZAR** el enum |
+| `evals/conversation-eval-corpus.v1.ts` | ¿Sirve el corpus? | **ADAPTAR — confirmado, es valioso** |
+| `data-agent/types.ts` | ¿Contrato de datos o de agente? | **REUTILIZAR** los contratos de datos; **DESCARTAR como agente** el envoltorio |
 
-El corpus de evaluación es el más prometedor de la lista: un juego de casos ya
-escritos contra los que medir el motor nuevo vale mucho más que su tamaño.
+### 8.1 `correction-agent.ts` (1.110 líneas) — DESCARTAR como agente, REUTILIZAR su lógica
 
-Estos ocho se leen en el primer corte de `54`, antes de tocar nada.
+`proposeCorrection()` y sus `extract*Target` (préstamo, monto, categoría,
+cuenta, borrado) más `isCorrectionLikeText` son heurísticas de español por
+regex, **sin llamada al modelo**: es exactamente la ruta que hoy usa el
+`local_fixture` de este agente. Sobrevive como módulo determinista, invocable
+como paso previo o dentro del verificador — no como agente con su propia
+sesión.
+
+**Hallazgo:** la ruta basada en modelo
+(`SemanticCorrectionInterpretationSchema`) casi nunca hace falta: la ruta
+determinista ya cubre préstamo/monto/categoría/cuenta/borrado de punta a
+punta. La interpretación de correcciones probablemente no necesita vivir
+dentro de la sesión única en absoluto.
+
+### 8.2 `conversation-router.ts` (507 líneas) — REEMPLAZAR / ADAPTAR
+
+`classifyConversationQuery()` es 100% regex, sin modelo, y hace dos cosas:
+clasifica en un enum cerrado (`ConversationQueryKind` — esto se reemplaza,
+es el mismo techo de expresividad que `40` § 6.2 cierra) y **decide**:
+continuidad de tema (`isActiveContinuationQuestion`,
+`hasExplicitNewQuestion`) y resolución de fechas relativas con aritmética de
+calendario real ("el último viernes de hace 4 meses").
+
+**Sobrevive:** `resolveDateRange` y sus ayudantes de fecha, como parser
+determinista de frases temporales que alimenta los filtros `donde` del
+lenguaje de consulta de `20b` §5.2; las heurísticas de continuidad, como
+paso de resolución de referencias previo a la sesión.
+
+### 8.3 `conversation-kernel.ts` (367 líneas) — REEMPLAZAR / ADAPTAR
+
+`analyzeConversationTurn()` es casi entero lógica de dominio (heurísticas de
+interpretación), no estado: infiere `act`, `continuity`, `emotional_state`,
+`experience_mode`, todo por regex, sin modelo. Lo único que es estado
+propiamente es el `activeState` que recibe como entrada.
+
+**Sobrevive:** el constructor de `risk_notes` (disparadores regex de
+acción financiera / tema sensible) como comprobación determinista adicional
+que alimenta al verificador, independiente de la sesión.
+
+### 8.4 `conversational-executive-agent.ts` (449 líneas) — ADAPTAR, es el esqueleto
+
+El artefacto existente más parecido a lo que `20` §6 pide. Una llamada a
+`runtime.run()` por intento (máximo 2, con reintento de regeneración
+estructurada) produce **una** salida tipada con `turn_interpretation`,
+`orchestration_plan`, `reference_resolution`, `tool_requests`,
+`response_composition` — exactamente entender→resolver→planificar→proponer→
+redactar colapsado en una sesión, como pide el diseño nuevo. Va emparejado
+con un verificador determinista tras la llamada
+(`validateExecutiveConsistency`) que cruza los módulos entre sí (¿la
+interpretación coincide con el plan? ¿ningún id de movimiento inventado
+fuera del `focus_set`? ¿las peticiones de herramienta las autorizó el plan?)
+y rechaza/regenera vía `compileExecutiveEvidenceAndPolicy` antes de aceptar.
+
+**Sobrevive:** la forma completa — salida multi-módulo tipada + verificador
+determinista + regeneración acotada al rechazar — como punto de partida
+para adaptar la sesión única. Lo que hay que reemplazar es más estrecho de
+lo que parecía: solo las idas y vueltas de herramienta dentro de la sesión
+(`max_tool_rounds: 8` contra el `ConversationToolNameSchema`/`EXECUTIVE_TOOLS`
+cerrado) necesitan el vocabulario abierto nuevo.
+
+### 8.5 `orchestration-planning-agent/types.ts` (462 líneas) — REEMPLAZAR el archivo, ADAPTAR cuatro sub-esquemas
+
+`PlanningCapabilitySchema` mezcla los cuatro agentes viejos como
+"capacidades" con el enum cerrado de 15 herramientas — exactamente el
+modelo de enrutamiento por catálogo cerrado que este rediseño elimina.
+
+**Sobrevive:** `PlanningGoalSchema` (registrar/consultar/corregir/confirmar/
+revisar/ayuda/mixto) y `PlanningWorkflowSchema`, independientes del
+vocabulario; la forma de `PlanningFinancialResolutionSchema` (resolución de
+pendientes: asignar/clasificar/confirmar/descartar + cuenta/categoría); el
+bloque `style_update` (referencia a `ConversationStyleProfileSchema`) — los
+cuatro como sub-módulos tipados de la salida de la sesión única, sin los
+enums de herramienta/capacidad.
+
+### 8.6 `conversation-agent/types.ts` (397 líneas) — confirmado, y más de lo esperado
+
+Confirmado: `ConversationToolNameSchema` (enum cerrado de 15) se reemplaza;
+`ConversationStyleProfileSchema` se reutiliza (`§4.5`).
+
+**El hallazgo real.** `ConversationFocusSetSchema` +
+`ConversationFocusSlotProvenanceSchema` + `ConversationWorkingSetSchema` son
+una implementación **ya casi 1:1** del `TurnWorkspace` nuevo:
+`ConversationFocusSetSchema` tiene `ordered_ids`/`state_hash`/`expires_at`/
+`tool_provenance` (≈ `focus_set` de `20` §5); `ConversationFocusSlotProvenanceSchema`
+tiene `source` (enum con `explicit_user_message`/`conversation_memory`/
+`tool_result`/`core_confirmed`)/`confidence`/`confirmed_at`/`evidence_ref`
+(≈ `unresolved_slots[].procedencia`). También confirma, en directo, la
+contaminación de canal de `§6.1`: `ConversationContextPackSchema` declara
+`channel: z.enum(["whatsapp","dashboard"])`.
+
+**Veredicto ampliado:** `REUTILIZAR` los tres esquemas de foco/conjunto de
+trabajo además del perfil de estilo; `ADAPTAR`
+`ConversationTurnActSchema`/`ConversationContinuitySchema`/
+`ConversationEmotionalStateSchema`/`ConversationExperienceModeSchema` como
+contrato tipado del paso "entender" de la sesión; `ADAPTAR`
+`ConversationMovementFiltersSchema` como semilla de la forma
+`donde`/`agrupar_por` del lenguaje de `20b` §5.2; `REEMPLAZAR`
+`ConversationToolNameSchema` y `ConversationQueryKindSchema`.
+
+### 8.7 `evals/conversation-eval-corpus.v1.ts` (297 líneas) — confirmado, valioso
+
+20 familias de mensajes (~180 mensajes reales en español peruano):
+captura, preguntas hipotéticas de dinero, búsqueda y seguimiento de
+movimientos, correcciones de borrado/reclasificación, captura+consulta
+mixta, consultas de deudas/recurrentes/pendientes/memoria, saludo/ayuda,
+reparación tras frustración, transferencia-vs-préstamo ambigua ("le pasé 50
+a Luis"), fechas históricas ("el último viernes de hace 4 meses"), cambios
+de tema.
+
+**Sobrevive entero** el listado de `families` (mensajes). Solo la forma de
+`expected` (`query_kinds`, `goals`, `workflows` — todos atados a los enums
+viejos) necesita re-anotarse contra el vocabulario y el catálogo de `40`.
+Reconstruir este corpus de cero habría costado más que su tamaño.
+
+### 8.8 `data-agent/types.ts` (238 líneas) — separable con nitidez
+
+Contratos de datos (formas de dominio, sin semántica de llamada a agente):
+`EvidenceSignalSchema`, `AmbiguitySchema`, `DebtHintSchema`,
+`ProposedActionSchema` (la forma real de la propuesta de escritura de un
+movimiento: monto/moneda/fecha/categoría/etiquetas/cuenta/caja/pista de
+deuda/confianza), `DataContextPack` (paquete de contexto: categorías,
+cuentas, cajas, subcategorías, etiquetas, personas relacionadas, deudas
+activas, movimientos recientes). Contratos de agente (envoltorio atado a
+una invocación puntual): `DataAgentIntentSchema`, `DataAgentOutputSchema`.
+
+**Veredicto:** `REUTILIZAR` los cuatro contratos de datos; `DESCARTAR como
+agente` el envoltorio — sus campos sobreviven como sub-módulo de la salida
+de la sesión única, no como resultado de un agente aparte.
+
+**Hallazgo adicional:** `DataContextPack.channel` está tipado
+`"whatsapp" | "dashboard" | "email" | "worker"` — una **tercera** aparición
+de canal filtrándose en contratos cercanos al núcleo, además de las dos ya
+señaladas (`TurnWorkspace`, `ConversationContextPackSchema`). `WEB-D105` no
+alcanza con tocar un archivo.
+
+### 8.9 Resumen
+
+De las 3.827 líneas leídas: ~45% sobrevive en alguna forma (esquemas,
+contratos de datos, parsers/heurísticas deterministas, el corpus de
+evaluación); ~55% es forma arquitectónica atada al enum cerrado / los
+agentes separados, y se reemplaza o se descarta como agente.
+
+El hallazgo más importante de los ocho: `conversational-executive-agent.ts`
+**ya hace** "una llamada al modelo → salida tipada multi-módulo →
+verificador determinista que puede rechazar y forzar regeneración" — la
+forma exacta que `20` §6 pide — y ya sustituyó en producción a un diseño de
+planificador anterior (`orchestration-planning-agent`, hoy
+`legacyPlanningAgent` en el propio código). Combinado con que
+`ConversationFocusSetSchema`/`ConversationFocusSlotProvenanceSchema` ya
+modelan la mayor parte de `focus_set`/`unresolved_slots`, `W-16` no empieza
+desde cero: continúa una migración que ya llevaba un paso.
 
 ## 9. Reparto aproximado
 
@@ -435,26 +592,55 @@ tirar la herramienta antes de hacer el trabajo.
 
 - `AC-REU-01` — Ningún documento del bloque `03_motor_ia/` se modificó después
   de leer el código. El diseño no se ajustó a lo implementado.
-  Evidencia: `DOC`.
+  Evidencia: `DOC`. Cierra: `WEB-D004` mantuvo la venda puesta durante la
+  redacción de `20`-`23`; las únicas ediciones posteriores de este corte a
+  esos documentos son las anotaciones de este mismo §20/§17/§12 y las cifras
+  de `WEB-D254`, ambas posteriores al cierre del diseño, no correcciones de
+  diseño por lo encontrado en el código.
 - `AC-REU-02` — `channel` no aparece en ningún tipo del núcleo fuera de la
-  entrada y del registro. Evidencia: `CODE` + `TEST`.
+  entrada y del registro. Evidencia: `CODE` + `TEST`. Cierra en `W-16` fase
+  2: ver `AC-MOTOR-11`.
 - `AC-REU-03` — La prueba de agnosticismo de `21` §8 es escribible y pasa.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Cierra en `W-16` fase 2, como consecuencia directa de
+  `AC-REU-02`: con `channel` fuera de `TurnWorkspace`/los context packs, la
+  prueba de `21` §8 ya no tiene un tipo unión de canal contra el que
+  ramificar; `tests/lint/inv-04-sin-canal-en-el-nucleo.test.ts` la sostiene.
 - `AC-REU-04` — El verificador conserva los trece códigos existentes y añade
-  los tres nuevos. Evidencia: `TEST`.
+  los tres nuevos. Evidencia: `TEST`. Cierra en `W-16` fase 3: los 13
+  códigos originales de `evidence-and-policy-compiler.ts` siguen intactos
+  (ninguna prueba previa dejó de pasar) y se añadieron
+  `command_outside_catalog`, `figure_without_assumptions`,
+  `world_knowledge_promoted` — tres, no más, tal como pedía este criterio
+  cuando se escribió. (Fase 7 añadió un cuarto código, `focus_expired`, por
+  un hueco real encontrado después; `AC-REU-04` se declaró antes de que ese
+  hueco se descubriera y no lo previó.)
 - `AC-REU-05` — `permissions.read_only_tools` y
   `can_model_mutate_financial_data` siguen siendo tipos literales.
-  Evidencia: `CODE`.
+  Evidencia: `CODE`. Cierra: ninguna fase de `W-16` tocó
+  `ConversationContextPackSchema.permissions`; siguen siendo
+  `z.literal(true)`/`z.literal(false)`.
 - `AC-REU-06` — El arranque falla si `production_safe` es falso en producción.
-  Evidencia: `TEST`. Clase: `build`.
+  Evidencia: `TEST`. Clase: `build`. Ver `AC-RT-01`/`AC-RT-03` en `23` §11 —
+  ya cerraba antes de `W-16`.
 - `AC-REU-07` — No queda ningún enum cerrado de herramientas de lectura.
-  Evidencia: `CODE`.
+  Evidencia: `CODE`. **No cierra.** `WEB-D259` decidió explícitamente no
+  reemplazar las 15 herramientas cerradas: siguen siendo un enum fijo, con
+  una 16ª herramienta abierta añadida al lado. Este criterio se escribió
+  antes de que `WEB-D257` limitara la capa semántica a una entidad, y quedó
+  desalineado con la decisión real — se documenta aquí en vez de forzar un
+  cierre falso.
 - `AC-REU-08` — El presupuesto de llamadas al modelo por turno baja de cuatro
-  a dos como máximo. Evidencia: `METRIC`.
+  a dos como máximo. Evidencia: `METRIC`. Cierra la parte estructural (no
+  `METRIC`): el bucle de `ConversationalExecutiveAgent.run` ya tenía tope de
+  2 intentos antes de `W-16` (ver `AC-MOTOR-01`); no se midió en producción.
 - `AC-REU-09` — Los 28 ficheros de prueba pasan o se retiran junto con el
-  código que cubren, nunca antes. Evidencia: `CODE`.
+  código que cubren, nunca antes. Evidencia: `CODE`. No verificado en
+  `W-16`: ninguna fase retiró código de los ocho archivos de §8 todavía
+  (fase 5 solo adaptó `evidence-and-policy-compiler.ts`/`types.ts`, no
+  descartó ninguno de los cuatro agentes legados).
 - `AC-REU-10` — Los ocho archivos de §8 tienen veredicto emitido antes de que
-  empiece el corte que los toca. Evidencia: `DOC`.
+  empiece el corte que los toca. Evidencia: `DOC`. Cierra: los ocho
+  veredictos de §8.1-§8.9 se emitieron antes de la fase 1 de `W-16`.
 
 `AC-REU-01` es el que protege retroactivamente a `WEB-D004`: si el diseño se
 hubiera ajustado al código después de leerlo, la venda no habría servido de
@@ -495,3 +681,5 @@ evidencia— coincide con lo que diseñamos a ciegas.
 | El canal sale del espacio de trabajo | `no_negociable` `WEB-D105` | Dejarlo y no ramificar por él por convención | Un tipo unión en el núcleo invita a ramificar. Y es la diferencia entre poder escribir la prueba de agnosticismo y no poder |
 | El arnés de migración se usa antes de descartarse | `WEB-D106` | Retirar `turn-coordinator` por ser andamiaje | Su comparación entre motor nuevo y antiguo es exactamente la herramienta del corte. Tirarla primero sería descartar la herramienta antes de hacer el trabajo |
 | Los cuatro agentes se colapsan en una sesión | `WEB-D107` | Conservar la separación y optimizar cada uno | Ahí están las cuatro llamadas por turno que `23` §5 quiere bajar a dos. No es un problema de prompt, es la arquitectura: cuatro decisiones parciales y cuatro ocasiones de perder contexto |
+| La limpieza de canal alcanza tres archivos, no uno | `no_negociable` `WEB-D252` | Dar `WEB-D105` por cumplido al limpiar solo `TurnWorkspace` | La lectura completa de los ocho de `§8` encontró `channel` también en `ConversationContextPackSchema` y en `DataContextPack` (este con cuatro valores). `WEB-D105` no cambia de regla; cambia su alcance de limpieza |
+| La sesión única se adapta desde `conversational-executive-agent.ts` | `no_negociable` `WEB-D253` | Escribir la sesión única de `20` §6 desde cero | Ese archivo ya implementa la forma exacta que `20` §6 pide y ya sustituyó en producción a `orchestration-planning-agent` (`legacyPlanningAgent` en el propio código). Lo que sobra es el enum cerrado de herramientas, no el bucle |

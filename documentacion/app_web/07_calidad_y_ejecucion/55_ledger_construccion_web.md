@@ -1392,6 +1392,181 @@ inestabilidad de entorno, no vacíos del corpus.
   `Idempotency-Key` que faltaba (bug pre-existente de un corte anterior,
   corregido aquí porque bloqueaba la verificación de `AC-HOME-17`).
 
+## W-16 — El motor responde con evidencia y no ejecuta nada sin confirmar
+
+**Cerrado:** 2026-08-03
+**Portones:** G1 ✓ (parcial, ver abajo) · G2 no aplica a este corte · G3 no
+cierra: no hubo sesiones `USER` ni cohorte para `METRIC`
+**Matriz regenerada:** 2026-08-03, con `npm run matriz:generar`; hash del
+commit sustantivo: `PENDIENTE` (hash real registrado en el commit de
+seguimiento de este cierre).
+
+### Qué se entregó
+
+El corte más grande hasta ahora (siete documentos de diseño — `20`, `20b`,
+`20c`, `22`, `23`, `40`, `42` — contra ~17k líneas de agente heredado),
+tratado como ocho fases, cada una cerrada y verificada antes de empezar la
+siguiente, en vez de intentarse de una sola vez.
+
+**Fase 1 — Catálogo de comandos y vocabulario (`40`).**
+`scripts/catalogo/generar.ts` parsea mecánicamente las tablas de `40`
+§5/§6/§7 y las cruza contra la §14 de los dieciséis módulos. Censo
+verificado: **99 comandos, 156 entradas de lectura** (101 dimensiones + 50
+medidas + 5 alias), no los "95/145" que `40` §11 declaraba a mano
+(`WEB-D254`) — corregido en seis documentos. Encontró y corrigió dos
+defectos reales en `30` §14.2. `src/core/catalog/` es el artefacto en
+tiempo de ejecución (`esComandoConocido`, `esDimensionConocida`, etc.),
+generado y con guarda de desincronización propia.
+
+**Fase 2 — Limpieza de canal del núcleo.** `WEB-D105` solo había tocado
+`TurnWorkspace`; la lectura completa de los ocho archivos de `42` §8 encontró
+`channel` también en `ConversationContextPackSchema` y `DataContextPack`
+(`WEB-D252`). Los tres se limpiaron; donde el canal servía para registro
+(`conversation_memory`), pasó a ser un parámetro explícito en vez de leerse
+del contrato (`WEB-D255`).
+
+**Fase 3 — Extensión del verificador.** `evidence-and-policy-compiler.ts`
+ganó tres códigos (`command_outside_catalog`, `figure_without_assumptions`,
+`world_knowledge_promoted`) y, más tarde en la fase 7, un cuarto
+(`focus_expired`). Extender el verificador exigió extender primero lo que
+`ConversationalExecutiveOutput` puede expresar: `command_id` en las
+propuestas, `claim_type: "projection"` + `assumptions`, y el concepto de
+`findings` (`WEB-D256`).
+
+**Fase 4 — Capa semántica (`20b`).** Lenguaje de consulta declarativo
+(`de`/`donde`/`agrupar_por`/`medir`/`ordenar`/`limitar`), compilador que
+inyecta `user_id` sin que el lenguaje pueda expresarlo (`AC-SEM-01`), y
+cálculo aislado puro con los límites reales de filas y tiempo de `23` §5b.2.
+El modelo del dominio reutiliza el vocabulario ya generado en la fase 1 en
+vez de redeclararlo (`WEB-D257`); solo `movimientos` es compilable, con
+predicados `y` (AND) — `o`/`no`/subconsultas quedan fuera, documentado
+(`WEB-D258`).
+
+**Fase 5 — Adaptación de la sesión única.** `conversational-executive-agent.ts`
+gana `consultar_datos_abiertos` como una 16ª herramienta, **aditiva** sobre
+el enum cerrado de 15 (`WEB-D259`) — reemplazarlas habría sido una regresión
+real, porque 14 de ellas cubren entidades que la capa semántica todavía no
+modela.
+
+**Fase 6 — Perfil del usuario (`20c`).** Descubrió que el esquema de perfil
+ya existía, construido por `W-13` (`user_profile_facts`/`candidates`,
+migración `062`) — `13` §7.5b describía una migración `054` que nunca se
+construyó así (`WEB-D260`, corregido). `src/core/profile/` formaliza lo que
+faltaba: la capa (`estilo`/`vida`/`vinculo`/`hilo`) como lectura del prefijo
+de `subject_key`, y la política de confirmación de `20c` §3 (máximo una vez
+por conversación, nunca en el primer turno, no reintentar tras dos veces
+ignorado) como función pura.
+
+**Fase 7 — Runtime, costo y degradación (`23`).** Verificó primero:
+`src/agents/runtime/` ya implementaba la puerta de arranque, el aislamiento
+de proveedor por componente y el endpoint de salud, de un endurecimiento
+anterior (`53` `D-04`) — no se reconstruyó nada de eso. Cerró dos huecos
+reales: el foco caducado no se comprobaba en la sesión única nueva (sí en el
+motor legado), y no existía el concepto de los cuatro grados de degradación
+de `23` §7 en ningún fichero (`src/core/degradation/grade.ts`, `WEB-D261`).
+
+**Fase 8 — Cierre.** Este documento, la anotación de §20/§17/§12 de los
+siete documentos de diseño contra código y pruebas reales (no contra
+intención), regeneración de la matriz, y verificación final completa.
+
+Cifras: 4 módulos nuevos de `src/core/` (`catalog/`, `semantics/`,
+`profile/`, `degradation/`), 12 decisiones nuevas (`WEB-D250` era de `W-14`;
+las de este corte van de `WEB-D252` a `WEB-D261`, diez), ~150 pruebas nuevas
+repartidas en las ocho fases, todas con `RUL-HECHO-02` sobre la lógica
+determinista nueva (mutación real del código, confirmación de que la prueba
+falla, reversión). `npx tsc --noEmit` y `npx eslint .` en verde en cada
+fase y al cierre. `npm test`: mismo timeout frío conocido de
+`movements/route.test.ts` desde `W-09` (pasa aislado), el resto en verde.
+
+### Qué sorprendió
+
+La primera y más grande: **`conversational-executive-agent.ts` ya
+implementaba la forma exacta de la sesión única que `20` §6 pedía**, y ya
+había sustituido en producción a `orchestration-planning-agent`
+(`legacyPlanningAgent` en el propio código) antes de que este corte
+empezara. `WEB-D253` reencuadró toda la fase 5: no era "construir la sesión
+única", era "quitarle el enum cerrado de herramientas a la que ya existe" —
+mucho más angosto de lo previsto, y una fracción del trabajo que se había
+presupuestado.
+
+La segunda: el propio documento `40`, escrito para *cerrar* la contradicción
+`C-03` sobre el número de comandos, tenía su propio número mal — contado a
+mano, por filas de tabla en vez de comandos distintos (`WEB-D254`). El
+patrón se repitió con `13` §7.5b (`WEB-D260`): un documento de diseño
+citando un esquema que nunca se construyó así, porque nadie lo corrigió
+después de que el corte que lo implementó tomara decisiones distintas.
+
+La tercera: el perfil del usuario (`20c`) y buena parte del runtime seguro
+(`23` §3/§4) **ya estaban construidos** por cortes anteriores (`W-13`, y un
+endurecimiento posterior citado como `53` `D-04`) antes de que `20c`/`23`
+mismos se terminaran de escribir como documentos de diseño. Verificar antes
+de construir —el mismo método que ya había pagado en la fase 5— evitó
+reconstruir dos veces infraestructura real y probada.
+
+La cuarta: extender el verificador (fase 3) resultó ser, en la práctica,
+extender primero el contrato de salida que el verificador comprueba —
+`command_id`, `assumptions`, `findings` no existían en
+`ConversationalExecutiveOutput` antes de esta fase. Un verificador no puede
+comprobar un hecho que la salida no puede expresar.
+
+### Qué quedó abierto
+
+Documentado explícitamente en el §20/§17/§12 de cada uno de los siete
+documentos, no oculto. Lo más significativo:
+
+- La capa semántica (`20b`) solo compila la entidad `movimientos`, con
+  predicados `y`. Trece entidades más (deudas, cuentas, pendientes,
+  recurrentes...) y los combinadores `o`/`no`/subconsultas quedan para un
+  corte futuro (`WEB-D257`/`WEB-D258`).
+- "El panorama cargado" de `20b` §4 (resúmenes mensuales comprimidos,
+  patrones precalculados, ~26k tokens estables) no se construyó: el motor
+  real sigue sin esa capa. `AC-SEM-04`/`09`/`10`/`16` y `AC-RT-15` dependen
+  de ella y no cierran.
+- El pipeline que **genera** candidatos de perfil observando una
+  conversación real no existe todavía — `src/core/profile/` construye la
+  política de cuándo preguntar y qué no generar automáticamente, pero nada
+  llama a esas funciones desde el motor real. `AC-PERF-02`/`10`/`14` quedan
+  con la mitad estructural cerrada y la integración pendiente.
+- Las cuatro capas de voz/personalización adaptativa (`20c` §5-§6b) y la
+  mayoría de los criterios de evidencia procedimental de `22` (procedencia
+  `dicho`/`heredado`/`consultado`/`supuesto` como campo explícito,
+  confirmabilidad completa de `§6`, operaciones masivas de `§7.1`) son
+  comportamiento del modelo en el turno o piezas del motor legado que
+  ninguna fase de este corte tocó — de evidencia `USER`/`LIVE` en su
+  mayoría, fuera del alcance de lo que un corte de código puede cerrar por
+  sí solo.
+- El criterio `AC-REU-07` (ningún enum cerrado de herramientas) se declaró
+  antes de que `WEB-D257` limitara la capa semántica a una entidad; con esa
+  limitación, **no cierra por decisión explícita** (`WEB-D259`), no por
+  omisión: las 15 herramientas cerradas siguen ahí, con una 16ª abierta al
+  lado.
+
+No hubo sesiones `USER` ni serie `METRIC`. Ningún criterio con evidencia
+`USER`/`LIVE` cierra en este corte — mismo patrón que `W-14`/`W-15`: no hay
+sesión de usuario real todavía en el flujo del motor conversacional nuevo.
+
+### Documentos corregidos
+
+- `20` §17, `20b` §9, `20c` §10, `22` §12, `23` §11, `42` §12: los 80
+  criterios de los seis documentos anotados contra código y pruebas reales,
+  criterio por criterio — incluidos los que no cierran, con la razón
+  específica en vez de omitirlos.
+- `13` §7.5b: reescrita para reflejar el esquema real de `062_w13_insights_memory.sql`
+  en vez de la migración `054` nunca construida (`WEB-D260`).
+- `03_decisiones_producto_web.md`: `WEB-D252` a `WEB-D261` (diez decisiones
+  nuevas).
+- `00_indice_maestro.md`, `05_contradicciones_heredadas_cierre.md`,
+  `49_criterios_de_aceptacion_globales.md`, `56_puente_a_fase_whatsapp.md`:
+  cifras del catálogo corregidas de "95/145" a "99/156" (`WEB-D254`).
+- `scripts/gates/sin-canal-en-el-nucleo.ts`: `src/core/catalog/generated.ts`
+  agregado a la excepción ya vigente de `WEB-D172` (valor de dato legítimo,
+  no rama de canal).
+- `README.md`: `core/catalog/`, `core/semantics/`, `core/profile/`,
+  `core/degradation/` documentados en el árbol real.
+- `tests/lint/readme-arbol-real.test.ts`: sin cambios de expectativa (el
+  gate ya exigía que toda carpeta nueva se documentara; este corte cumplió
+  la regla en cada fase, no al final).
+
 ---
 
 ## 8. Criterios de aceptación

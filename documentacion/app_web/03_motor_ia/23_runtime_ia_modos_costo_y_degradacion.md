@@ -303,34 +303,77 @@ evidencia lo sustenta. Acertar la cifra sin poder mostrarla no cuenta.
 ## 11. Criterios de aceptación
 
 - `AC-RT-01` — El proceso no arranca si en producción el proveedor por
-  defecto es el de prueba. Evidencia: `TEST` + `LIVE`. Clase: `build`.
+  defecto es el de prueba. Evidencia: `TEST` + `LIVE`. Clase: `build`. Ya
+  cerraba antes de `W-16`: `src/instrumentation-check.ts`
+  (`verificarArranqueSeguro`, citando explícitamente `AC-RT-01`) revienta el
+  arranque si `config.localFixtureAllowed` es verdadero en producción,
+  llamado desde `instrumentation.ts`/`instrumentation.node.ts` con
+  `process.exit(1)` forzado (`53` `D-04`). `W-16` lo verificó (fase 7,
+  `WEB-D261`) y no encontró necesidad de tocarlo.
 - `AC-RT-02` — Cada componente declara su proveedor explícitamente; ninguno
-  lo hereda. Evidencia: `CODE` + `TEST`.
+  lo hereda. Evidencia: `CODE` + `TEST`. Ya cerraba antes de `W-16`:
+  `getAgentRuntimeProvider` (`src/agents/runtime/config.ts`) resuelve
+  `perAgentProvider[agentName] ?? defaultProvider`, con una variable de
+  entorno por agente.
 - `AC-RT-03` — La verificación de estado devuelve error si algún componente
-  no es apto para producción. Evidencia: `SMOKE` + `LIVE`.
+  no es apto para producción. Evidencia: `SMOKE` + `LIVE`. Ya cerraba antes
+  de `W-16`: `getAgentRuntimeReadiness` calcula `production_safe`, y
+  `/api/health/agent-runtime` devuelve `503` si `!overall_ready`.
 - `AC-RT-04` — Una traza en producción con proveedor de prueba genera alerta
-  de incidente. Evidencia: `LIVE`.
+  de incidente. Evidencia: `LIVE`. No verificado en `W-16`: existe el
+  bloqueo estructural (`RuntimeRouter` lanza `RUNTIME_LOCAL_FIXTURE_FORBIDDEN`
+  si `local_fixture` se pide fuera de desarrollo/pruebas), pero no se
+  confirmó que ese error concreto dispare una alerta de incidente en el
+  sistema de monitoreo real, distinta de un error genérico.
 - `AC-RT-05` — Un turno consume una sola sesión con el modelo.
-  Evidencia: `TEST` + `METRIC`.
+  Evidencia: `TEST` + `METRIC`. Cierra parcial: ver la nota de `AC-MOTOR-01`
+  en `20` §17 — el caso normal es una sesión; el caso de regeneración
+  estructural (verificador rechaza) es dos, con tope de dos, nunca más
+  (`WEB-D261`). No cierra la parte `METRIC` (proporción real de turnos con
+  regeneración en producción).
 - `AC-RT-06` — El primer contenido visible aparece en menos de 1,5 s en el
-  percentil 95. Evidencia: `METRIC`.
+  percentil 95. Evidencia: `METRIC`. No tocado por `W-16`.
 - `AC-RT-07` — Con el modelo caído, la aplicación sigue plenamente usable y
   el asistente lo declara con una vía manual concreta. Evidencia: `TEST` + `USER`.
+  Cierra en `W-16` fase 7 la parte estructural: `determinarGradoDeDegradacion`
+  (`src/core/degradation/grade.ts`) decide el grado `sin_modelo` y marca
+  `debeOfrecerViaManualConcreta: true`, probado con `RUL-HECHO-02`
+  (`grade.test.ts`). No cierra: nada en el motor real invoca esta función
+  todavía, ni compone la vía manual concreta a partir de su resultado — es
+  la pieza de decisión, no la integración completa. No cierra la parte
+  `USER`.
 - `AC-RT-08` — No existe recurso automático al proveedor de prueba ante un
-  fallo del real. Evidencia: `TEST`.
+  fallo del real. Evidencia: `TEST`. Ya cerraba antes de `W-16`: no hay
+  ningún `catch` en `runtime-router.ts`/`default-runtime.ts` que reintente
+  con `local_fixture` cuando el proveedor real falla.
 - `AC-RT-09` — La evaluación no inyecta contexto que no existiría en
-  producción. Evidencia: `CODE`.
+  producción. Evidencia: `CODE`. No verificado en `W-16`.
 - `AC-RT-10` — La extracción desde correos corre aislada, sin herramientas ni
-  acceso a datos del usuario. Evidencia: `TEST`.
+  acceso a datos del usuario. Evidencia: `TEST`. Ya cerraba antes de `W-16`:
+  `EmailExtractionAgent` llama al runtime con `tools: []`.
 - `AC-RT-11` — Se mide costo por turno resuelto, no solo por llamada.
-  Evidencia: `METRIC`.
+  Evidencia: `METRIC`. No tocado por `W-16`.
 - `AC-RT-12` — Un foco caducado no resuelve referencias: el motor pregunta a
   qué se refiere el usuario en vez de usar datos vencidos. Evidencia: `TEST`.
+  Ya cerraba antes de `W-16` para el motor legado:
+  `getActiveMovementReferenceIds` (`tool-gateway.ts`) compara
+  `focus_set.expires_at` contra `Date.now()`. **No cerraba para la sesión
+  única nueva** — hueco real que `W-16` fase 7 cierra: el verificador
+  (`evidence-and-policy-compiler.ts`) ahora rechaza con `focus_expired`
+  cuando `focus.expires_at` es anterior al `received_at` del turno, probado
+  con `RUL-HECHO-02` (`conversational-executive-agent.test.ts`, "AC-RT-12").
 - `AC-RT-13` — Una propuesta caducada se comunica al usuario; nunca se
-  ejecuta ni se descarta en silencio. Evidencia: `TEST`.
+  ejecuta ni se descarta en silencio. Evidencia: `TEST`. No tocado por
+  `W-16`: no hay código que compare la vigencia de 15 minutos de `§5b.1`
+  contra una propuesta pendiente.
 - `AC-RT-14` — Superar cualquier límite del cálculo aislado no devuelve
-  resultados parciales. Evidencia: `TEST`.
+  resultados parciales. Evidencia: `TEST`. Cierra en `W-16` fase 4 para
+  filas y tiempo (`AC-SEM-12`/`AC-SEM-13`). No cierra para memoria (128 MB)
+  ni consultas por turno (5) — `WEB-D258` documenta por qué quedan fuera de
+  una función síncrona en el mismo proceso.
 - `AC-RT-15` — El panorama se carga una vez por conversación, no una vez por
-  turno. Evidencia: `TEST` + `METRIC`.
+  turno. Evidencia: `TEST` + `METRIC`. No tocado por `W-16` — depende de que
+  exista "el panorama" (`AC-SEM-04`), que no se construyó en este corte.
 - `AC-RT-16` — Un hecho de perfil `revisable` sin confirmar durante 6 meses
-  pasa a `en_duda`. Evidencia: `TEST`.
+  pasa a `en_duda`. Evidencia: `TEST`. Ya cerraba antes de `W-16`:
+  `expire_stale_memory` (`062_w13_insights_memory.sql`).

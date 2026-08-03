@@ -16,6 +16,7 @@
     "test:presupuesto": "node scripts/gates/presupuesto-npm-test.mjs",
     "test:e2e": "playwright test",
     "matriz:generar": "node scripts/matriz/generar.ts",
+    "catalogo:generar": "node scripts/catalogo/generar.ts",
     "smoke:rls": "node scripts/smoke-rls-multiuser.mjs",
     "smoke:whatsapp:idempotency": "node scripts/smoke-whatsapp-idempotency.mjs",
     "smoke:whatsapp:pending-codes": "node scripts/smoke-whatsapp-pending-codes.mjs",

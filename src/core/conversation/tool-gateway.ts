@@ -9,6 +9,8 @@ import type {
   ConversationTurnState,
   ConversationToolResult,
 } from "@/agents/conversation-agent";
+import { compileSemanticQuery, executeSemanticQuery } from "@/core/semantics/compiler";
+import type { SemanticQuery } from "@/core/semantics/query";
 import {
   getActiveAccounts,
   getActiveBoxes,
@@ -182,7 +184,6 @@ export class ToolGateway {
       user_id: input.userId,
       locale: input.locale,
       timezone: input.timezone,
-      channel: input.channel,
       original_message: input.originalMessage,
       received_at: input.receivedAt,
       query: input.query,
@@ -265,32 +266,44 @@ export class ToolGateway {
   async executeAuthorizedTool(input: {
     toolName: ConversationToolName;
     userId: string;
-    query: ConversationQuery;
+    query: ConversationQuery | null;
+    semanticQuery?: SemanticQuery | null;
     activeMemoryState: ConversationMemoryState | null;
     turnState: ConversationTurnState;
   }): Promise<ConversationToolResult> {
+    if (input.toolName === "consultar_datos_abiertos") {
+      return this.queryDatosAbiertos(input.userId, input.semanticQuery ?? null);
+    }
+    if (!input.query) {
+      logger.error("tool_gateway.missing_query_for_closed_tool", {
+        tool_name: input.toolName,
+        user_id: input.userId,
+      });
+      return failedTool(input.toolName);
+    }
+    const query = input.query;
     switch (input.toolName) {
       case "get_balance_snapshot":
         return this.getBalanceSnapshot(input.userId);
       case "query_movements":
         return this.queryMovements(
           input.userId,
-          input.query,
+          query,
           input.activeMemoryState,
           input.turnState.should_use_active_memory
         );
       case "get_pending_summary":
         return this.getPendingSummary(input.userId);
       case "get_debt_summary":
-        return this.getDebtSummary(input.userId, input.query);
+        return this.getDebtSummary(input.userId, query);
       case "get_debt_details":
-        return this.getDebtDetails(input.userId, input.query);
+        return this.getDebtDetails(input.userId, query);
       case "get_recurring_summary":
-        return this.getRecurringSummary(input.userId, input.query);
+        return this.getRecurringSummary(input.userId, query);
       case "search_financial_memory":
         return this.searchFinancialMemory(
           input.userId,
-          input.query,
+          query,
           input.activeMemoryState
         );
       case "get_classification_catalog":
@@ -300,13 +313,13 @@ export class ToolGateway {
       case "get_financial_structure":
         return this.getFinancialStructure(input.userId);
       case "get_insights":
-        return this.getInsights(input.userId, input.query);
+        return this.getInsights(input.userId, query);
       case "get_insight_evidence":
         return this.getInsightEvidence(input.userId, input.activeMemoryState);
       case "get_record_provenance":
         return this.getRecordProvenance(
           input.userId,
-          input.query,
+          query,
           input.activeMemoryState,
           input.turnState.should_use_active_memory,
         );
@@ -315,10 +328,60 @@ export class ToolGateway {
       case "get_spending_summary":
         return this.getSpendingSummary(
           input.userId,
-          input.query,
+          query,
           input.activeMemoryState,
           input.turnState.should_use_active_memory,
         );
+    }
+  }
+
+  /** `20b` S5.3/S5.4: consulta abierta compilada contra `src/core/semantics`. */
+  private async queryDatosAbiertos(
+    userId: string,
+    semanticQuery: SemanticQuery | null,
+  ): Promise<ConversationToolResult> {
+    if (!semanticQuery) {
+      return {
+        tool_name: "consultar_datos_abiertos",
+        status: "failed",
+        facts: [],
+        warnings: ["consultar_datos_abiertos se llamo sin semantic_query."],
+        data: {},
+      };
+    }
+    const compiled = compileSemanticQuery(semanticQuery, userId);
+    if (!compiled.ok) {
+      return {
+        tool_name: "consultar_datos_abiertos",
+        status: "failed",
+        facts: [],
+        warnings: compiled.issues.map((issue) => `${issue.code}: ${issue.message}`),
+        data: { issues: compiled.issues },
+      };
+    }
+    try {
+      const executed = await executeSemanticQuery(this.client, compiled.plan);
+      if (!executed.ok) {
+        logger.error("tool_gateway.semantic_query_failed", {
+          error: executed.error,
+          user_id: userId,
+          entidad: compiled.plan.entidad,
+        });
+        return failedTool("consultar_datos_abiertos");
+      }
+      return {
+        tool_name: "consultar_datos_abiertos",
+        status: "called",
+        facts: [
+          `entidad=${compiled.plan.entidad}`,
+          `filas=${executed.filas.length}`,
+        ],
+        warnings: [],
+        data: { filas: executed.filas, referencias: executed.referencias },
+      };
+    } catch (error) {
+      logger.error("tool_gateway.semantic_query_threw", { error, user_id: userId });
+      return failedTool("consultar_datos_abiertos");
     }
   }
 

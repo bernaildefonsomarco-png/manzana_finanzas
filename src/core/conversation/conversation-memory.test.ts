@@ -70,6 +70,7 @@ describe("conversation working set", () => {
 
     await rememberConversationTurn({
       client: {} as never,
+      channel: "whatsapp",
       contextPack,
       answer: {
         response_text: "Encontre un desayuno por S/20.00.",
@@ -130,6 +131,7 @@ describe("conversation working set", () => {
 
     await rememberConversationTurn({
       client: {} as never,
+      channel: "whatsapp",
       contextPack,
       answer: {
         response_text: "Son 5 gastos de Alimentacion por S/68.00.",
@@ -266,7 +268,6 @@ function context(): ConversationContextPack {
     user_id: "user-1",
     locale: "es-PE",
     timezone: "America/Lima",
-    channel: "whatsapp",
     original_message: "que gaste hoy",
     received_at: "2026-07-16T10:00:00.000Z",
     query: {

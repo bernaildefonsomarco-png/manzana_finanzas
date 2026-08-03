@@ -23,7 +23,6 @@ function contextPack(
     user_id: "00000000-0000-4000-8000-000000000001",
     locale: "es-PE",
     timezone: "America/Lima",
-    channel: "whatsapp",
     original_message: "puedo gastar 50 hoy?",
     received_at: "2026-07-15T12:00:00.000Z",
     query: {

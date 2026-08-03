@@ -150,6 +150,7 @@ export type CorrectionAgentRunResult = {
  */
 export const SemanticCorrectionInterpretationSchema = z.object({
   is_correction: z.boolean(),
+  command_id: z.string().trim().min(1).max(80).nullable().default(null),
   operation: z.enum(["patch", "delete", "none"]),
   correction_type: z.enum([
     "loan",

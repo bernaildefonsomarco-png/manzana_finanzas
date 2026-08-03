@@ -369,7 +369,7 @@ defecto**, no una decisión de estilo.
 **Ninguna medida se devuelve sin sus referencias de evidencia** (`22` §2). No
 hay excepciones y no hace falta declararlo por medida.
 
-## 7. Catálogo de escrituras — los 95 comandos
+## 7. Catálogo de escrituras — los 99 comandos
 
 **Esto sí es un catálogo cerrado.** Lo que no esté aquí, no se puede ejecutar.
 
@@ -567,16 +567,24 @@ nunca debe poder cambiar nada (`WEB-D038`). Registrar el gasto simulado es
 
 ### 7.17 Reparto por nivel
 
+Verificado mecánicamente por `scripts/catalogo/generar.ts` (`W-16`,
+`WEB-D254`) — cuatro filas de las tablas de arriba combinan dos comandos en
+una celda (`agregar_etiqueta`/`quitar_etiqueta`,
+`pausar_recurrente`/`reactivar_recurrente`,
+`pausar_presupuesto`/`archivar_presupuesto`,
+`activar_renovacion`/`desactivar_renovacion`), así que la suma por nivel
+cuenta 99 comandos aunque la lectura en tablas parezca tener menos filas.
+
 | Nivel | Comandos |
 |---|---|
-| `ninguna` | 13 |
-| `tarjeta` | 39 |
-| `tarjeta_editable` | 26 |
-| `riesgo` | 12 |
-| `masiva` | 8 (4 combinados con `riesgo`) |
+| `ninguna` | 12 |
+| `tarjeta` | 40 |
+| `tarjeta_editable` | 28 |
+| `riesgo` | 13 |
+| `masiva` | 8 (3 combinados con `riesgo`) |
 | `consentimiento` | 1 |
 
-Trece comandos con `ninguna` y **ninguno de ellos toca dinero**: son
+Doce comandos con `ninguna` y **ninguno de ellos toca dinero**: son
 descartes, marcas, preferencias y confirmaciones de algo que el usuario acaba
 de decir. Que la lista de `ninguna` no contenga nada financiero es
 verificable, y es `AC-CATALOGO-04`.
@@ -745,11 +753,19 @@ genera por agregación y un test falla el build si se desincroniza (§2,
 `AC-CATALOGO-01`). Contar bien una vez no habría servido de nada; el defecto era
 mantener dos listas a mano.
 
-El número real, verificado contando las §14 de los dieciséis módulos: **95
-comandos y 145 entradas de lectura** entre dimensiones, medidas y alias. No 14
-ni 15. La cifra antigua contaba "tools" de una arquitectura de agentes
-distinta, y ese es justo el problema: dos documentos contaban cosas que ni
-siquiera eran lo mismo.
+El número real, verificado mecánicamente por `scripts/catalogo/generar.ts`
+contra las tablas de este documento y cruzado contra la §14 de los
+dieciséis módulos (`W-16`, `WEB-D254`): **99 comandos y 156 entradas de
+lectura** (101 dimensiones + 50 medidas + 5 alias) entre dimensiones,
+medidas y alias. No 14, ni 15, ni el "95 y 145" que este mismo documento
+declaró al escribirse a mano en la Ola 10 — contando filas de tabla en vez
+de comandos distintos allí donde una fila combina dos nombres. La cifra
+antigua de "14 tools" contaba herramientas de una arquitectura de agentes
+distinta, y ese es justo el problema original: dos documentos contaban
+cosas que ni siquiera eran lo mismo. El "95/145" de la primera versión de
+este documento era ya una mejora sobre eso, pero seguía siendo un conteo a
+mano — y un conteo a mano se equivoca, que es exactamente lo que `§2` de
+este documento existe para dejar de necesitar.
 
 **Correcciones aplicadas a los módulos en esta ola:** renombrados de §9.1 a
 §9.3 en `24`, `26`, `27`, `28`, `30`, `31`, `32`; medida eliminada en `33`;

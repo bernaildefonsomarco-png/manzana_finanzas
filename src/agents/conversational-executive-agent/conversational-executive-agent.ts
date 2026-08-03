@@ -302,10 +302,118 @@ function validateExecutiveConsistency(input: {
   }
 }
 
+// `20b` S5.2: la forma de "consultar_datos_abiertos" — solo lo que el
+// compilador de `src/core/semantics` traduce hoy (`WEB-D257`/`WEB-D258`):
+// predicados "y" de comparaciones simples, sin "o"/"no"/subconsultas.
+const SEMANTIC_QUERY_INPUT_SCHEMA = {
+  anyOf: [
+    {
+      type: "object",
+      properties: {
+        de: { type: "string", enum: ["movimientos"] },
+        donde: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                kind: { type: "string", enum: ["comparacion"] },
+                dimension: { type: "string" },
+                comparador: {
+                  type: "string",
+                  enum: ["=", "!=", ">", ">=", "<", "<=", "entre", "en", "contiene"],
+                },
+                valor: {
+                  anyOf: [
+                    { type: "string" },
+                    { type: "number" },
+                    { type: "boolean" },
+                    { type: "array", items: { type: "string" } },
+                    { type: "array", items: { type: "number" } },
+                    {
+                      type: "object",
+                      properties: { desde: { type: "string" }, hasta: { type: "string" } },
+                      required: ["desde", "hasta"],
+                      additionalProperties: false,
+                    },
+                  ],
+                },
+              },
+              required: ["kind", "dimension", "comparador", "valor"],
+              additionalProperties: false,
+            },
+            {
+              type: "object",
+              properties: {
+                kind: { type: "string", enum: ["y"] },
+                de: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      kind: { type: "string", enum: ["comparacion"] },
+                      dimension: { type: "string" },
+                      comparador: {
+                        type: "string",
+                        enum: ["=", "!=", ">", ">=", "<", "<=", "entre", "en", "contiene"],
+                      },
+                      valor: {
+                        anyOf: [
+                          { type: "string" },
+                          { type: "number" },
+                          { type: "boolean" },
+                          { type: "array", items: { type: "string" } },
+                          { type: "array", items: { type: "number" } },
+                          {
+                            type: "object",
+                            properties: { desde: { type: "string" }, hasta: { type: "string" } },
+                            required: ["desde", "hasta"],
+                            additionalProperties: false,
+                          },
+                        ],
+                      },
+                    },
+                    required: ["kind", "dimension", "comparador", "valor"],
+                    additionalProperties: false,
+                  },
+                },
+              },
+              required: ["kind", "de"],
+              additionalProperties: false,
+            },
+            { type: "null" },
+          ],
+        },
+        agrupar_por: { type: "array", items: { type: "string" } },
+        medir: { type: "array", items: { type: "string" } },
+        ordenar: {
+          anyOf: [
+            {
+              type: "object",
+              properties: {
+                por: { type: "string" },
+                direccion: { type: "string", enum: ["asc", "desc"] },
+              },
+              required: ["por", "direccion"],
+              additionalProperties: false,
+            },
+            { type: "null" },
+          ],
+        },
+        limitar: { anyOf: [{ type: "integer", minimum: 1 }, { type: "null" }] },
+      },
+      required: ["de", "donde", "agrupar_por", "medir", "ordenar", "limitar"],
+      additionalProperties: false,
+    },
+    { type: "null" },
+  ],
+} as const;
+
 const EXECUTIVE_TOOL_INPUT_SCHEMA = {
   type: "object",
   properties: {
     query: {
+      anyOf: [
+      {
       type: "object",
       properties: {
         kind: {
@@ -407,9 +515,15 @@ const EXECUTIVE_TOOL_INPUT_SCHEMA = {
       ],
       additionalProperties: false,
     },
+      { type: "null" },
+      ],
+    },
+    // Solo para "consultar_datos_abiertos" (`20b` S5.2, `WEB-D259`); nulo
+    // para las otras 15 tools.
+    semantic_query: SEMANTIC_QUERY_INPUT_SCHEMA,
     should_use_active_memory: { type: "boolean" },
   },
-  required: ["query", "should_use_active_memory"],
+  required: ["query", "semantic_query", "should_use_active_memory"],
   additionalProperties: false,
 } as const;
 
@@ -437,6 +551,10 @@ const TOOL_DESCRIPTIONS: Record<ConversationToolName, string> = {
     "Consulta preferencias, aliases, correcciones y contexto permitido.",
   get_spending_summary:
     "Agrupa movimientos confirmados por dimensiones financieras.",
+  consultar_datos_abiertos:
+    "Consulta abierta (20b S5): compone de/donde/agrupar_por/medir/ordenar/limitar " +
+    "sobre movimientos cuando ninguna de las otras tools cubre la pregunta. " +
+    "Usa 'y' para combinar filtros; 'o' y subconsultas no estan disponibles todavia.",
 };
 
 export const EXECUTIVE_TOOLS: ToolDefinition[] = Object.entries(

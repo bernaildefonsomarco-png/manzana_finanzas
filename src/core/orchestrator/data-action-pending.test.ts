@@ -20,6 +20,7 @@ const externalEventId = "00000000-0000-4000-8000-0000000000ee";
 function action(overrides: Partial<ProposedAction> = {}): ProposedAction {
   return {
     action_id: "action_1",
+    command_id: null,
     movement_type: "gasto",
     amount: 8,
     currency: "PEN",

@@ -461,6 +461,7 @@ async function rememberWithServiceClient(input: {
   try {
     await rememberConversationTurn({
       client: createServiceClient(),
+      channel: "dashboard",
       contextPack: input.contextPack,
       answer: input.answer,
       sourceRef: input.sourceRef,
@@ -469,6 +470,7 @@ async function rememberWithServiceClient(input: {
   } catch {
     await rememberConversationTurn({
       client: input.fallbackClient,
+      channel: "dashboard",
       contextPack: input.contextPack,
       answer: input.answer,
       sourceRef: input.sourceRef,
