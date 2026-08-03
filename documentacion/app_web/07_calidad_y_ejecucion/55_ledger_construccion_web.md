@@ -1580,7 +1580,7 @@ su parte `TEST`/`CODE` — `AC-ASI-18` no cierra) · G2 no aplica a este corte
 · G3 no cierra: no hubo sesiones `USER` ni cohorte `METRIC` (9 criterios de
 `G3`, ninguno validado)
 **Matriz regenerada:** 2026-08-03, con `npm run matriz:generar`; hash del
-commit sustantivo: `PENDIENTE-COMPLETAR-EN-COMMIT-DE-HASH`.
+commit sustantivo: `8080019`.
 
 ### Qué se entregó
 
