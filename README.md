@@ -68,11 +68,13 @@ src/
     semantics/      # Capa semántica de `20b`: lenguaje de consulta, compilador, cálculo aislado (W-16)
     profile/        # Perfil del usuario de `20c`: capas, política de confirmación, temas sensibles (W-16)
     degradation/    # Los cuatro grados de degradación de `23` §7 (W-16)
+    assistant/      # Puente síncrono web → motor de `41` (W-17, WEB-D263)
     onboarding/, disclosure/, risk/, events/
     commands/, engines/, validators/  # vacías: marcador para el diseño de `core/` (documentacion/app_web/02_fundaciones/12)
   adapters/
     whatsapp/       # WhatsAppAdapter — implementado, 2.639 líneas
     email/          # EmailAdapter (la lógica real vive en core/email)
+    web/            # presentTurn del asistente web (41, W-17)
   agents/
     runtime/                        # AgentRuntime, readiness, config de providers
     conversational-executive-agent/ # Agente cabeza (modo shadow/active), sin documentar

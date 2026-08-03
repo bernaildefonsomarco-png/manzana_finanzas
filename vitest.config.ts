@@ -32,6 +32,11 @@ const PATRON_DOM = [
   "src/shared/privacy/**/*.test.tsx",
   "src/shared/data/**/*.test.tsx",
   "src/shared/forms/**/*.test.tsx",
+  // `W-17`: el asistente vive fuera de `features/` (`WEB-D164`) pero sus
+  // componentes montan hooks de React igual que los de arriba. `*` en vez
+  // de `(app)` literal: los parentesis son sintaxis de extglob para el
+  // matcher de globs y un `(app)` sin escapar nunca hace match.
+  "src/app/*/asistente/**/*.test.tsx",
 ];
 
 export default defineConfig({

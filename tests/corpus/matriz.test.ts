@@ -43,7 +43,7 @@ describe("generador de la matriz de trazabilidad", () => {
     expect(matriz.censo.criterios.porPorton).toEqual({ G1: 563, G2: 10, G3: 135 });
   });
 
-  it("50 §3.1: 248 criterios tienen clase asignada, con el reparto declarado", () => {
+  it("50 §3.1: 346 criterios tienen clase asignada, con el reparto declarado", () => {
     // W-02 añadió tres: AC-SEG-02 y AC-SEG-03 (integracion, 51 §8) y
     // AC-SEG-04 (lint, agregado sobre las 58 rutas de /api/v1). W-04 añadió
     // seis `unidad`: AC-CANAL-01 (agregado, WEB-D173), AC-CANAL-03, 04, 05,
@@ -126,6 +126,15 @@ describe("generador de la matriz de trazabilidad", () => {
     // los criterios que exigen sesión de usuario real (`USER`), medición de
     // producción (`METRIC`) o el asistente conversacional que `41`/`W-17`
     // todavía no construye — documentado en el §20 de `39`, no en silencio.
+    // W-17 añade veintidós clases `unidad` en el asistente: los diez
+    // bloques y sus componentes (`ConfirmationCard`, `EvidenceLink`,
+    // `MassivePreviewCard`, `BlockRenderer`), el puente sincrono del turno
+    // (`handle-web-turn.ts`), la derivación del nivel de confirmación, la
+    // degradación (`sin_modelo`/`solo_lectura`), el foco tras confirmar/
+    // descartar y el guardado del contenido fuera de la telemetría. Quedan
+    // explícitamente sin clase: la masiva real (`WEB-D269`, el motor no
+    // produce `previsualizacion`), la transmisión incremental (`WEB-D268`)
+    // y el contexto de pantalla (`WEB-D271`, `RUL-ASI-11` no conectado).
     expect(matriz.censo.criterios.porClase).toEqual({
       corpus: 45,
       build: 16,
@@ -134,10 +143,10 @@ describe("generador de la matriz de trazabilidad", () => {
       presupuesto: 2,
       contenido: 1,
       integracion: 83,
-      unidad: 131,
+      unidad: 153,
     });
-    expect(matriz.censo.criterios.conClaseAsignada).toBe(324);
-    expect(matriz.censo.criterios.conTestSinClase).toBe(296);
+    expect(matriz.censo.criterios.conClaseAsignada).toBe(346);
+    expect(matriz.censo.criterios.conTestSinClase).toBe(274);
   });
 
   it("AC-PLAN-05: los 53 documentos con criterios tienen exactamente un corte dueño", () => {

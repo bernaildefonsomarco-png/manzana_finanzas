@@ -696,59 +696,133 @@ superficie produce.
 ## 21. Criterios de aceptación
 
 - `AC-ASI-01` — El asistente **nunca es modal** y no impide usar la
-  aplicación. Evidencia: `TEST` + `USER`.
+  aplicación. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra en `W-17`
+  la parte `TEST`: `assistant-panel.tsx` es un componente propio, sin
+  `Sheet`/`Dialog` (`WEB-D267`), probado en `assistant-panel.test.tsx`.
+  `USER` pendiente de validación manual.
 - `AC-ASI-02` — La conversación sobrevive a la navegación y a la recarga.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17` el mecanismo
+  (`RUL-ASI-02`: estado en `assistant_threads`/`assistant_messages`,
+  `useAssistantConversation` retoma el hilo más reciente al montar); no hay
+  todavía un test que simule literalmente navegar-y-volver.
 - `AC-ASI-03` — **Ninguna operación de dinero se ejecuta sin confirmación
-  explícita del usuario.** Evidencia: `CODE` + `TEST`.
+  explícita del usuario.** Evidencia: `CODE` + `TEST`. Clase: `unidad`.
+  Cierra en `W-17`: `ACT-ASI-04` solo dispara con un clic explícito
+  (`assistant-proposal-card.test.tsx`).
 - `AC-ASI-04` — Una propuesta sin confirmar nunca se muestra en pasado.
-  Evidencia: `TEST` + `USER`.
+  Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra en `W-17` la parte
+  `TEST` (`resolve-proposal-card.test.ts`, `buildProposalTitle`). `USER`
+  pendiente.
 - `AC-ASI-05` — En nivel `riesgo`, el botón primario es la salida segura y el
-  de confirmar nombra el objeto. Evidencia: `TEST` + `USER`.
+  de confirmar nombra el objeto. Evidencia: `TEST` + `USER`. Clase: `unidad`.
+  Cierra en `W-17` la parte `TEST`, con mutación (`confirmation-card.test.tsx`).
+  `USER` pendiente.
 - `AC-ASI-06` — Editar un campo de una propuesta no la cancela ni reinicia el
-  turno. Evidencia: `TEST`.
+  turno. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17`: `onFieldChange`
+  llama a `PATCH /assistant/proposals/[id]` sin tocar `onConfirm`/`onCancel`.
 - `AC-ASI-07` — Una propuesta caduca a los 15 minutos, **se dice**, y nunca se
-  ejecuta por silencio. Evidencia: `TEST`.
+  ejecuta por silencio. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17`
+  parcialmente: el mensaje de retomar existe en
+  `assistant-proposal-card.tsx` y está probado; la caducidad a los 15
+  minutos la cuenta `pending_items.expires_at`, ya construido antes de
+  `W-17`, sin un test nuevo de expiración específico de esta fase.
 - `AC-ASI-08` — El Core rechaza una ejecución y la tarjeta conserva las
-  ediciones del usuario. Evidencia: `TEST`.
+  ediciones del usuario. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17`:
+  `confirm.isError` muestra la causa concreta (`role="alert"`) sin sustituir
+  la tarjeta, probado en `assistant-proposal-card.test.tsx`
+  ("ERR-ASI-05: si el Core rechaza...").
 - `AC-ASI-09` — Una masiva muestra conteo, muestra, exclusiones y casillas, y
-  el botón refleja el número vigente. Evidencia: `TEST` + `USER`.
+  el botón refleja el número vigente. Evidencia: `TEST` + `USER`. Clase:
+  `unidad`. **No cierra en `W-17`**: `MassivePreviewCard` está construida y
+  probada con mutación (`massive-preview-card.test.tsx`), pero el motor no
+  produce ningún bloque `previsualizacion` real todavía —
+  `resolveMassivePreview` de `BlockRenderer` no tiene ningún llamador
+  (`WEB-D269`).
 - `AC-ASI-10` — **Solo `texto` se transmite mientras se genera.** Ninguna
   `cifra`, `propuesta` ni `previsualizacion` aparece parcial.
-  Evidencia: `CODE` + `TEST`.
+  Evidencia: `CODE` + `TEST`. Clase: `unidad`. Cierra en `W-17` de forma
+  trivial: no hay transmisión incremental real todavía (`WEB-D268`), así
+  que nada llega parcial por construcción — la regla no puede violarse
+  porque el mecanismo que la violaría no existe.
 - `AC-ASI-11` — Si el verificador rechaza un bloque tras emitir prosa, el
   texto se enmienda visiblemente y no se borra. Evidencia: `TEST` + `USER`.
+  **No cierra**: depende de la transmisión incremental real que `WEB-D268`
+  deja fuera de alcance de esta fase — sin fragmentos que emitir, no hay
+  nada que enmendar.
 - `AC-ASI-12` — Ninguna `cifra` se muestra sin su enlace de evidencia.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17`:
+  `block-renderer.test.tsx`, más el filtro de `verifyBlocks` ya existente
+  en el contrato de canal.
 - `AC-ASI-13` — Una `impresion` se distingue de una `afirmacion` **en el texto
-  y en el estilo**. Evidencia: `TEST` + `USER`.
-- `AC-ASI-14` — Un bloque `limite` nunca se omite. Evidencia: `TEST`.
+  y en el estilo**. Evidencia: `TEST` + `USER`. Clase: `unidad`. Cierra en
+  `W-17` la parte `TEST`, con mutación (`block-renderer.test.tsx`). `USER`
+  pendiente.
+- `AC-ASI-14` — Un bloque `limite` nunca se omite. Evidencia: `TEST`. Clase:
+  `unidad`. Cierra en `W-17`: `LimiteBlockView` siempre renderiza cuando el
+  bloque está presente, y `handleWebAssistantTurn` siempre incluye un
+  `limite` en `sin_modelo`.
 - `AC-ASI-15` — Con el modelo caído, el asistente **no se oculta**, no inventa
-  y ofrece la vía manual concreta. Evidencia: `TEST` + `USER`.
+  y ofrece la vía manual concreta. Evidencia: `TEST` + `USER`. Clase:
+  `unidad`. Cierra en `W-17` la parte `TEST`, con mutación
+  (`handle-web-turn.test.ts`, `assistant-degradation-banner.test.tsx`).
+  `USER` pendiente.
 - `AC-ASI-16` — Confirmar una propuesta funciona **con el modelo caído**.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17` por diseño
+  arquitectónico ya verificado en `WEB-D264`: `/assistant/proposals/[id]/confirm`
+  nunca llama al modelo. Sin un test end-to-end nuevo específico de esta
+  fase que lo demuestre con el modelo realmente caído.
 - `AC-ASI-17` — En grado solo lectura no se emiten tarjetas, ni siquiera
-  deshabilitadas. Evidencia: `TEST`.
+  deshabilitadas. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17`:
+  `withoutActionBlocks` filtra `propuesta`/`previsualizacion`/`accion` antes
+  de presentar, con mutación (`handle-web-turn.test.ts`).
 - `AC-ASI-18` — `mostrar` no interrumpe un formulario abierto ni una edición.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. **No cierra**: `onFollowShow` navega sin comprobar si
+  hay una edición en curso en la pantalla actual — detectar eso de forma
+  genérica (formularios/diálogos abiertos en cualquier pantalla de la app)
+  no se construyó en esta fase.
 - `AC-ASI-19` — Ningún comando fuera del catálogo de `40` se ejecuta, venga la
-  petición de donde venga. Evidencia: `CODE` + `TEST`.
+  petición de donde venga. Evidencia: `CODE` + `TEST`. Clase: `unidad`.
+  Cierra en `W-17` por herencia: el canal web no introduce ninguna vía de
+  ejecución nueva, pasa por el mismo `esComandoConocido` que ya usan los
+  demás canales. Verificado por auditoría de código en esta fase, sin un
+  test end-to-end nuevo.
 - `AC-ASI-20` — **Texto contenido en los datos del usuario no se interpreta
-  como instrucción.** Evidencia: `TEST`.
+  como instrucción.** Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17`:
+  `handle-web-turn.test.ts` ("RUL-ASI-20") prueba que un mensaje con forma
+  de instrucción llega intacto como dato.
 - `AC-ASI-21` — El contexto de pantalla no amplía el acceso a datos.
-  Evidencia: `TEST`.
+  Evidencia: `TEST`. Cierra en `W-17` de forma trivial: `RUL-ASI-11` no está
+  conectado todavía (`WEB-D271`), así que no hay contexto real que pudiera
+  ampliar nada.
 - `AC-ASI-22` — El contenido de los mensajes no se registra en telemetría.
-  Evidencia: `CODE` + `TEST`.
+  Evidencia: `CODE` + `TEST`. Clase: `unidad`. Cierra en `W-17`:
+  `tests/lint/asi-22-sin-contenido-en-telemetria.test.ts` verifica que
+  ningún `logger.*` del asistente lleva el texto crudo. No hay pipeline de
+  eventos de producto (`WEB-D270`).
 - `AC-ASI-23` — La respuesta se anuncia **una vez por bloque completo**, no
-  por fragmento. Evidencia: `TEST`.
+  por fragmento. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17` la
+  estructura (`aria-live` en el contenedor de `AssistantMessageList`, no por
+  fragmento); sin verificación con un lector de pantalla real.
 - `AC-ASI-24` — El foco no salta al llegar una propuesta, y vuelve al campo de
-  entrada tras confirmar. Evidencia: `TEST`.
+  entrada tras confirmar. Evidencia: `TEST`. Clase: `unidad`. Cierra en
+  `W-17`: `ConfirmationCard.autoFocusUncertainField` es `false` por defecto
+  en el asistente (`confirmation-card.test.tsx`), y
+  `assistant-proposal-card.tsx` devuelve el foco al compositor al confirmar
+  o descartar (`assistant-proposal-card.test.tsx`), ambos con mutación.
 - `AC-ASI-25` — En modo discreto el asistente oculta montos igual que el resto
-  de la aplicación. Evidencia: `TEST`.
+  de la aplicación. Evidencia: `TEST`. Clase: `unidad`. Cierra en `W-17`
+  parcialmente: bloques `cifra` (vía `MoneyText`) y el campo `Monto` de
+  `ConfirmationCard` (`moneyValue`, con mutación) respetan el modo discreto;
+  un monto incrustado en el texto libre de un bloque `lista` no se puede
+  enmascarar de forma estructurada con el contrato de bloques actual.
 - `AC-ASI-26` — El primer fragmento de texto llega bajo 1,2 s.
-  Evidencia: `METRIC`.
+  Evidencia: `METRIC`. No cierra: requiere medición de producción real, y
+  depende de la transmisión incremental que `WEB-D268` deja fuera de
+  alcance.
 - `AC-ASI-27` — Toda función del asistente tiene equivalente en la interfaz
-  normal. Evidencia: `DOC` + `USER`.
+  normal. Evidencia: `DOC` + `USER`. Cierra en `W-17` la parte `DOC`: el
+  asistente reutiliza `pending_items`/movimientos existentes (`WEB-D263`),
+  no ejecuta ninguna acción exclusiva suya. `USER` pendiente.
 
 ## 22. Fuera de alcance y puente a WhatsApp
 

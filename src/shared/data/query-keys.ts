@@ -37,6 +37,7 @@ export const queryKeys = {
   },
   pending: {
     all: ["pendientes"] as const,
+    detail: (id: string) => ["pendientes", "detalle", id] as const,
   },
   accounts: ["cuentas"] as const,
   boxes: ["cajas"] as const,
@@ -49,4 +50,9 @@ export const queryKeys = {
     all: ["descubrimientos"] as const,
   },
   preferences: ["preferencias"] as const,
+  assistant: {
+    threads: ["asistente", "hilos"] as const,
+    thread: (id: string) => ["asistente", "hilos", id] as const,
+    health: ["asistente", "salud"] as const,
+  },
 } as const;

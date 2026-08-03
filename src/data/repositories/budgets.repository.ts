@@ -378,7 +378,9 @@ export async function commitBudgetOperation(
 ): Promise<BudgetOperationResult> {
   const { data, error } = await client.rpc("commit_budget_operation", {
     p_operation: input.operation,
-    p_budget_id: input.budgetId,
+    // El generador de tipos no refleja que Postgres acepta NULL aqui
+    // (el parametro no tiene NOT NULL, solo carece de DEFAULT).
+    p_budget_id: input.budgetId as string,
     p_payload: toJson({ ...input.payload, trace_id: input.traceId }),
     p_idempotency_key: input.idempotencyKey,
   });
@@ -407,7 +409,9 @@ export async function commitGoalOperation(
 ): Promise<GoalOperationResult> {
   const { data, error } = await client.rpc("commit_goal_operation", {
     p_operation: input.operation,
-    p_goal_id: input.goalId,
+    // El generador de tipos no refleja que Postgres acepta NULL aqui
+    // (el parametro no tiene NOT NULL, solo carece de DEFAULT).
+    p_goal_id: input.goalId as string,
     p_payload: toJson({ ...input.payload, trace_id: input.traceId }),
     p_idempotency_key: input.idempotencyKey,
   });
@@ -454,8 +458,11 @@ export async function runBudgetDailyLifecycle(
   input: { asOf?: string; userId?: string }
 ): Promise<Record<string, unknown>> {
   const { data, error } = await client.rpc("run_budget_daily_lifecycle", {
-    p_as_of: input.asOf ?? null,
-    p_user_id: input.userId ?? null,
+    // El generador de tipos no refleja que Postgres acepta NULL aqui
+    // (los parametros no tienen NOT NULL, solo carecen de NULL como
+    // DEFAULT explicito).
+    p_as_of: (input.asOf ?? null) as string,
+    p_user_id: (input.userId ?? null) as string,
   });
   if (error) {
     logger.error("budgets.daily_lifecycle_failed", {

@@ -109,6 +109,105 @@ export type Database = {
         }
         Relationships: []
       }
+      assistant_messages: {
+        Row: {
+          action_status:
+            | Database["public"]["Enums"]["assistant_action_status"]
+            | null
+          content: Json
+          created_at: string
+          evidence_refs: string[]
+          id: string
+          idempotency_key: string
+          proposed_action: Json | null
+          resulting_movement_id: string | null
+          role: Database["public"]["Enums"]["assistant_message_role"]
+          thread_id: string
+          trace_id: string | null
+          user_id: string
+        }
+        Insert: {
+          action_status?:
+            | Database["public"]["Enums"]["assistant_action_status"]
+            | null
+          content?: Json
+          created_at?: string
+          evidence_refs?: string[]
+          id?: string
+          idempotency_key: string
+          proposed_action?: Json | null
+          resulting_movement_id?: string | null
+          role: Database["public"]["Enums"]["assistant_message_role"]
+          thread_id: string
+          trace_id?: string | null
+          user_id: string
+        }
+        Update: {
+          action_status?:
+            | Database["public"]["Enums"]["assistant_action_status"]
+            | null
+          content?: Json
+          created_at?: string
+          evidence_refs?: string[]
+          id?: string
+          idempotency_key?: string
+          proposed_action?: Json | null
+          resulting_movement_id?: string | null
+          role?: Database["public"]["Enums"]["assistant_message_role"]
+          thread_id?: string
+          trace_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "assistant_messages_resulting_movement_id_fkey"
+            columns: ["resulting_movement_id"]
+            isOneToOne: false
+            referencedRelation: "movements"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "assistant_messages_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "assistant_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      assistant_threads: {
+        Row: {
+          channel: string
+          created_at: string
+          deleted_at: string | null
+          id: string
+          status: Database["public"]["Enums"]["thread_status"]
+          title: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          channel?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["thread_status"]
+          title?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          deleted_at?: string | null
+          id?: string
+          status?: Database["public"]["Enums"]["thread_status"]
+          title?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       boxes: {
         Row: {
           account_id: string
@@ -3983,7 +4082,7 @@ export type Database = {
       }
       commit_budget_operation: {
         Args: {
-          p_budget_id: string | null
+          p_budget_id: string
           p_idempotency_key: string
           p_operation: string
           p_payload: Json
@@ -3992,14 +4091,14 @@ export type Database = {
       }
       commit_classification_bulk: {
         Args: {
-          p_category_id: string | null
+          p_category_id: string
           p_excluded_ids: string[]
           p_idempotency_key: string
           p_include_manually_corrected: boolean
           p_movement_ids: string[]
           p_now?: string
           p_preview: boolean
-          p_subcategory_id: string | null
+          p_subcategory_id: string
           p_user_id: string
         }
         Returns: Json
@@ -4014,7 +4113,7 @@ export type Database = {
           p_movement: Json
           p_movement_audit_logs: Json
           p_movement_outbox_events: Json
-          p_related_person_normalized_name: string | null
+          p_related_person_normalized_name: string
         }
         Returns: Json
       }
@@ -4108,7 +4207,7 @@ export type Database = {
       }
       commit_goal_operation: {
         Args: {
-          p_goal_id: string | null
+          p_goal_id: string
           p_idempotency_key: string
           p_operation: string
           p_payload: Json
@@ -4128,11 +4227,11 @@ export type Database = {
       }
       commit_movement_classification: {
         Args: {
-          p_category_id: string | null
+          p_category_id: string
           p_idempotency_key: string
           p_movement_id: string
           p_now?: string
-          p_subcategory_id: string | null
+          p_subcategory_id: string
           p_trace_id: string
           p_user_id: string
         }
@@ -4576,7 +4675,7 @@ export type Database = {
         Returns: Json
       }
       list_recurring_generation_user_ids: {
-        Args: { p_limit?: number | null }
+        Args: { p_limit?: number }
         Returns: {
           user_id: string
         }[]
@@ -4958,7 +5057,7 @@ export type Database = {
         Returns: Json
       }
       run_budget_daily_lifecycle: {
-        Args: { p_as_of: string | null; p_user_id?: string | null }
+        Args: { p_as_of: string; p_user_id?: string }
         Returns: Json
       }
       set_dashboard_nudge_preference: {
@@ -5107,6 +5206,12 @@ export type Database = {
     }
     Enums: {
       account_type: "digital" | "banco" | "fisico" | "tarjeta"
+      assistant_action_status:
+        | "propuesta"
+        | "confirmada"
+        | "descartada"
+        | "expirada"
+      assistant_message_role: "usuario" | "asistente" | "sistema"
       box_type: "compromiso" | "objetivo" | "emergencia"
       budget_kind: "presupuesto" | "limite_blando" | "limite_duro"
       budget_period: "semanal" | "quincenal" | "mensual"
@@ -5291,6 +5396,7 @@ export type Database = {
         | "archived"
       risk_level: "low" | "medium" | "high" | "sensitive"
       template_origin: "usuario" | "sugerida"
+      thread_status: "activo" | "archivado"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -5422,6 +5528,13 @@ export const Constants = {
   public: {
     Enums: {
       account_type: ["digital", "banco", "fisico", "tarjeta"],
+      assistant_action_status: [
+        "propuesta",
+        "confirmada",
+        "descartada",
+        "expirada",
+      ],
+      assistant_message_role: ["usuario", "asistente", "sistema"],
       box_type: ["compromiso", "objetivo", "emergencia"],
       budget_kind: ["presupuesto", "limite_blando", "limite_duro"],
       budget_period: ["semanal", "quincenal", "mensual"],
@@ -5624,6 +5737,8 @@ export const Constants = {
       ],
       risk_level: ["low", "medium", "high", "sensitive"],
       template_origin: ["usuario", "sugerida"],
+      thread_status: ["activo", "archivado"],
     },
   },
 } as const
+

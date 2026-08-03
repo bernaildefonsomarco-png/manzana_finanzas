@@ -116,6 +116,13 @@ export const EXCEPCIONES_TEMPORALES: EntradaLista[] = [
   "v1/pending/batch-confirm",
   "v1/pending/batch-discard",
   "v1/pending/batch/*/undo",
+  // Asistente (41, W-17) — mismo patron y misma razon que v1/pending/*:
+  // confirmar/editar/descartar una propuesta ejecuta o recomputa
+  // confirmabilidad sobre un pending_item real (WEB-D263), no una segunda
+  // fuente de verdad con su propio motivo de excepcion.
+  "v1/assistant/proposals/*",
+  "v1/assistant/proposals/*/confirm",
+  "v1/assistant/proposals/*/dismiss",
   // Email y detección bancaria (28)
   "v1/email/ai-consent",
   "v1/email/disconnect",

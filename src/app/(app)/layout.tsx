@@ -3,6 +3,8 @@ import { createClient } from "@/data/supabase/server";
 import { DiscreetModeProvider } from "@/shared/privacy/discreet-mode-context";
 import { ModalAccessibilityGuard } from "@/shared/accessibility/modal-accessibility-guard";
 import { QueryClientProvider } from "@/shared/data/query-client-provider";
+import { AssistantProvider } from "./asistente/assistant-context";
+import { AssistantPanel } from "./asistente/assistant-panel";
 
 /**
  * `12` §10: el layout de `(app)` verifica la sesión una sola vez. El
@@ -24,7 +26,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <QueryClientProvider>
       <DiscreetModeProvider>
         <ModalAccessibilityGuard />
-        {children}
+        <AssistantProvider>
+          {children}
+          <AssistantPanel />
+        </AssistantProvider>
       </DiscreetModeProvider>
     </QueryClientProvider>
   );

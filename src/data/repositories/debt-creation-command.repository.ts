@@ -59,8 +59,10 @@ export class SupabaseDebtCreationExecutionPort
           movement_type: command.payload.movement_type,
         },
       }),
+      // El generador de tipos no refleja que Postgres acepta NULL aqui
+      // (el parametro no tiene NOT NULL, solo carece de DEFAULT).
       p_related_person_normalized_name:
-        input.normalizedRelatedPersonName,
+        input.normalizedRelatedPersonName as string,
       p_installments: toJson(input.installments),
       p_movement: movementCommit
         ? toJson(movementCommit.movement)

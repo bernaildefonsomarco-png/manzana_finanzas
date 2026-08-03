@@ -8,7 +8,6 @@ import {
   Compass,
   ListChecks,
   Mail,
-  MessageCircle,
   Plus,
   RefreshCw,
   ShieldCheck,
@@ -191,8 +190,6 @@ export function HomeScreen({
           </>
         ) : null}
       </div>
-
-      <AssistantBubble onNavigate={onNavigate} />
     </AppShell>
   );
 }
@@ -559,19 +556,6 @@ function EmptyHome({
         comprometido.
       </p>
     </section>
-  );
-}
-
-function AssistantBubble({ onNavigate }: { onNavigate?: (view: AppView) => void }) {
-  return (
-    <button
-      type="button"
-      aria-label="Abrir el asistente"
-      className="fixed bottom-24 right-4 z-sticky flex h-14 w-14 items-center justify-center rounded-full bg-brand text-text-inverse shadow-lg transition hover:opacity-90 lg:bottom-6 lg:right-6"
-      onClick={() => onNavigate?.("assistant")}
-    >
-      <MessageCircle className="h-6 w-6" />
-    </button>
   );
 }
 

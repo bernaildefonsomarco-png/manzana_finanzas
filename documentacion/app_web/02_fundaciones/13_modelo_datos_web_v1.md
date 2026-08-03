@@ -391,7 +391,13 @@ No se guarda el archivo generado más allá de su ventana de expiración.
 Registrar la solicitud es obligación de auditoría de privacidad
 (`45_configuracion_privacidad_y_control_de_datos.md`).
 
-### 7.5 Asistente en la app — migración `052`
+### 7.5 Asistente en la app — migración `065` (`W-17`, `WEB-D262`)
+
+`052` era la reserva original de este documento; colisiona con
+`052_movements_search_vector.sql` (`W-09`, `AC-MOV-05`), aplicada antes de
+que este módulo se construyera — el mismo patrón que `WEB-D246` ya corrigió
+para `35`/`37`. El número real es `065`, el primero libre después de
+`064_w14_reports_and_exports.sql`.
 
 **`assistant_threads`** y **`assistant_messages`**.
 

@@ -710,6 +710,39 @@ export async function markPendingBatchConfirmId(
  * Lista los pendientes de un lote confirmado, para el deshacer
  * (`POST /pending/batch/[batch_id]/undo`).
  */
+/**
+ * `41` fase 2: correlaciona los pendientes que un turno del asistente web
+ * acaba de crear, usando el mismo `source_ref` determinista que
+ * `buildPendingSourceRef` ya escribe (`"{channel}:{externalEventId}:{actionId}"`,
+ * `data-action-pending.ts`) — sin inventar una segunda forma de enlazar un
+ * bloque `propuesta` con su pendiente real.
+ */
+export async function listPendingItemsBySourceRefPrefix(
+  client: Client,
+  userId: string,
+  sourceRefPrefix: string
+): Promise<PendingItem[]> {
+  const { data, error } = await client
+    .from("pending_items")
+    .select("*")
+    .eq("user_id", userId)
+    .like("source_ref", `${sourceRefPrefix}%`)
+    .order("created_at", { ascending: true });
+
+  if (error) {
+    logger.error("pending_items.list_by_source_ref_prefix_failed", {
+      error,
+      user_id: userId,
+    });
+    throw new PendingRepositoryError(
+      "PENDING_REPOSITORY_ERROR",
+      "No se pudieron leer los pendientes del turno"
+    );
+  }
+
+  return (data ?? []) as PendingItem[];
+}
+
 export async function listPendingItemsByBatchId(
   client: Client,
   userId: string,

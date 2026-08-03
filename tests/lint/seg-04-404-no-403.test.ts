@@ -56,11 +56,11 @@ function recorrer(directorio: string, acumulado: string[]): string[] {
   return acumulado;
 }
 
-describe("AC-SEG-04 (agregado): ninguna de las 145 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
+describe("AC-SEG-04 (agregado): ninguna de las 152 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
   const rutas = recorrer(RAIZ_V1, []);
 
-  it("el conjunto declarado tiene 145 rutas — si cambia, hay que revisar esta prueba", () => {
-    expect(rutas.length).toBe(145);
+  it("el conjunto declarado tiene 152 rutas — si cambia, hay que revisar esta prueba", () => {
+    expect(rutas.length).toBe(152);
   });
 
   it.each(rutas.map((rutaAbsoluta) => [relative(RAIZ_V1, rutaAbsoluta).split("\\").join("/"), rutaAbsoluta]))(

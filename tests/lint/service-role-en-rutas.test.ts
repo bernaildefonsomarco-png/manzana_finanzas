@@ -39,7 +39,10 @@ describe("AC-SEG-01: service-role solo con justificación registrada", () => {
     // y `GET /home` (su reemplazo) escribe `service_role` por una razón
     // estructural distinta (tabla "no client write"), así que entra en la
     // lista blanca permanente, no en esta — ver `v1/home` arriba.
-    expect(EXCEPCIONES_TEMPORALES.length).toBe(57);
+    // W-17 añade tres rutas de `v1/assistant/proposals/*`: mismo patrón y
+    // misma razón que `v1/pending/*` — confirmar/editar/descartar una
+    // propuesta opera sobre un `pending_item` real (`WEB-D263`).
+    expect(EXCEPCIONES_TEMPORALES.length).toBe(60);
   });
 
   it("AC-SEG-07 (agregado): la lista temporal no está vacía todavía — no cierra en W-02 (WEB-D168)", () => {

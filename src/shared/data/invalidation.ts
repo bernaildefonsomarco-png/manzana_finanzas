@@ -19,9 +19,13 @@ export type MutationType =
   | "budget.edit"
   | "goal.edit"
   | "import.confirm"
-  | "preferences.change";
+  | "preferences.change"
+  | "assistant.thread_updated";
 
-function keysFor(mutation: MutationType, params?: { debtId?: string }): QueryKey[] {
+function keysFor(
+  mutation: MutationType,
+  params?: { debtId?: string; threadId?: string }
+): QueryKey[] {
   switch (mutation) {
     case "movement.create":
     case "movement.edit":
@@ -86,13 +90,18 @@ function keysFor(mutation: MutationType, params?: { debtId?: string }): QueryKey
       ];
     case "preferences.change":
       return [queryKeys.preferences];
+    case "assistant.thread_updated":
+      return [
+        queryKeys.assistant.threads,
+        ...(params?.threadId ? [queryKeys.assistant.thread(params.threadId)] : []),
+      ];
   }
 }
 
 export async function invalidateForMutation(
   queryClient: QueryClient,
   mutation: MutationType,
-  params?: { debtId?: string }
+  params?: { debtId?: string; threadId?: string }
 ): Promise<void> {
   await Promise.all(
     keysFor(mutation, params).map((key) => queryClient.invalidateQueries({ queryKey: key }))

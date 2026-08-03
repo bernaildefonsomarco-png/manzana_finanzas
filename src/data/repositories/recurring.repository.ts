@@ -620,7 +620,7 @@ export async function listRecurringOccurrenceGenerationUserIds(
 ): Promise<string[]> {
   const { data, error } = await client.rpc(
     "list_recurring_generation_user_ids",
-    { p_limit: maxUsers ?? null }
+    { p_limit: maxUsers ?? undefined }
   );
 
   if (error) throw error;

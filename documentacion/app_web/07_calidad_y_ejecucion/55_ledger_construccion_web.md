@@ -214,13 +214,17 @@ conservando el nivel de evidencia que sí les toca, no ocultándolo (ver
 
 | | |
 |---|---|
-| Cortes cerrados | 15 de 20 |
-| Criterios `verificado` | 240 de 708 |
+| Cortes cerrados | 17 de 20 |
+| Criterios `verificado` | 346 de 708 |
 | Criterios `validado` | 0 de 135 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
 
-Esta tabla se actualiza con cada corte y es lo primero que se lee.
+Esta tabla se actualiza con cada corte y es lo primero que se lee. **Nota de
+`W-17`:** esta tabla se quedó sin actualizar al cerrar `W-16` — el salto de
+"240" a "346" cubre el crecimiento real de dos cortes, no solo de este. No
+hay un test que compare esta tabla contra la matriz (`AC-LEDGER-08` lo
+exige en prosa, pero no está gateado); es la brecha que motivó esta nota.
 
 ---
 
@@ -1565,6 +1569,189 @@ sesión de usuario real todavía en el flujo del motor conversacional nuevo.
 - `tests/lint/readme-arbol-real.test.ts`: sin cambios de expectativa (el
   gate ya exigía que toda carpeta nueva se documentara; este corte cumplió
   la regla en cada fase, no al final).
+
+---
+
+## W-17 — El asistente responde en la app, no ejecuta nada sin confirmar, y calla cuando no puede
+
+**Cerrado:** 2026-08-03
+**Portones:** G1 ✓ (parcial: 17 de 18 criterios sin `USER`/`METRIC` cierran
+su parte `TEST`/`CODE` — `AC-ASI-18` no cierra) · G2 no aplica a este corte
+· G3 no cierra: no hubo sesiones `USER` ni cohorte `METRIC` (9 criterios de
+`G3`, ninguno validado)
+**Matriz regenerada:** 2026-08-03, con `npm run matriz:generar`; hash del
+commit sustantivo: `PENDIENTE-COMPLETAR-EN-COMMIT-DE-HASH`.
+
+### Qué se entregó
+
+El presentador web del asistente conversacional (`41`), sobre el motor que
+`W-16` ya dejó listo — ocho fases, cada una cerrada y verificada antes de
+empezar la siguiente.
+
+**Fase 1 — Migración y tipos.** `13` §7.5 reservaba la migración `052` para
+`assistant_threads`/`assistant_messages`; el número real es `065`
+(`052` ya lo usa `052_movements_search_vector.sql`, `WEB-D262`).
+`assistant_messages` gana `idempotency_key` — columna que `13` no incluía,
+sin la cual un reintento de red duplicaría el mensaje del usuario.
+
+**Fase 2 — Puente al motor.** El hallazgo central del corte: el
+`financial_proposals` del agente ejecutivo único ya viaja por el mismo
+`pending_items` que usa el resto de la app (`dataAgentResultFromExecutive`,
+`data-action-pending.ts`), así que el presentador web no necesitó inventar
+un segundo mecanismo de confirmación — correlaciona `pending_items.source_ref`
+contra el turno actual (`WEB-D263`). El turno web llama al motor
+directamente y en la misma petición HTTP, sin `transactional_outbox`: la
+razón de WhatsApp para encolar (el webhook de Meta debe reconocer en
+milisegundos) no existe en la web, donde el navegador ya espera la
+respuesta completa.
+
+**Fase 3 — Siete rutas API.** `/assistant/turns`, `/threads`,
+`/threads/[id]`, `/health`, `/proposals/[id]` (`PATCH`/`confirm`/`dismiss`)
+— todas con cliente autenticado, sin excepción de `service_role` en el
+camino de lectura (`41` §15, `WEB-D264`); la confirmación sí usa
+`service_role`, con la misma justificación ya auditada de
+`/pending/[id]/confirm` (`WEB-D264`). Quedó explícitamente fuera:
+confirmar una propuesta respaldada por un `CorrectionCommand` en vez de un
+`pending_item` — investigar ese segundo camino de ejecución es trabajo real
+que esta fase no alcanzó (`WEB-D265`).
+
+**Fase 4 — Los diez bloques.** `EvidenceLink`, `ConfirmationCard` (con
+`ConfirmationCardActions`/`ConfirmationCardFieldRow` extraídos para cumplir
+el límite de 150 líneas), `MassivePreviewCard` y `BlockRenderer` con seis
+vistas de bloque propias. El nivel de confirmación de una tarjeta se
+deriva de `risk_level`/`confirmable` del `pending_item`, porque `40` §3 no
+persiste el nivel en ningún sitio (`WEB-D266`).
+
+**Fase 5 — Las superficies.** Panel lateral persistente y hoja inferior
+móvil en un solo componente responsive — deliberadamente **no** una
+instancia de `Sheet`/`Dialog`, porque esos primitivos atrapan el foco y
+oscurecen el fondo a propósito, justo lo que `RUL-ASI-01` prohíbe
+(`WEB-D267`). `/asistente` (conversación completa) y `/asistente/hilos`
+(historial). React Query para el estado de servidor, con una entrada nueva
+en el registro central de invalidación (`assistant.thread_updated`) en vez
+de una caché paralela.
+
+**Fase 6 — Degradación y accesibilidad.** Investigado primero: el motor no
+tiene ningún gancho de transmisión incremental (`stream`/`onToken`/
+`AsyncGenerator` no existen en `src/agents/` ni `src/core/`) — construirlo
+sería diseñar motor, fuera del alcance de este documento (`WEB-D268`). Lo
+que sí se construyó: `handleWebAssistantTurn` consulta el grado de
+degradación antes de llamar al motor — en `sin_modelo` no lo intenta; en
+`solo_lectura` sí llama pero el presentador quita los bloques de acción
+antes de escribirlos (`AC-ASI-17`). Corregido en el camino: `ConfirmationCard`
+enfocaba el primer campo incierto al montar por defecto, violando
+`RUL-ASI-22` en el único contexto real donde la tarjeta aparece hoy (una
+respuesta al mensaje que el usuario acaba de enviar) — el valor por
+defecto pasó a `false`.
+
+**Fase 7 — Masivas, telemetría, anti-inyección, modo discreto.**
+Investigado antes de construir: los ocho comandos `masiva` de `40` §7.17
+no tienen ninguna implementación en el motor — ni rama en
+`response-planner.ts`, ni pendiente por lote (`WEB-D269`); conectar
+`MassivePreviewCard` a datos simulados habría sido el mismo error que
+`WEB-D268` evitó. Tampoco existe un pipeline de eventos de producto en
+ningún módulo de la app (`WEB-D270`) — se verificó y se dejó probado que
+ningún `logger.*` del asistente lleva el texto del turno. Se verificó
+(código + prueba nueva) que un mensaje con forma de instrucción llega
+intacto como dato, nunca como instrucción (`RUL-ASI-20`). El campo `Monto`
+de una `ConfirmationCard` de solo lectura ahora respeta el modo discreto
+(`MoneyText`), que antes mostraba el número en texto plano.
+
+**Fase 8 — Cierre.** Este documento, la anotación de §21 de `41` contra
+código y pruebas reales, dos correcciones encontradas y arregladas en el
+camino (`AC-ASI-24`: el foco no volvía al compositor tras confirmar;
+`AC-ASI-08`: no había mensaje visible cuando el Core rechazaba una
+ejecución), regeneración de la matriz, y verificación final completa.
+
+Cifras: 1 módulo nuevo de `src/core/` (`degradation/current-grade.ts`,
+sobre `grade.ts` de `W-16`), 6 decisiones nuevas (`WEB-D266` a `WEB-D271`),
+~140 pruebas nuevas repartidas en las ocho fases, todas con `RUL-HECHO-02`
+sobre la lógica determinista nueva. `npx tsc --noEmit` y `npx eslint .` en
+verde en cada fase y al cierre. `npm test`: mismo timeout frío conocido de
+`movements/route.test.ts` desde `W-09` (pasa aislado), el resto en verde.
+
+### Qué sorprendió
+
+La primera: el hallazgo de la fase 2 — `financial_proposals` ya viajaba por
+`pending_items` — reencuadró todo el corte de la misma forma que
+`WEB-D253` reencuadró la fase 5 de `W-16`. La pregunta dejó de ser
+"¿cómo confirma el usuario una propuesta del asistente?" y pasó a ser
+"¿cómo reutilizo el confirmador que `/pendientes` ya tiene, probado y en
+producción?" — mucho menos trabajo, y sin una segunda fuente de verdad
+compitiendo con la primera.
+
+La segunda: `RUL-ASI-06` ("el foco entra en el primer campo incierto") y
+`RUL-ASI-22` ("cuando llega una propuesta, el foco no se mueve") parecen
+compatibles leídas por separado, pero chocan en el único contexto real
+donde `ConfirmationCard` aparece: una propuesta **siempre** llega como
+respuesta al mensaje que el usuario acaba de enviar, así que "entra el
+foco al montar" y "el foco no se mueve al llegar" son la misma situación
+descrita dos veces, con resultados opuestos. Se descubrió escribiendo la
+Fase 6, no la Fase 4 donde se construyó el componente — la primera vez
+que una regla de accesibilidad de `41` §18 obligó a revertir una decisión
+ya tomada en una fase anterior del mismo corte.
+
+La tercera, repetida de `W-16`: verificar antes de construir volvió a
+pagar dos veces. Ni la transmisión incremental (fase 6) ni las operaciones
+masivas (fase 7) tienen ningún soporte en el motor — confirmarlo con una
+búsqueda exhaustiva antes de intentar "conectar" nada evitó construir
+interfaz sobre datos inventados en ambos casos.
+
+La cuarta: la tabla de §6 de este mismo documento llevaba desde el cierre
+de `W-16` sin actualizarse — "15 de 20" cuando ya eran 16. Ningún test la
+compara contra la matriz (`AC-LEDGER-08` lo exige en prosa, no en código).
+Corregida aquí, con la brecha anotada en vez de silenciada.
+
+### Qué quedó abierto
+
+Documentado explícitamente en el §21 de `41`, no oculto. Lo más
+significativo:
+
+- Las operaciones masivas (`AC-ASI-09`) no cierran: el motor no produce
+  ningún bloque `previsualizacion` real. `MassivePreviewCard` y el punto de
+  extensión `resolveMassivePreview` quedan construidos y probados, sin
+  productor (`WEB-D269`).
+- La transmisión incremental real (`AC-ASI-10` cierra de forma trivial,
+  `AC-ASI-11` y `AC-ASI-26` no cierran en absoluto) depende de un gancho de
+  streaming que el motor no expone — motor, no presentador (`WEB-D268`).
+- `RUL-ASI-11` (contexto de pantalla) no está conectado: `POST /assistant/turns`
+  solo acepta `thread_id`/`text`. `AC-ASI-21` cierra de forma trivial (no
+  hay contexto que pudiera ampliar nada), pero la función real —
+  "¿y esto qué significa?" sin repetir nada — no funciona todavía
+  (`WEB-D271`).
+- El criterio de que `mostrar` no interrumpa una edición en curso
+  (`AC-ASI-18`) no cierra: no existe una forma genérica de detectar "hay un
+  formulario abierto en esta pantalla" en la app, y esta fase no la
+  construyó.
+- Ningún pipeline de eventos de producto (`41` §20) existe — ni aquí ni en
+  ningún otro módulo (`WEB-D270`). `AC-ASI-22` cierra por la ausencia
+  verificada de fuga de contenido, no por un sistema construido.
+- Los nueve criterios de `G3` (`01`, `04`, `05`, `09`, `11`, `13`, `15`,
+  `26`, `27`) no cierran: no hubo sesión `USER` ni cohorte `METRIC` en este
+  corte, mismo patrón que todos los anteriores desde `W-14`.
+
+No hubo sesiones `USER` ni serie `METRIC`.
+
+### Documentos corregidos
+
+- `41` §21: los 27 criterios anotados contra código y pruebas reales,
+  incluidos los nueve que no cierran, con la razón específica.
+- `13` §7.5: migración `052`→`065`, columna `idempotency_key` añadida
+  (`WEB-D262`).
+- `03_decisiones_producto_web.md`: `WEB-D262` a `WEB-D271` (diez
+  decisiones nuevas, seis de ellas registradas en esta fase de cierre).
+- `55` (este documento) §6: tabla de estado corregida de "15 de 20" /
+  "240 de 708" a "17 de 20" / "346 de 708" — cubre el crecimiento no
+  registrado de `W-16` y el de este corte, con la brecha anotada.
+- `vitest.config.ts`: `src/app/(app)/asistente/**/*.test.tsx` añadido a
+  `PATRON_DOM` — los componentes del asistente viven fuera de `features/`
+  (`WEB-D164`) pero montan hooks de React igual que los de `src/ui/`.
+- `tests/corpus/matriz.test.ts`: censo de criterios con clase actualizado
+  (131→153 `unidad`, 324→346 `conClaseAsignada`).
+- `tests/lint/seg-04-404-no-403.test.ts`,
+  `tests/lint/service-role-en-rutas.test.ts`: conteos de rutas y
+  excepciones de `service_role` actualizados (siete rutas nuevas, tres
+  excepciones nuevas).
 
 ---
 
