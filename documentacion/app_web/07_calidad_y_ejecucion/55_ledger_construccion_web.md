@@ -1772,7 +1772,7 @@ cortes desde `W-14`).
 **Matriz regenerada:** 2026-08-03, con `npm run matriz:generar` (1553
 identificadores, 120 `SCR-`, censo sin cambios en `AC` porque no se creó
 ningún criterio nuevo — solo se implementaron los existentes); hash del
-commit sustantivo: `PENDIENTE`.
+commit sustantivo: `2a2a293`.
 
 ### Qué se entregó
 
