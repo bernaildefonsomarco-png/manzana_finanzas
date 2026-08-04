@@ -61,6 +61,7 @@ import {
 } from "@/ui/primitivas/dialog-parts";
 import { FieldShell, Input, Label, Select } from "@/ui/primitivas/field";
 import { DiscreetValue, MoneyText } from "@/ui/primitivas/money";
+import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
 import {
   EmptyState,
   ErrorState,
@@ -88,6 +89,7 @@ import type {
   SuggestedCandidateViewModel,
   UpcomingViewItem,
 } from "./upcoming-types";
+import { buildUpcomingSummaryProvenance } from "./upcoming-provenance";
 import {
   amountVariabilityLabels,
   buildUpcomingViewModel,
@@ -246,7 +248,7 @@ export function UpcomingScreen({
           />
         ) : view ? (
           <>
-            <UpcomingSummaryCard view={view} />
+            <UpcomingSummaryCard view={view} discreet={discreet} />
             <div className="flex items-center justify-between gap-3">
               <p className="text-sm text-text-secondary">
                 Horizonte de {upcomingQuery.data?.horizon_days ?? 30} días ·{" "}
@@ -445,13 +447,18 @@ export function UpcomingScreen({
   );
 }
 
-function UpcomingSummaryCard({ view }: { view: UpcomingViewModel }) {
+function UpcomingSummaryCard({ view, discreet }: { view: UpcomingViewModel; discreet: boolean }) {
   return (
     <Card className="grid gap-4 p-5 sm:grid-cols-3">
       <div>
         <p className="text-xs font-medium text-text-muted">Este mes</p>
         <p className="mt-1 font-heading text-2xl font-semibold text-text">
-          <MoneyText value={view.summary.month_totals.PEN} />
+          <MoneyWithProvenance
+            ariaLabel={`Ver de dónde sale este ${formatUpcomingMoney(view.summary.month_totals.PEN, "PEN")} de este mes`}
+            loadProvenance={async () => buildUpcomingSummaryProvenance(view.summary, discreet)}
+          >
+            <MoneyText value={view.summary.month_totals.PEN} />
+          </MoneyWithProvenance>
           {view.summary.month_totals.USD > 0 ? (
             <span className="ml-2 text-base">
               +{" "}

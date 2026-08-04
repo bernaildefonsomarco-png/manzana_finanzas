@@ -7,11 +7,13 @@ import { AlertTriangle, Settings2 } from "lucide-react";
 import { Card, SectionHeader } from "@/ui/primitivas/card";
 import { Button } from "@/ui/primitivas/button";
 import { MoneyText } from "@/ui/primitivas/money";
+import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
 import { ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import { queryKeys } from "@/shared/data/query-keys";
 import { getAccountDetail } from "@/shared/api/money";
 import { accountTypeLabels } from "@/shared/copy/money-copy";
 import { AdjustBalanceDialog } from "../../adjust-balance-dialog";
+import { loadAccountBalanceProvenance } from "../../balance-provenance";
 import { AccountRecentMovements } from "./account-recent-movements";
 
 /** SCR-CUENTAS-02: detalle de cuenta. */
@@ -35,6 +37,7 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
 
   const { account, free_balance, boxes } = query.data;
   const isNegative = account.current_balance < 0;
+  const currency = account.currency === "USD" ? "USD" : "PEN";
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
@@ -56,11 +59,23 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
           </Button>
         </div>
 
-        <MoneyText
-          value={account.current_balance}
-          currency={account.currency === "USD" ? "USD" : "PEN"}
-          className="mt-4 block text-3xl font-heading font-semibold"
-        />
+        <MoneyWithProvenance
+          ariaLabel={`Ver de dónde sale este saldo de ${account.name}`}
+          loadProvenance={() =>
+            loadAccountBalanceProvenance({
+              accountId: account.id,
+              currentBalance: account.current_balance,
+              initialBalance: account.initial_balance,
+              currency,
+            })
+          }
+        >
+          <MoneyText
+            value={account.current_balance}
+            currency={currency}
+            className="mt-4 block text-3xl font-heading font-semibold"
+          />
+        </MoneyWithProvenance>
 
         {isNegative ? (
           <div className="mt-3 flex items-start gap-2 rounded-lg border border-error-subtle bg-error-subtle/40 px-3 py-2 text-sm text-error-on-subtle">
@@ -73,19 +88,13 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
           <div>
             <dt className="text-xs font-medium text-text-muted">Saldo inicial</dt>
             <dd className="mt-1 text-sm text-text">
-              <MoneyText
-                value={account.initial_balance}
-                currency={account.currency === "USD" ? "USD" : "PEN"}
-              />
+              <MoneyText value={account.initial_balance} currency={currency} />
             </dd>
           </div>
           <div>
             <dt className="text-xs font-medium text-text-muted">Libre en esta cuenta</dt>
             <dd className="mt-1 text-sm text-text">
-              <MoneyText
-                value={free_balance}
-                currency={account.currency === "USD" ? "USD" : "PEN"}
-              />
+              <MoneyText value={free_balance} currency={currency} />
             </dd>
           </div>
         </dl>
@@ -104,7 +113,7 @@ export function AccountDetailView({ accountId }: { accountId: string }) {
                 </Link>
                 <MoneyText
                   value={box.current_balance}
-                  currency={account.currency === "USD" ? "USD" : "PEN"}
+                  currency={currency}
                   className="text-sm"
                 />
               </li>

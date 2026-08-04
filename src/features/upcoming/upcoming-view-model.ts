@@ -126,6 +126,7 @@ export function buildUpcomingViewModel(
     month_count: monthCommitments.length,
     linked_box_count: financialItems.filter((item) => item.linked_box_id).length,
     pending_count: sections.pending.length,
+    month_items: monthCommitments,
   };
   const candidates = data.candidates
     .map((candidate) => toSuggestedCandidateViewModel(candidate, todayIso))

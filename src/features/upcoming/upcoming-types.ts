@@ -140,6 +140,9 @@ export type UpcomingSummary = {
   month_count: number;
   linked_box_count: number;
   pending_count: number;
+  /** `48` `RUL-AYUDA-01` — las filas exactas que suman `month_totals`, sin
+   * recalcular el filtro de mes en la procedencia. */
+  month_items: UpcomingViewItem[];
 };
 
 export type SuggestedCandidateViewModel = {

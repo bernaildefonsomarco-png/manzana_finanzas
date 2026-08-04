@@ -4,7 +4,9 @@ import { Plus, ArrowLeftRight } from "lucide-react";
 import { Card } from "@/ui/primitivas/card";
 import { Button } from "@/ui/primitivas/button";
 import { MoneyText } from "@/ui/primitivas/money";
+import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
 import { getMoneyHeroCopy } from "@/shared/copy/money-copy";
+import { buildFreeMoneyProvenance } from "@/shared/money/free-money-provenance";
 import type { MoneyDashboardResponse } from "@/shared/api/money-types";
 
 /** SCR-CUENTAS-01: cabecera con las cuatro capas (09 §2-3). */
@@ -30,11 +32,16 @@ export function HeroCard({
       {hasAccounts ? (
         <>
           <p className="text-sm font-medium text-text-secondary">Dinero libre</p>
-          <MoneyText
-            value={data.operational_free_money}
-            currency={data.base_currency}
-            className="mt-1 block text-4xl font-heading font-semibold"
-          />
+          <MoneyWithProvenance
+            ariaLabel={`Ver de dónde sale este dinero libre de ${data.operational_free_money}`}
+            loadProvenance={async () => buildFreeMoneyProvenance(data)}
+          >
+            <MoneyText
+              value={data.operational_free_money}
+              currency={data.base_currency}
+              className="mt-1 block text-4xl font-heading font-semibold"
+            />
+          </MoneyWithProvenance>
           {data.accounts.some((account) => account.currency === "USD") ? (
             <p className="mt-2 text-sm text-text-secondary">
               Dinero libre en dolares:{" "}

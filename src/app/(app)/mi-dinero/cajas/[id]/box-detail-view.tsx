@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/ui/primitivas/card";
 import { MoneyText } from "@/ui/primitivas/money";
+import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
 import { Progress } from "@/ui/primitivas/progress";
 import { ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import { queryKeys } from "@/shared/data/query-keys";
@@ -13,6 +14,7 @@ import type { BoxMoneySummary } from "@/shared/api/money-types";
 import { EditBoxDialog } from "../../edit-box-dialog";
 import { DeleteBoxDialog } from "../../delete-box-dialog";
 import { MoveMoneyDialog } from "../../move-money-dialog";
+import { loadBoxBalanceProvenance } from "../../balance-provenance";
 import { BoxDetailHeader } from "./box-detail-header";
 
 /** SCR-CUENTAS-03: detalle de caja. */
@@ -55,11 +57,18 @@ export function BoxDetailView({ boxId }: { boxId: string }) {
           onDelete={() => setDialog("delete")}
         />
 
-        <MoneyText
-          value={box.current_balance}
-          currency={currency}
-          className="mt-4 block text-3xl font-heading font-semibold"
-        />
+        <MoneyWithProvenance
+          ariaLabel={`Ver de dónde sale este apartado de ${box.name}`}
+          loadProvenance={() =>
+            loadBoxBalanceProvenance({ boxId: box.id, currentBalance: box.current_balance, currency })
+          }
+        >
+          <MoneyText
+            value={box.current_balance}
+            currency={currency}
+            className="mt-4 block text-3xl font-heading font-semibold"
+          />
+        </MoneyWithProvenance>
 
         {box.target_amount ? (
           <div className="mt-4">

@@ -92,6 +92,11 @@ export async function GET(request: Request) {
         `account_origin_id.eq.${query.account_id},account_destination_id.eq.${query.account_id}`
       );
     }
+    if (query.box_id) {
+      builder = builder.or(
+        `box_origin_id.eq.${query.box_id},box_destination_id.eq.${query.box_id}`
+      );
+    }
     // `AC-MOV-05`: busqueda de texto libre sobre comercio y descripcion.
     if (query.q) {
       builder = builder.textSearch("search_vector", query.q, {

@@ -217,6 +217,7 @@ export const ListMovementsQuerySchema = z
       .optional(),
     category_id: CategoryIdSchema.optional(),
     account_id: z.string().uuid().optional(),
+    box_id: z.string().uuid().optional(),
     from: z.string().datetime({ offset: true }).optional(),
     to: z.string().datetime({ offset: true }).optional(),
     // `AC-MOV-05`: la busqueda de texto libre siempre esta disponible.

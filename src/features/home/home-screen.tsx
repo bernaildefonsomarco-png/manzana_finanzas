@@ -24,7 +24,7 @@ import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
 import { ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import { getMoneyDashboard } from "@/shared/api/money";
 import { getHome, postponeNextAction, setHomeBlockHidden } from "./home-api";
-import { buildFreeMoneyProvenance } from "./free-money-provenance";
+import { buildFreeMoneyProvenance } from "@/shared/money/free-money-provenance";
 import type {
   HomeBlock,
   HomeBlockKind,

@@ -82,6 +82,8 @@ export type MovementsFilter = {
   from?: string;
   to?: string;
   category_id?: CategoryId;
+  account_id?: string;
+  box_id?: string;
   limit?: number;
 };
 
@@ -94,6 +96,8 @@ export async function listMovementsFiltered(filter: MovementsFilter): Promise<Mo
   if (filter.from) params.set("from", filter.from);
   if (filter.to) params.set("to", filter.to);
   if (filter.category_id) params.set("category_id", filter.category_id);
+  if (filter.account_id) params.set("account_id", filter.account_id);
+  if (filter.box_id) params.set("box_id", filter.box_id);
   params.set("limit", String(filter.limit ?? 100));
 
   const response = await fetch(`/api/v1/movements?${params.toString()}`, {
