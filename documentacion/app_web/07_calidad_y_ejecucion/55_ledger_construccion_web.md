@@ -233,6 +233,17 @@ brecha: `generar.ts` deja `estado` fijo en `"pendiente"` para toda fila
 así que esta tabla sigue siendo la única fuente de la cuenta real. Arreglar
 el generador es trabajo de un corte de mantenimiento, no de este.
 
+**`W-20` — pendiente de coordinación humana, no de código.** Los 19 cortes
+de construcción están cerrados; `W-20` no construye (`54` §7.2): es correr
+el protocolo `USER` de `49` §8 (tres personas reales, tarea sin ayuda) y
+abrir las series `METRIC` de `49` §9 sobre los 135 criterios `G3`.
+`RUL-HECHO-05` es explícito: ese cierre no lo puede declarar quien escribió
+el código. El material de apoyo —los 135 criterios `G3` con su enunciado,
+agrupados por corte y separados por protocolo— está generado en
+[`55c_w20_checklist_g3.md`](./55c_w20_checklist_g3.md)
+(`npm run matriz:listar-g3`); las sesiones y series reales, cuando ocurran,
+se registran como nuevas entradas en este documento.
+
 ---
 
 ## 7. Entradas
