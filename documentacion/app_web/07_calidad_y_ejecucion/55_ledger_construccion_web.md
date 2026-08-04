@@ -822,7 +822,7 @@ No hubo sesiones `USER` ni serie `METRIC`.
 cohorte `METRIC` (mismo patrón que todos los cortes desde `W-14`).
 **Matriz regenerada:** 2026-08-03, con `npm run matriz:generar` (1553
 identificadores, sin cambios de censo: no se creó ningún criterio nuevo);
-hash del commit sustantivo: `PENDIENTE`.
+hash del commit sustantivo: `cc8a97d`.
 
 ### Qué se entregó
 
