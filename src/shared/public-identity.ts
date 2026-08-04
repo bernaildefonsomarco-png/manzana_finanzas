@@ -57,10 +57,15 @@ export const publicIdentity = {
     ],
     DEFAULT_PUBLIC_URL
   ),
+  // `45` `RUL-CONF-09`: las páginas legales llevan versión y fecha. Se
+  // actualiza al revisar el contenido, no en cada despliegue — `W-18`
+  // corrigió `/privacidad` (Limited Use, `C-16`) y `/eliminar-datos`
+  // (`C-14`), así que esta es la fecha de esa revisión.
   policyEffectiveDate: fromEnv(
     ["NEXT_PUBLIC_MANZANA_POLICY_EFFECTIVE_DATE"],
-    "10 de junio de 2026"
+    "3 de agosto de 2026"
   ),
+  policyVersion: fromEnv(["NEXT_PUBLIC_MANZANA_POLICY_VERSION"], "2026-08-03"),
 };
 
 const pendingMarkers = ["pendiente", "por configurar"];

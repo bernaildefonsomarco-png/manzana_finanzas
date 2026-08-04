@@ -77,6 +77,13 @@ export const LISTA_BLANCA_PERMANENTE: EntradaLista[] = [
       "que ningún cliente puede escribir directo. El `userId` se toma del cliente autenticado antes de la escritura de " +
       "`service_role`, mismo patrón que `v1/exports/*/link` (`39` §4.2, `RUL-HOME-06`, `WEB-D064`).",
   },
+  {
+    patron: "v1/auth/attempt",
+    justificacion:
+      "Límite de intentos de autenticación (`43` `RUL-AUTH-06`, `WEB-D181`, `WEB-D272`): se llama antes de que exista " +
+      "sesión (entrar, registrarse, recuperar, reenviar), así que no hay cliente autenticado que usar. El RPC " +
+      "`check_and_increment_rate_limit` (migración `047`) además está revocado de `authenticated`/`anon` a propósito.",
+  },
 ];
 
 const MIGRA_CON_CONTRATOS_DE_API =

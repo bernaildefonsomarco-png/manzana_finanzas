@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
+import { getExperiencePreferences } from "@/data/repositories/experience-preferences.repository";
 import { createClient } from "@/data/supabase/server";
 import { DiscreetModeProvider } from "@/shared/privacy/discreet-mode-context";
+import { DEFAULT_PREFERENCES } from "@/shared/privacy/experience-preferences-client";
 import { ModalAccessibilityGuard } from "@/shared/accessibility/modal-accessibility-guard";
 import { QueryClientProvider } from "@/shared/data/query-client-provider";
 import { AssistantProvider } from "./asistente/assistant-context";
@@ -22,9 +24,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   if (!user) redirect("/entrar");
 
+  // `45` `RUL-CONF-03`/`AC-CONF-04`: leído en el servidor para que el primer
+  // render ya oculte los montos si corresponde, sin parpadeo (`C-04`). Un
+  // fallo aquí no debe bloquear la navegación: el cliente reintenta y, hasta
+  // entonces, el valor por defecto es "no discreto" — el mismo riesgo que ya
+  // aceptaba el `fetch` de cliente que este código reemplaza.
+  const initialPreferences = await getExperiencePreferences(supabase, user.id).catch(
+    () => DEFAULT_PREFERENCES,
+  );
+
   return (
     <QueryClientProvider>
-      <DiscreetModeProvider>
+      <DiscreetModeProvider initialPreferences={initialPreferences}>
         <ModalAccessibilityGuard />
         <AssistantProvider>
           {children}

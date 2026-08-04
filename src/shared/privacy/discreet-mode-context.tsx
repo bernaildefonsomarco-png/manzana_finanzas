@@ -47,12 +47,29 @@ const DiscreetModeContext = createContext<DiscreetModeContextValue>({
 // `AC-PAT-01`: la carga usa la librería de obtención de datos elegida en
 // `W-07` (TanStack Query), no un `useEffect` con bandera de cancelación a
 // mano — esta era la última infractora fuera de `src/features/**`.
-export function DiscreetModeProvider({ children }: { children: ReactNode }) {
+//
+// `45` `RUL-CONF-03`/`AC-CONF-04`: el modo discreto se lee en el servidor y
+// se aplica al renderizar, sin ningún instante con montos visibles. Antes de
+// este corte, `query.data` era `undefined` en el primer render y todo el
+// árbol veía `DEFAULT_PREFERENCES.discreet_mode_enabled = false` hasta que
+// el `fetch` del cliente resolvía — exactamente el parpadeo que `C-04`
+// describe. `initialPreferences` lo cierra: el layout de `(app)` (Server
+// Component) ya leyó la preferencia real antes de enviar el HTML, y aquí se
+// usa como `initialData`, así que el primer render — servidor e
+// hidratación — ya muestra el valor correcto.
+export function DiscreetModeProvider({
+  children,
+  initialPreferences,
+}: {
+  children: ReactNode;
+  initialPreferences?: ExperiencePreferences;
+}) {
   const query = useQuery({
     queryKey: queryKeys.preferences,
     queryFn: () => requestExperiencePreferences(),
+    ...(initialPreferences ? { initialData: initialPreferences } : {}),
   });
-  const preferences = query.data ?? DEFAULT_PREFERENCES;
+  const preferences = query.data ?? initialPreferences ?? DEFAULT_PREFERENCES;
 
   useEffect(() => {
     applyThemePreference(preferences.theme_preference);

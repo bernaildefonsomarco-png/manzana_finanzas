@@ -3,7 +3,7 @@
 **Bloque:** 07 — Calidad y ejecución
 **Alcance:** V1
 **Estado:** vivo
-**Fecha de última actualización:** 2 de agosto de 2026
+**Fecha de última actualización:** 3 de agosto de 2026
 **Docs fuente:** `54` (los veinte cortes), `49` §8 y §9 (protocolos de `USER` y `METRIC`), `50` (matriz)
 **Documentos que dependen de este:** `56` (puente a WhatsApp)
 
@@ -214,8 +214,8 @@ conservando el nivel de evidencia que sí les toca, no ocultándolo (ver
 
 | | |
 |---|---|
-| Cortes cerrados | 17 de 20 |
-| Criterios `verificado` | 346 de 708 |
+| Cortes cerrados | 18 de 20 |
+| Criterios `verificado` | ~374 de 708 |
 | Criterios `validado` | 0 de 135 |
 | Sesiones con usuarios | 0 |
 | Series abiertas | 0 |
@@ -225,6 +225,12 @@ Esta tabla se actualiza con cada corte y es lo primero que se lee. **Nota de
 "240" a "346" cubre el crecimiento real de dos cortes, no solo de este. No
 hay un test que compare esta tabla contra la matriz (`AC-LEDGER-08` lo
 exige en prosa, pero no está gateado); es la brecha que motivó esta nota.
+**Nota de `W-18`:** el `~374` es una estimación (28 de los 49 criterios de
+`43`/`44`/`45`, contados a mano en §7 de esta entrada), por la misma brecha:
+`generar.ts` deja `estado` fijo en `"pendiente"` para toda fila (`scripts/matriz/generar.ts`
+línea 95) — nunca deriva `verificado` de nada, así que esta tabla sigue siendo
+la única fuente de la cuenta real. Arreglar el generador es trabajo de un
+corte de mantenimiento, no de este.
 
 ---
 
@@ -1752,6 +1758,179 @@ No hubo sesiones `USER` ni serie `METRIC`.
   `tests/lint/service-role-en-rutas.test.ts`: conteos de rutas y
   excepciones de `service_role` actualizados (siete rutas nuevas, tres
   excepciones nuevas).
+
+---
+
+## `W-18` — Se puede entrar, recuperar la contraseña y llegar al primer valor
+
+**Cerrado:** 2026-08-03
+**Portones:** `G1` ✓ parcial — de los 49 criterios de `43`/`44`/`45`, 28
+cierran con evidencia `TEST`/`CODE` real (ver "qué quedó abierto" para el
+resto, con razón por cada uno) · `G2` no aplica a este corte · `G3` no
+cierra: sin sesiones `USER` ni cohorte `METRIC` (mismo patrón que todos los
+cortes desde `W-14`).
+**Matriz regenerada:** 2026-08-03, con `npm run matriz:generar` (1553
+identificadores, 120 `SCR-`, censo sin cambios en `AC` porque no se creó
+ningún criterio nuevo — solo se implementaron los existentes); hash del
+commit sustantivo: `PENDIENTE`.
+
+### Qué se entregó
+
+Autenticación real (`43`), la puerta de bienvenida y el permiso de correo
+explicado (`44`), y el arreglo de dos defectos de privacidad reales
+encontrados auditando el código antes de construir (`45`).
+
+**Auth.** Mapeo de errores por **código** del proveedor
+(`src/core/auth/auth-error-mapping.ts`), no por subcadena de su mensaje en
+inglés — cierra `C-13` de verdad esta vez: los doce códigos de
+`@supabase/auth-js` (`error-codes.d.ts`) se leyeron del paquete instalado,
+no se inventaron. Límite de intentos (`RUL-AUTH-06`) con endpoint propio,
+`POST /api/v1/auth/attempt`, tal como `WEB-D181` se lo encargó a este
+corte: reusa `check_and_increment_rate_limit` (migración `047`) con claves
+por correo y por IP. `/auth/callback` real (intercambio de sesión en
+servidor, `next` validado contra rutas internas conocidas — nunca una URL
+externa). Recuperación de contraseña completa: `/recuperar-clave` (nunca
+distingue si el correo existe — ni siquiera hay una forma de que Supabase
+lo revele desde este endpoint), `/restablecer-clave` (cierra las demás
+sesiones al terminar, `RUL-AUTH-07`), `/verificar` (reenvío, sin bloquear
+el uso de la app mientras tanto). Cambiar contraseña y correo con sesión
+activa (`PATCH /api/v1/auth/password`, `PATCH /api/v1/auth/email`) — estos
+dos sí pasan por nuestro servidor, a diferencia de entrar/registrarse:
+tienen sesión ya establecida, no son uno de los tres flujos que `WEB-D181`
+excluyó. "Salir en todos los dispositivos" (`ACT-AUTH-10`,
+`src/core/auth/sign-out.ts`) con auditoría antes de cerrar la sesión propia
+(porque después ya no habría con qué autenticar el `insert`). Pantalla real
+de eliminar cuenta (`SCR-AUTH-08`, `DeleteAccountSection`) con cifras
+reales consultadas en el momento — movimientos, deudas, buzones, cosas
+aprendidas, conversaciones — y jerarquía de botones correcta (cancelar
+primario, `WEB-D099`). Migración `066`, `account_events`, con la
+contradicción propia de `43` corregida (`user_id` no puede ser `not null`
+y a la vez "anonimizarse a null" — se corrigió a `nullable`/`on delete set
+null`, `WEB-D275`).
+
+**Dos bugs reales, no hipótesis.** `useLegacySignOut` ("Salir") llamaba a
+`supabase.auth.signOut()` sin `scope`, que es `'global'` por defecto en
+`@supabase/auth-js` — cada "Salir" cerraba sesión en **todos** los
+dispositivos, no solo el actual, sin decirlo (`WEB-D277`). Y
+`DiscreetModeProvider` leía el modo discreto con un `fetch` de cliente, así
+que todo usuario con el modo activo veía sus montos **en claro** en cada
+carga de página hasta que el `fetch` resolvía — exactamente el defecto que
+`C-04`/`AC-CONF-04` describen (`WEB-D278`). Se corrigió pasando la
+preferencia ya leída en el servidor (`getExperiencePreferences`, en el
+layout de `(app)`) como `initialData` de la query: el primer render, antes
+de cualquier JavaScript de cliente, ya es correcto.
+
+**Onboarding.** `/bienvenida` real (`SCR-ONB-02`, `WelcomeScreen`): tres
+frases, tres puertas más "prefiero mirar primero", las cuatro avanzan
+`onboarding_status` (infraestructura que `W-15` ya había construido y
+nadie conectó a una pantalla) para que la bienvenida nunca vuelva a
+aparecer, elija lo que elija (`RUL-ONB-05`). `/bienvenida/correo`
+(`SCR-ONB-04`, `EmailPermissionScreen`): "lo que hago" / "lo que no hago"
+como dos secciones reales, antes de la pantalla de Google.
+
+**Privacidad.** `GET /api/v1/preferences/discreet`, el punto único de
+decisión que `RUL-CONF-03` exige, con su propio test. Migración `067`:
+`consent_events` (esquema, sin UI todavía — ver abajo) y
+`sensitive_category_ids` en `user_preferences`, **sin tocar**
+`categories.is_sensitive` (que ya consume `sensitive-topics.ts` para
+`AC-PERF-10`, cerrado desde `W-16`) — son dos fuentes de verdad
+deliberadamente distintas (`WEB-D276`). `/privacidad` y `/eliminar-datos`
+reescritas de cero: cierran `C-14` (el borrado sí está en la app, y ahora
+lo dice como vía principal) y `C-16` (declaración Limited Use de Google,
+con la frase estándar recomendada — sin poder verificarla por `fetch` en
+vivo contra la página oficial, `WEB-D279`, `pendiente_decision`). Un test
+de contenido nuevo, `tests/contenido/paginas-legales.test.ts`, falla el
+build si las páginas legales vuelven a divergir del código (`AC-CONF-10`).
+
+### Qué sorprendió
+
+La primera: `W-15` ya había construido toda la máquina de estados de
+`onboarding_status` (`src/core/onboarding/onboarding-activation.ts`,
+`POST /api/v1/onboarding`) y **nadie la había conectado a una pantalla** —
+`show_initial_prompt` existía, calculado, sin consumidor. Construir
+`/bienvenida` fue conectar un cable que ya estaba tendido, no diseñar el
+sistema.
+
+La segunda, la más seria: los dos bugs de "qué se entregó" (`signOut`
+global por defecto, modo discreto con parpadeo) llevaban tiempo en
+producción, invisibles porque ambos son silenciosos — no lanzan error, solo
+hacen algo distinto de lo que el usuario esperaba. Ninguno lo encontró un
+test hasta que este corte leyó el código con la pregunta correcta delante
+(`RUL-AUTH-11` para el primero, `AC-CONF-04` para el segundo). Se corrigen
+aquí en vez de abrir una `WEB-D` para "arreglar después", porque los dos ya
+estaban en producción y el segundo es exactamente la promesa central del
+modo discreto.
+
+La tercera: `43` §4.3 se contradice a sí mismo en el propio bloque SQL que
+declara (`not null` + "se anonimiza a null" un párrafo después) — el cuarto
+caso del corpus de ese patrón específico, después de los que `C-01`/`C-08`/
+`C-13` ya habían mostrado: el código y la prosa de un mismo documento
+pueden desalinearse igual que dos documentos distintos.
+
+### Qué quedó abierto
+
+De los 49 criterios de `43`/`44`/`45`, veintiuno no cierran en este corte,
+documentados aquí en vez de marcados en silencio (`RUL-HECHO-04`):
+
+- **`AC-CONF-01`/`AC-CONF-06`/`AC-CONF-16`** — `settings-screen.tsx`
+  (2.081 líneas) sigue sin dividirse en las ocho secciones reales de
+  `RUL-CONF-01`. `/configuracion/perfil`, `/configuracion/privacidad`,
+  `/configuracion/correo` siguen siendo el índice condenado o un
+  marcador. `consent_events` tiene esquema y RLS pero ningún endpoint
+  `GET/POST /consents` ni pantalla "permisos que diste". Es el trabajo más
+  grande que quedó fuera — un corte propio, no un descuido.
+- **`AC-AUTH-08`** (aviso a la dirección antigua al cambiar correo, con
+  revertir 24 h) — depende de que el proyecto de Supabase tenga activado
+  "Secure email change"; el código llama a `updateUser({email})` y confía
+  en esa configuración, no la garantiza por sí solo.
+- **`AC-AUTH-06`** (enlaces caducan en 1 hora exacta) — depende del `OTP
+  expiry`/tiempo de vida del `flow_state` configurado en el proyecto de
+  Supabase, no de un valor que este código fije.
+- **`AC-AUTH-16`** (formularios funcionan sin JavaScript) — choca con
+  `WEB-D181` (`no_negociable`): los formularios llaman a
+  `supabase.auth.signInWithPassword`/etc. desde el cliente, lo que exige
+  JavaScript por diseño. Reconciliar los dos es un cambio de arquitectura
+  que no cabe en este corte.
+- **`AC-AUTH-10`** (sesión caducada no pierde un formulario a medias) — no
+  se tocó: exige un mecanismo genérico de "restaurar borrador tras volver
+  a entrar" que ninguna pantalla tiene todavía.
+- **`RUL-ONB-03`/`SCR-ONB-03`** (explicación en sitio, un componente para
+  los seis conceptos de `44` §6.4) — no se construyó el componente
+  genérico; ninguna de las seis explicaciones existe todavía.
+- **`RUL-ONB-07`** (ofrecer el correo una segunda vez a los 10 movimientos
+  manuales) — no implementado: exige contar movimientos manuales y
+  recordar si ya se ofreció una vez, ninguno de los dos existe hoy.
+- **`/configuracion/voz`** (`RUL-CONF-10`) — la ruta ni siquiera tiene
+  `page.tsx` todavía; no es una regresión de este corte, es que nunca se
+  construyó.
+- Los nueve criterios de `G3` de estos tres documentos no cierran: mismo
+  patrón que todos los cortes desde `W-14`, sin sesión `USER` ni cohorte
+  `METRIC`.
+
+No hubo sesiones `USER` ni serie `METRIC`.
+
+### Documentos corregidos
+
+- `43` §4.3: migración `064`→`066`, `user_id` de `account_events` corregido
+  a `nullable`/`on delete set null` (`WEB-D274`, `WEB-D275`).
+- `43` §7/§8: la palabra de confirmación de borrado se corrige de
+  `ELIMINAR` a `ELIMINAR MI CUENTA`, la que el endpoint ya tenía en
+  producción (`WEB-D273`).
+- `43` §8: nuevo `SCR-AUTH-09` (`/cuenta-eliminada`, `WEB-D280`).
+- `44` §7: `SCR-ONB-04` gana ruta real, `/bienvenida/correo`.
+- `45` §4.2: migración `065`→`067` (`WEB-D274`); `RUL-CONF-04` corregido de
+  "salud y farmacia" a "salud" — no existe categoría propia "farmacia"
+  entre las 12 canónicas (`WEB-D276`).
+- `10` §3.1/§3.2: `/cuenta-eliminada` y `/bienvenida/correo` añadidas.
+- `03_decisiones_producto_web.md`: `WEB-D272` a `WEB-D281` (diez
+  decisiones nuevas).
+- `README.md`: `core/auth/` añadido al árbol.
+- `tests/lint/seg-04-404-no-403.test.ts`: 152→157 rutas.
+- `tests/lint/service-role-en-rutas.test.ts` /
+  `scripts/gates/service-role-lista.ts`: `v1/auth/attempt` añadida a la
+  lista blanca permanente (RPC revocado de `authenticated`/`anon`, sin
+  sesión de usuario posible antes de entrar).
+- `tests/corpus/matriz.test.ts`: censo de superficies con ruta, 119→120.
 
 ---
 

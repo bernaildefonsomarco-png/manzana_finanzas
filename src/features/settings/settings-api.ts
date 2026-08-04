@@ -414,6 +414,22 @@ export async function deleteUserAccount(
   });
 }
 
+export type AccountDeletionImpact = {
+  movements: number;
+  debts: number;
+  email_connections: number;
+  learned_things: number;
+  conversations: number;
+};
+
+// `43` `SCR-AUTH-08` — cifras reales antes de confirmar el borrado.
+export async function getAccountDeletionImpact(): Promise<AccountDeletionImpact> {
+  const result = await requestSettings<{ impact: AccountDeletionImpact }>(
+    "/api/v1/privacy/account",
+  );
+  return result.impact;
+}
+
 export async function getLearningSnapshot(): Promise<LearningSnapshot> {
   return requestSettings<LearningSnapshot>("/api/v1/memory");
 }

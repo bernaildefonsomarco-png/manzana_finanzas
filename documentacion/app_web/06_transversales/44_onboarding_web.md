@@ -267,7 +267,7 @@ secundaria — que es lo que este documento elimina.
 | `SCR-ONB-01` | Estado vacío del Inicio | `/inicio` — es `39` `SCR-HOME-02` |
 | `SCR-ONB-02` | Bienvenida tras el primer acceso | `/bienvenida` |
 | `SCR-ONB-03` | Explicación en sitio | Componente |
-| `SCR-ONB-04` | Permiso de correo explicado | Antes de Google |
+| `SCR-ONB-04` | Permiso de correo explicado | `/bienvenida/correo` |
 
 ### `SCR-ONB-02` — Bienvenida
 

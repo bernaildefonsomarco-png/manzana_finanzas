@@ -26,6 +26,7 @@ export const PUBLIC_PATHS = [
   "/recuperar-clave",
   "/restablecer-clave",
   "/verificar",
+  "/cuenta-eliminada",
   "/auth/callback",
   "/baja",
   "/estado",

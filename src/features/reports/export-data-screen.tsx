@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { Button } from "@/ui/primitivas/button";
 import { ErrorState, LoadingBlock } from "@/ui/primitivas/states";
+import { DeleteAccountSection } from "./delete-account-section";
 import { getExportLink, listExports, requestExport, type ExportJob } from "./reports-api";
 
 type Props = { onSignOut?: () => void; onNavigate?: (view: AppView) => void };
@@ -114,6 +115,8 @@ export function ExportDataScreen(props: Props) {
             </ul>
           ) : null}
         </section>
+
+        <DeleteAccountSection />
       </main>
     </AppShell>
   );

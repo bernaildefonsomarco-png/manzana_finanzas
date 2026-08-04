@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { exportUserData } from "./privacy.repository";
+import { exportUserData, getAccountDeletionImpact } from "./privacy.repository";
 
 describe("exportUserData", () => {
   it("incluye los datos de W-12 y los limita al usuario autenticado", async () => {
@@ -81,6 +81,79 @@ describe("exportUserData", () => {
     ]) {
       expect(queries.get(table)?.eq).toHaveBeenCalledWith("user_id", "user-1");
     }
+  });
+});
+
+describe("getAccountDeletionImpact — 43 SCR-AUTH-08: cifras reales antes de eliminar", () => {
+  function countQuery(count: number) {
+    const query = {
+      select: vi.fn(),
+      eq: vi.fn(),
+      is: vi.fn(),
+      then: (
+        onfulfilled?: (value: { count: number; error: null }) => unknown,
+        onrejected?: (reason: unknown) => unknown,
+      ) => Promise.resolve({ count, error: null }).then(onfulfilled, onrejected),
+    };
+    query.select.mockReturnValue(query);
+    query.eq.mockReturnValue(query);
+    query.is.mockReturnValue(query);
+    return query;
+  }
+
+  it("cuenta movimientos y deudas activos, buzones, aprendido y conversaciones, todo por user_id", async () => {
+    const counts: Record<string, number> = {
+      movements: 1847,
+      debts: 3,
+      email_connections: 2,
+      financial_memory_items: 37,
+      assistant_threads: 5,
+    };
+    const queries = new Map<string, ReturnType<typeof countQuery>>();
+    const from = vi.fn((table: string) => {
+      const query = countQuery(counts[table] ?? 0);
+      queries.set(table, query);
+      return query;
+    });
+
+    const impact = await getAccountDeletionImpact({ from } as never, "user-1");
+
+    expect(impact).toEqual({
+      movements: 1847,
+      debts: 3,
+      email_connections: 2,
+      learned_things: 37,
+      conversations: 5,
+    });
+    expect(queries.get("movements")?.eq).toHaveBeenCalledWith("user_id", "user-1");
+    expect(queries.get("movements")?.is).toHaveBeenCalledWith("deleted_at", null);
+    expect(queries.get("debts")?.is).toHaveBeenCalledWith("deleted_at", null);
+    expect(queries.get("email_connections")?.eq).toHaveBeenCalledWith("user_id", "user-1");
+  });
+
+  it("un count nulo (tabla vacía) no rompe: cae a cero", async () => {
+    const from = vi.fn(() => {
+      const query = {
+        select: vi.fn(),
+        eq: vi.fn(),
+        is: vi.fn(),
+        then: (onfulfilled?: (value: { count: null; error: null }) => unknown) =>
+          Promise.resolve({ count: null, error: null }).then(onfulfilled),
+      };
+      query.select.mockReturnValue(query);
+      query.eq.mockReturnValue(query);
+      query.is.mockReturnValue(query);
+      return query;
+    });
+
+    const impact = await getAccountDeletionImpact({ from } as never, "user-1");
+    expect(impact).toEqual({
+      movements: 0,
+      debts: 0,
+      email_connections: 0,
+      learned_things: 0,
+      conversations: 0,
+    });
   });
 });
 

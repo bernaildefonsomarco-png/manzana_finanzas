@@ -50,6 +50,7 @@ export const queryKeys = {
     all: ["descubrimientos"] as const,
   },
   preferences: ["preferencias"] as const,
+  onboarding: ["onboarding"] as const,
   assistant: {
     threads: ["asistente", "hilos"] as const,
     thread: (id: string) => ["asistente", "hilos", id] as const,

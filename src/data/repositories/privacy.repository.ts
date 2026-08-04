@@ -364,6 +364,56 @@ export async function exportUserData(
   };
 }
 
+export type AccountDeletionImpact = {
+  movements: number;
+  debts: number;
+  email_connections: number;
+  learned_things: number;
+  conversations: number;
+};
+
+// `43` `SCR-AUTH-08` — "cifras reales, consultadas en ese momento" (§8):
+// un texto genérico ("todos tus datos") no comunica nada. Cinco conteos,
+// no seis: la sexta línea del mockup ("Todas tus conversaciones") no lleva
+// número en el diseño, así que se resume junto a `conversations`.
+export async function getAccountDeletionImpact(
+  client: Client,
+  userId: string,
+): Promise<AccountDeletionImpact> {
+  const [movements, debts, emailConnections, learnedThings, conversations] = await Promise.all([
+    client
+      .from("movements")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .is("deleted_at", null),
+    client
+      .from("debts")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .is("deleted_at", null),
+    client
+      .from("email_connections")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId),
+    client
+      .from("financial_memory_items")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId),
+    client
+      .from("assistant_threads")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId),
+  ]);
+
+  return {
+    movements: movements.count ?? 0,
+    debts: debts.count ?? 0,
+    email_connections: emailConnections.count ?? 0,
+    learned_things: learnedThings.count ?? 0,
+    conversations: conversations.count ?? 0,
+  };
+}
+
 export async function prepareUserAccountDeletion(
   client: Client,
   input: {

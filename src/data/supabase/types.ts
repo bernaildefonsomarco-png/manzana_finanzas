@@ -88,6 +88,33 @@ export type Database = {
         }
         Relationships: []
       }
+      account_events: {
+        Row: {
+          created_at: string
+          id: string
+          ip_hash: string | null
+          kind: Database["public"]["Enums"]["account_event_kind"]
+          user_agent_hash: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          ip_hash?: string | null
+          kind: Database["public"]["Enums"]["account_event_kind"]
+          user_agent_hash?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          ip_hash?: string | null
+          kind?: Database["public"]["Enums"]["account_event_kind"]
+          user_agent_hash?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       api_rate_limit_counters: {
         Row: {
           count: number
@@ -649,6 +676,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      consent_events: {
+        Row: {
+          created_at: string
+          detail: Json
+          granted: boolean
+          id: string
+          kind: Database["public"]["Enums"]["consent_kind"]
+          user_id: string
+          version: string
+        }
+        Insert: {
+          created_at?: string
+          detail?: Json
+          granted: boolean
+          id?: string
+          kind: Database["public"]["Enums"]["consent_kind"]
+          user_id: string
+          version: string
+        }
+        Update: {
+          created_at?: string
+          detail?: Json
+          granted?: boolean
+          id?: string
+          kind?: Database["public"]["Enums"]["consent_kind"]
+          user_id?: string
+          version?: string
+        }
+        Relationships: []
       }
       conversation_memory_states: {
         Row: {
@@ -3640,6 +3697,7 @@ export type Database = {
           nudge_opt_in: Json
           quiet_hours_end: string | null
           quiet_hours_start: string | null
+          sensitive_category_ids: string[]
           tone_style: string | null
           updated_at: string
           user_id: string
@@ -3654,6 +3712,7 @@ export type Database = {
           nudge_opt_in?: Json
           quiet_hours_end?: string | null
           quiet_hours_start?: string | null
+          sensitive_category_ids?: string[]
           tone_style?: string | null
           updated_at?: string
           user_id: string
@@ -3668,6 +3727,7 @@ export type Database = {
           nudge_opt_in?: Json
           quiet_hours_end?: string | null
           quiet_hours_start?: string | null
+          sensitive_category_ids?: string[]
           tone_style?: string | null
           updated_at?: string
           user_id?: string
@@ -5205,6 +5265,14 @@ export type Database = {
       }
     }
     Enums: {
+      account_event_kind:
+        | "creada"
+        | "verificada"
+        | "clave_cambiada"
+        | "clave_recuperada"
+        | "correo_cambiado"
+        | "sesiones_cerradas"
+        | "eliminacion_solicitada"
       account_type: "digital" | "banco" | "fisico" | "tarjeta"
       assistant_action_status:
         | "propuesta"
@@ -5217,6 +5285,12 @@ export type Database = {
       budget_period: "semanal" | "quincenal" | "mensual"
       budget_source: "manual" | "sugerido"
       budget_status: "activo" | "pausado" | "archivado"
+      consent_kind:
+        | "correo_gmail"
+        | "correo_saliente_recordatorio"
+        | "correo_saliente_resumen"
+        | "terminos"
+        | "privacidad"
       debt_direction: "i_owe" | "they_owe_me"
       debt_kind:
         | "personal"

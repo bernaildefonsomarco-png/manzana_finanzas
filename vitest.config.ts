@@ -37,6 +37,9 @@ const PATRON_DOM = [
   // de `(app)` literal: los parentesis son sintaxis de extglob para el
   // matcher de globs y un `(app)` sin escapar nunca hace match.
   "src/app/*/asistente/**/*.test.tsx",
+  // `W-18`: `useLegacySignOut` usa `renderHook` de React Testing Library
+  // (necesita `useRouter`), mismo patrón que el resto de esta lista.
+  "src/shared/legacy-nav/**/*.test.tsx",
 ];
 
 export default defineConfig({

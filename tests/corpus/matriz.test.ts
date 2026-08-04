@@ -156,13 +156,16 @@ describe("generador de la matriz de trazabilidad", () => {
     expect(documentosConId.size).toBeGreaterThan(0);
   });
 
-  it("AC-TRAZ-04 (agregado, WEB-D167): mide las 119 superficies sin exigir el cierre completo en W-01", () => {
+  it("AC-TRAZ-04 (agregado, WEB-D167): mide las superficies sin exigir el cierre completo en W-01", () => {
     // Este criterio no cierra en W-01 (50 §10, 54 W-01): su conjunto son las
-    // 119 SCR- y cada corte de modulo lo acerca al cerrar su propio G1. Lo
-    // que W-01 entrega es que el mecanismo mida bien, no que hoy de 119/119.
-    expect(matriz.superficies.total).toBe(119);
+    // SCR- del corpus y cada corte de modulo lo acerca al cerrar su propio
+    // G1. Lo que W-01 entrega es que el mecanismo mida bien, no una cifra
+    // fija — 119 al escribir 50, 120 desde que W-18 añadió `SCR-AUTH-09`
+    // (`/cuenta-eliminada`, `WEB-D280`). Lo que W-01 entrega es que el
+    // mecanismo mida bien.
+    expect(matriz.superficies.total).toBe(120);
     expect(matriz.superficies.conRuta).toBeGreaterThanOrEqual(37);
-    expect(matriz.superficies.conRuta + matriz.superficies.sinRuta.length).toBe(119);
+    expect(matriz.superficies.conRuta + matriz.superficies.sinRuta.length).toBe(120);
   });
 
   it("RUL-PLAN-04: los cuatro criterios con excepcion de cierre apuntan al corte correcto", () => {

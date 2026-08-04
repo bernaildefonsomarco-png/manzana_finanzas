@@ -68,6 +68,7 @@ regla queda derogada.**
 | `/privacidad`, `/terminos`, `/empresa`, `/contacto`, `/eliminar-datos` | Páginas legales | Ya existen. |
 | `/estado` | Estado del producto | Pública, sin sesión. `48` `SCR-AYUDA-06` (`50` §5.2). |
 | `/baja` | Baja de correo en un clic | Con `?t=<token>` firmado, sin sesión. `46` `SCR-MAIL-02` (`50` §5.2). |
+| `/cuenta-eliminada` | Despedida tras `ACT-AUTH-11` | Sin formulario de recuperación (`43` §12, "Cuenta recién eliminada"). Añadida en `W-18`: `43` no le daba ruta propia, solo describía el estado. |
 
 ### 3.2 Rutas de la aplicación (con sesión)
 
@@ -117,6 +118,7 @@ regla queda derogada.**
 | `/ayuda/[tema]` | Artículo | `48` (`50` §5.2) |
 | `/ayuda/contacto` | Contacto de soporte | `48` (`50` §5.2) |
 | `/bienvenida` | Onboarding | `ONBOARDING_*` |
+| `/bienvenida/correo` | Permiso de correo explicado, antes de Google | `44` `SCR-ONB-04` (añadida en `W-18`) |
 
 **Cambio relevante:** `/configuracion` se convierte en un índice con
 subrutas propias. Hoy es un único componente de 1.740 líneas

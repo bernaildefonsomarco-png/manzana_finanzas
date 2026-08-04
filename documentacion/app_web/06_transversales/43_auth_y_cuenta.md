@@ -341,6 +341,7 @@ restablecimiento y `/auth/callback` son nuevas y no tienen frame.
 | `SCR-AUTH-06` | Retorno de OAuth | `/auth/callback` |
 | `SCR-AUTH-07` | Cuenta y seguridad | `/configuracion/perfil` |
 | `SCR-AUTH-08` | Eliminar mi cuenta | `/configuracion/datos` |
+| `SCR-AUTH-09` | Despedida tras eliminar | `/cuenta-eliminada` |
 
 ### `SCR-AUTH-01` — Entrar
 

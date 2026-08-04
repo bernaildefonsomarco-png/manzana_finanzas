@@ -35,7 +35,13 @@ export function useLegacySignOut(): () => Promise<void> {
   return async () => {
     const { createClient } = await import("@/data/supabase/client");
     const supabase = createClient();
-    await supabase.auth.signOut();
+    // `43` `ACT-AUTH-09` ("Salir") es de este dispositivo, distinto de
+    // `ACT-AUTH-10` ("Salir en todos los dispositivos", `signOutAllDevices`
+    // en `@/core/auth/sign-out`). `signOut()` sin `scope` usa `'global'` por
+    // defecto en `@supabase/auth-js` — antes de esta corrección, cada
+    // "Salir" cerraba la sesión en **todos** los dispositivos sin decirlo:
+    // exactamente el defecto que `ACT-AUTH-10` existe para hacer explícito.
+    await supabase.auth.signOut({ scope: "local" });
     router.refresh();
   };
 }

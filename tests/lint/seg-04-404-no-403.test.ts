@@ -38,6 +38,15 @@
 // identificable y prueban aislamiento por alcance (WEB-D230); `postpone`
 // mapea "ajeno" a `REMINDER_FORBIDDEN` igual que `reminders/[id]/dismiss`,
 // del que reutiliza el mapeo de errores.
+// W-18 suma cinco (de 152 a 157): `auth/attempt`, `auth/events`,
+// `auth/password`, `auth/email`, `preferences/discreet`. Las cinco son
+// colecciones sin recurso identificable por `[id]` — `auth/attempt` y
+// `auth/events` (POST) no tienen sesión de otro usuario que confundir
+// (pre-sesión o siempre el propio `auth.uid()`); `auth/password`/`auth/email`
+// actúan siempre sobre la sesión propia; `preferences/discreet` es un
+// resolvedor de solo lectura sobre el propio usuario (`45` `RUL-CONF-03`).
+// Las cinco prueban aislamiento por alcance (mismo patrón que `WEB-D230`),
+// no por `id` ajeno.
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -56,11 +65,11 @@ function recorrer(directorio: string, acumulado: string[]): string[] {
   return acumulado;
 }
 
-describe("AC-SEG-04 (agregado): ninguna de las 152 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
+describe("AC-SEG-04 (agregado): ninguna de las 157 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
   const rutas = recorrer(RAIZ_V1, []);
 
-  it("el conjunto declarado tiene 152 rutas — si cambia, hay que revisar esta prueba", () => {
-    expect(rutas.length).toBe(152);
+  it("el conjunto declarado tiene 157 rutas — si cambia, hay que revisar esta prueba", () => {
+    expect(rutas.length).toBe(157);
   });
 
   it.each(rutas.map((rutaAbsoluta) => [relative(RAIZ_V1, rutaAbsoluta).split("\\").join("/"), rutaAbsoluta]))(

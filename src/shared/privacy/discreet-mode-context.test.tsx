@@ -9,6 +9,11 @@ function Probe() {
   return <span>tema:{theme}</span>;
 }
 
+function DiscreetProbe() {
+  const { discreet } = useDiscreetMode();
+  return <span>discreto:{String(discreet)}</span>;
+}
+
 function renderWithQueryClient(children: React.ReactNode) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={queryClient}>{children}</QueryClientProvider>);
@@ -64,6 +69,48 @@ describe("DiscreetModeProvider — tema manual", () => {
 
     await waitFor(() => expect(screen.getByText("tema:system")).toBeInTheDocument());
     expect(document.documentElement.dataset.theme).toBeUndefined();
+
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("DiscreetModeProvider — AC-CONF-04: sin parpadeo de montos visibles", () => {
+  it("con initialPreferences del servidor, el primer render ya es discreto (nunca 'false' antes del fetch)", () => {
+    // El fetch nunca resuelve dentro del test: si el primer render dependiera
+    // de él, `discreet` seguiría siendo `false` (DEFAULT_PREFERENCES).
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+
+    renderWithQueryClient(
+      <DiscreetModeProvider
+        initialPreferences={{
+          discreet_mode_enabled: true,
+          insights_whatsapp_opt_in: false,
+          weekly_summary_enabled: false,
+          weekly_summary_channel: "dashboard",
+          theme_preference: "system",
+        }}
+      >
+        <DiscreetProbe />
+      </DiscreetModeProvider>
+    );
+
+    // Sin `await`/`waitFor`: se comprueba el primer render síncrono, antes
+    // de que el `fetch` (que nunca resuelve) tenga oportunidad de correr.
+    expect(screen.getByText("discreto:true")).toBeInTheDocument();
+
+    vi.unstubAllGlobals();
+  });
+
+  it("RUL-HECHO-02: sin initialPreferences, el primer render es 'false' hasta que el fetch resuelve (el parpadeo que AC-CONF-04 prohíbe)", () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise(() => {})));
+
+    renderWithQueryClient(
+      <DiscreetModeProvider>
+        <DiscreetProbe />
+      </DiscreetModeProvider>
+    );
+
+    expect(screen.getByText("discreto:false")).toBeInTheDocument();
 
     vi.unstubAllGlobals();
   });
