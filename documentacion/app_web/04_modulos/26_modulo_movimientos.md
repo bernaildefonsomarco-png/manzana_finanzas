@@ -419,8 +419,8 @@ El cliente **no envía** `affects_total_balance`, `affects_account_balance`,
 |---|---|
 | **Vacío** (sin ningún movimiento) | "Cuando registres algo, aparecerá aquí." + *Nuevo movimiento* + *Importar* |
 | **Sin resultados** (hay datos, el filtro no coincide) | "No encontré movimientos con esos filtros." + *Limpiar filtros* |
-| **Pocos** | Listado normal; sin totales comparativos que no tengan base |
-| **Muchos** | Cursor funcionando; el total del filtro visible |
+| **Pocos** (1–10, tramo `temprano` de `47` `RUL-VIDA-01`) | Listado normal; sin totales comparativos que no tengan base |
+| **Muchos** (11+, tramo `funcional` de `47` `RUL-VIDA-01`; cursor obligatorio desde 500, `RUL-VIDA-10`) | Cursor funcionando; el total del filtro visible |
 | **Cargando** | Esqueleto de 6 filas con la forma real |
 | **Cargando más** | Filas existentes visibles, indicador al pie |
 | **Error** | "No pude cargar tus movimientos. Tus datos siguen guardados." + reintentar |

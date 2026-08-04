@@ -407,9 +407,9 @@ se llama con `preview: true`: conteo real y muestra, sin escribir nada.
 | Estado | Qué se muestra |
 |---|---|
 | **Sin movimientos** | Las 12 categorías con S/0.00 y explicación de para qué sirven. No se presenta como fracaso |
-| **Pocos movimientos** | Categorías con datos; el resto atenuadas. Sin subcategorías todavía |
+| **Pocos movimientos** (1–10, tramo `temprano` de `47` `RUL-VIDA-01`) | Categorías con datos; el resto atenuadas. Sin subcategorías todavía |
 | **Con sin clasificar** | Aviso con conteo y acción de resolver: "Tienes 4 movimientos por clasificar" |
-| **Muchas subcategorías** | Agrupadas por categoría, ordenadas por uso, con búsqueda |
+| **Varias subcategorías** | Agrupadas por categoría, ordenadas por uso, con búsqueda disponible desde la primera — no hay un tramo que activarla, siempre está |
 | **Cargando** | Esqueleto con la forma de la lista |
 | **Error** | Mensaje en español con reintento |
 | **Modo discreto** | Los totales por categoría se ocultan; los nombres de categoría se mantienen |

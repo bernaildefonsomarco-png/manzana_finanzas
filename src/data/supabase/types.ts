@@ -1393,6 +1393,75 @@ export type Database = {
         }
         Relationships: []
       }
+      email_outbox: {
+        Row: {
+          attempts: number
+          created_at: string
+          discard_reason: string | null
+          id: string
+          idempotency_key: string
+          kind: Database["public"]["Enums"]["email_kind"]
+          last_error: string | null
+          scheduled_for: string
+          sent_at: string | null
+          status: Database["public"]["Enums"]["email_status"]
+          subject: string
+          template: string
+          user_id: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          discard_reason?: string | null
+          id?: string
+          idempotency_key: string
+          kind: Database["public"]["Enums"]["email_kind"]
+          last_error?: string | null
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["email_status"]
+          subject: string
+          template: string
+          user_id: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          discard_reason?: string | null
+          id?: string
+          idempotency_key?: string
+          kind?: Database["public"]["Enums"]["email_kind"]
+          last_error?: string | null
+          scheduled_for?: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["email_status"]
+          subject?: string
+          template?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      email_suppressions: {
+        Row: {
+          created_at: string
+          detail: string | null
+          reason: Database["public"]["Enums"]["suppression_reason"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          detail?: string | null
+          reason: Database["public"]["Enums"]["suppression_reason"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          detail?: string | null
+          reason?: Database["public"]["Enums"]["suppression_reason"]
+          user_id?: string
+        }
+        Relationships: []
+      }
       experience_preference_events: {
         Row: {
           actor_type: string
@@ -5307,6 +5376,8 @@ export type Database = {
         | "paid"
         | "cancelled"
         | "archived"
+      email_kind: "transaccional" | "notificacion"
+      email_status: "pendiente" | "enviado" | "rebotado" | "fallido" | "descartado"
       export_format: "csv" | "xlsx" | "pdf" | "json"
       export_kind: "movimientos" | "datos_completos" | "reporte"
       export_status:
@@ -5469,6 +5540,7 @@ export type Database = {
         | "cancelled"
         | "archived"
       risk_level: "low" | "medium" | "high" | "sensitive"
+      suppression_reason: "rebote_duro" | "queja" | "baja_total"
       template_origin: "usuario" | "sugerida"
       thread_status: "activo" | "archivado"
     }

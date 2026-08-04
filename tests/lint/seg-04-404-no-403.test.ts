@@ -47,6 +47,8 @@
 // resolvedor de solo lectura sobre el propio usuario (`45` `RUL-CONF-03`).
 // Las cinco prueban aislamiento por alcance (mismo patrón que `WEB-D230`),
 // no por `id` ajeno.
+// W-19 suma una (de 157 a 158): `support/contact` — sin recurso propio,
+// siempre sobre la sesión del propio usuario (`48` `RUL-AYUDA-09`).
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -65,11 +67,11 @@ function recorrer(directorio: string, acumulado: string[]): string[] {
   return acumulado;
 }
 
-describe("AC-SEG-04 (agregado): ninguna de las 157 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
+describe("AC-SEG-04 (agregado): ninguna de las 158 rutas de /api/v1 usa 403 para un recurso ajeno", () => {
   const rutas = recorrer(RAIZ_V1, []);
 
-  it("el conjunto declarado tiene 157 rutas — si cambia, hay que revisar esta prueba", () => {
-    expect(rutas.length).toBe(157);
+  it("el conjunto declarado tiene 158 rutas — si cambia, hay que revisar esta prueba", () => {
+    expect(rutas.length).toBe(158);
   });
 
   it.each(rutas.map((rutaAbsoluta) => [relative(RAIZ_V1, rutaAbsoluta).split("\\").join("/"), rutaAbsoluta]))(

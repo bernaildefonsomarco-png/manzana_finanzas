@@ -482,7 +482,7 @@ defecto que el verificador rechaza (`22` §2).
 | **Menos de 7 días con movimientos** | "Con unos días más de movimientos puedo decirte cómo vendría el cierre." Sin estimar |
 | **Con datos, sin compromisos** | Proyección solo por ritmo, declarando que no hay compromisos contados |
 | **Alta dispersión del gasto** | Rango en vez de número (`RUL-PROY-03`) |
-| **Periodo recién empezado** | Proyección con aviso de que el ritmo se basa en pocos días |
+| **Periodo recién empezado** (menos de 7 días, `RUL-PROY-04`) | Proyección con aviso de que el ritmo se basa en pocos días |
 | **Cargando** | Esqueleto con la forma del bloque |
 | **Error** | Mensaje en español con reintento; **nunca una proyección aproximada de respaldo** |
 | **Modo discreto** | La situación se muestra sin montos: "cubres tus compromisos" sin las cifras |

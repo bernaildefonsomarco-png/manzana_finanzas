@@ -32,6 +32,7 @@ export const PUBLIC_PATHS = [
   "/estado",
   "/api/health",
   "/api/webhooks/whatsapp",
+  "/api/webhooks/email",
 ];
 
 function isPublicPath(pathname: string) {

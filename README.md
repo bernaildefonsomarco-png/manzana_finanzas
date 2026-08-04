@@ -70,6 +70,7 @@ src/
     degradation/    # Los cuatro grados de degradación de `23` §7 (W-16)
     assistant/      # Puente síncrono web → motor de `41` (W-17, WEB-D263)
     auth/           # Mapeo de errores por código, auditoría de cuenta, cierre de sesión (43, W-18)
+    email-outbox/   # Política de envío, idempotencia, plantillas y token de baja (46, W-19)
     onboarding/, disclosure/, risk/, events/
     commands/, engines/, validators/  # vacías: marcador para el diseño de `core/` (documentacion/app_web/02_fundaciones/12)
   adapters/

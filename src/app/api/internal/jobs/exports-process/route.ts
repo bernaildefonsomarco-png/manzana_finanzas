@@ -12,6 +12,9 @@ import { finishWorkerJobRun, startWorkerJobRun } from "@/data/repositories/worke
 import { createServiceClient } from "@/data/supabase/server";
 import type { Database } from "@/data/supabase/types";
 import { buildMovementsCsv, exportFileName, type CsvMovementRow } from "@/core/reports/csv-export";
+import { buildEmailIdempotencyKey } from "@/core/email-outbox/idempotency-key";
+import { enqueueEmail } from "@/data/repositories/email-outbox.repository";
+import { isoDateInLima } from "@/shared/dates/lima";
 import { logger } from "@/shared/telemetry/logger";
 
 export const dynamic = "force-dynamic";
@@ -127,6 +130,21 @@ async function processExportJob(
       expires_at: expiresAt,
     })
     .eq("id", job.id);
+
+  // `46` `RUL-MAIL-01`: "Tu descarga está lista" es transaccional — sin
+  // opt-in, sin horario silencioso. Idempotente por trabajo y día: si este
+  // job se reintenta, no se manda un segundo correo (`RUL-MAIL-07`).
+  await enqueueEmail(client, {
+    userId: job.user_id,
+    kind: "transaccional",
+    template: "descarga_lista",
+    subject: "Tu descarga está lista",
+    idempotencyKey: buildEmailIdempotencyKey({
+      template: "descarga_lista",
+      subjectRef: `export:${job.id}`,
+      isoDate: isoDateInLima(),
+    }),
+  });
 }
 
 async function buildMovementsCsvContent(client: Client, userId: string): Promise<string> {
