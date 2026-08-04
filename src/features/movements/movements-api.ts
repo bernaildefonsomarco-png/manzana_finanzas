@@ -77,6 +77,41 @@ export async function listMovements(): Promise<Movement[]> {
   return payload.data.movements;
 }
 
+export type MovementsFilter = {
+  type?: MovementType;
+  from?: string;
+  to?: string;
+  category_id?: CategoryId;
+  limit?: number;
+};
+
+/** Mismo filtro que `GET /api/v1/movements` — usado para reconstruir las
+ * filas que componen un total ya agregado (procedencia, `48`), nunca para
+ * recalcular el agregado. */
+export async function listMovementsFiltered(filter: MovementsFilter): Promise<Movement[]> {
+  const params = new URLSearchParams();
+  if (filter.type) params.set("type", filter.type);
+  if (filter.from) params.set("from", filter.from);
+  if (filter.to) params.set("to", filter.to);
+  if (filter.category_id) params.set("category_id", filter.category_id);
+  params.set("limit", String(filter.limit ?? 100));
+
+  const response = await fetch(`/api/v1/movements?${params.toString()}`, {
+    credentials: "same-origin",
+  });
+
+  const payload = (await response.json()) as ApiResponse<{ movements: Movement[] }>;
+  if (!payload.ok) {
+    throw new ApiClientError(
+      payload.error.code,
+      payload.error.message,
+      response.status,
+      payload.meta?.trace_id ?? null
+    );
+  }
+  return payload.data.movements;
+}
+
 export async function createMovement(
   movement: CreateMovementPayload,
   options: { confirmDuplicate?: boolean } = {},

@@ -7,7 +7,9 @@ import { Card } from "@/ui/primitivas/card";
 import { MoneyText } from "@/ui/primitivas/money";
 import { EmptyState } from "@/ui/primitivas/states";
 import { BudgetMeter } from "@/ui/domain/budget-meter";
+import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
 import { periodTitle } from "./budget-options";
+import { buildBudgetPeriodSummaryProvenance, loadBudgetSpentProvenance } from "./budget-provenance";
 import type { BudgetView } from "./budgets-types";
 
 export function BudgetPeriodSummary({
@@ -30,7 +32,12 @@ export function BudgetPeriodSummary({
         <div>
           <dt className="text-xs text-text-muted">Gastado</dt>
           <dd className="mt-1 font-heading text-lg font-semibold">
-            <MoneyText value={spent} />
+            <MoneyWithProvenance
+              ariaLabel={`Ver de dónde sale este gastado de S/${spent.toFixed(2)}`}
+              loadProvenance={async () => buildBudgetPeriodSummaryProvenance(budgets, periodKind)}
+            >
+              <MoneyText value={spent} />
+            </MoneyWithProvenance>
           </dd>
         </div>
         <div>
@@ -76,6 +83,7 @@ export function BudgetList({
             amount={budget.amount}
             percentage={budget.percentage_exact}
             band={budget.band}
+            loadSpentProvenance={() => loadBudgetSpentProvenance(budget)}
           />
           {budget.rollover_amount > 0 ? (
             <p className="mt-3 text-xs text-text-muted">

@@ -4,34 +4,11 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
+import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
+import { CATEGORY_LABELS, EXCLUSION_LABELS, loadReportCategoryProvenance, loadReportTotalProvenance } from "./report-provenance";
 import { currentMonthValue, getReportPeriod, type ReportPeriod } from "./reports-api";
 
 type Props = { onSignOut?: () => void; onNavigate?: (view: AppView) => void };
-
-const CATEGORY_LABELS: Record<string, string> = {
-  alimentacion: "Alimentación",
-  transporte: "Transporte",
-  vivienda_hogar: "Vivienda y hogar",
-  servicios_suscripciones: "Servicios y suscripciones",
-  salud: "Salud",
-  educacion: "Educación",
-  ocio_salidas: "Ocio y salidas",
-  compras_personales: "Compras personales",
-  familia_apoyo: "Familia y apoyo",
-  deudas: "Deudas",
-  trabajo_productividad: "Trabajo y productividad",
-  otros: "Otros",
-};
-
-const EXCLUSION_LABELS: Record<string, string> = {
-  transferencia: "transferencias entre tus cuentas",
-  asignacion_interna: "asignaciones a cajas",
-  ajuste: "ajustes de saldo",
-  prestamo: "préstamos",
-  devolucion: "devoluciones",
-  pendiente_sin_confirmar: "pendientes que no has confirmado",
-  otra_moneda: "movimientos en otra moneda",
-};
 
 // SCR-REP-01 (35 §8): las dos primeras cifras son gasto e ingreso, en ese
 // orden. "No conté" arriba, junto al total. RUL-REP-08: no interpreta.
@@ -92,9 +69,14 @@ export function ReportsScreen(props: Props) {
         {state === "ready" && period && (period.gastoMovementCount > 0 || period.ingresoMovementCount > 0) ? (
           <>
             <div className="rounded-xl border border-border bg-bg-surface-raised p-5">
-              <p className="text-lg font-semibold text-text">
-                Gastaste S/{period.gastoTotal.toFixed(2)} en {period.gastoMovementCount} movimientos
-              </p>
+              <MoneyWithProvenance
+                ariaLabel={`Ver de dónde sale este gasto de S/${period.gastoTotal.toFixed(2)}`}
+                loadProvenance={() => loadReportTotalProvenance(period)}
+              >
+                <span className="text-lg font-semibold text-text">
+                  Gastaste S/{period.gastoTotal.toFixed(2)} en {period.gastoMovementCount} movimientos
+                </span>
+              </MoneyWithProvenance>
               <p className="mt-1 text-sm text-text-secondary">Te entraron S/{period.ingresoTotal.toFixed(2)}</p>
               {period.exclusions.length > 0 ? (
                 <p className="mt-3 text-xs text-text-secondary">
@@ -117,12 +99,22 @@ export function ReportsScreen(props: Props) {
                   </tr>
                 </thead>
                 <tbody>
-                  {period.byCategory.map((c) => (
-                    <tr key={c.category_id ?? "sin_categoria"} className="border-b border-border last:border-0">
-                      <td className="py-2 text-text">{c.category_id ? CATEGORY_LABELS[c.category_id] ?? c.category_id : "Sin categoría"}</td>
-                      <td className="py-2 text-right font-medium tabular-nums text-text">S/{c.total.toFixed(2)}</td>
-                    </tr>
-                  ))}
+                  {period.byCategory.map((c) => {
+                    const label = c.category_id ? (CATEGORY_LABELS[c.category_id] ?? c.category_id) : "Sin categoría";
+                    return (
+                      <tr key={c.category_id ?? "sin_categoria"} className="border-b border-border last:border-0">
+                        <td className="py-2 text-text">{label}</td>
+                        <td className="py-2 text-right font-medium tabular-nums text-text">
+                          <MoneyWithProvenance
+                            ariaLabel={`Ver de dónde sale este S/${c.total.toFixed(2)} de ${label}`}
+                            loadProvenance={() => loadReportCategoryProvenance(period, c)}
+                          >
+                            S/{c.total.toFixed(2)}
+                          </MoneyWithProvenance>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             ) : null}

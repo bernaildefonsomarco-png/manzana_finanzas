@@ -3,6 +3,8 @@
 import { useEffect, useId, useRef } from "react";
 import Link from "next/link";
 import { X } from "lucide-react";
+import { useDiscreetMode } from "@/shared/privacy/discreet-mode-context";
+import { maskAmounts } from "@/shared/privacy/mask-amounts";
 import { ProvenanceRowItem } from "./provenance-row";
 
 // `48` `SCR-AYUDA-01`/`RUL-AYUDA-01`/`RUL-AYUDA-02` — la procedencia de una
@@ -49,6 +51,8 @@ export function ProvenancePanel({
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  const { discreet } = useDiscreetMode();
+  const mask = (text: string) => maskAmounts(text, discreet);
 
   useEffect(() => {
     panelRef.current?.focus();
@@ -76,7 +80,7 @@ export function ProvenancePanel({
     >
       <div className="flex items-start justify-between gap-3">
         <h2 id={titleId} className="font-heading text-base font-semibold text-text">
-          {data.title}
+          {mask(data.title)}
         </h2>
         <button
           type="button"
@@ -95,7 +99,7 @@ export function ProvenancePanel({
           </h3>
           <div className="mt-2 space-y-1 text-sm text-text-secondary">
             {data.countedLines.map((line, index) => (
-              <p key={index}>{line}</p>
+              <p key={index}>{mask(line)}</p>
             ))}
           </div>
         </section>
@@ -109,7 +113,7 @@ export function ProvenancePanel({
           <ul className="mt-2 space-y-2 text-sm text-text-secondary">
             {data.notCounted.map((item, index) => (
               <li key={index}>
-                <p>{item.text}</p>
+                <p>{mask(item.text)}</p>
                 {item.actionLabel && item.actionHref ? (
                   <Link href={item.actionHref} className="text-sm font-medium text-text-brand hover:text-brand-hover">
                     {item.actionLabel}

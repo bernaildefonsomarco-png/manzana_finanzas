@@ -15,7 +15,7 @@ import type {
 } from "./debts-types";
 
 const LIMA_TIMEZONE = "America/Lima";
-const OPEN_DEBT_STATUSES = new Set<DebtStatus>([
+export const OPEN_DEBT_STATUSES = new Set<DebtStatus>([
   "active",
   "due_soon",
   "overdue",

@@ -1,4 +1,5 @@
 import { ApiClientError } from "@/features/movements/movements-api";
+import type { CategoryId } from "@/shared/types/domain";
 
 type ApiResponse<T> =
   | { ok: true; data: T; meta: { trace_id: string } }
@@ -11,8 +12,9 @@ export type ReportPeriod = {
   ingresoTotal: number;
   gastoMovementCount: number;
   ingresoMovementCount: number;
-  byCategory: { category_id: string | null; total: number; movement_count: number }[];
+  byCategory: { category_id: CategoryId | null; total: number; movement_count: number }[];
   exclusions: { reason: string; count: number }[];
+  countedMovementIds: string[];
 };
 
 export function currentMonthValue(): string {

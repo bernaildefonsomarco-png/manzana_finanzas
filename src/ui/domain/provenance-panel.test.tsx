@@ -1,6 +1,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ProvenancePanel, type ProvenanceData } from "./provenance-panel";
+
+const mocks = vi.hoisted(() => ({ useDiscreetMode: vi.fn(() => ({ discreet: false })) }));
+vi.mock("@/shared/privacy/discreet-mode-context", () => ({ useDiscreetMode: mocks.useDiscreetMode }));
+
+beforeEach(() => {
+  mocks.useDiscreetMode.mockReturnValue({ discreet: false });
+});
 
 const sampleData: ProvenanceData = {
   title: "De dónde sale este S/318.00",
@@ -54,6 +61,14 @@ describe("ProvenancePanel — SCR-AYUDA-01/RUL-AYUDA-02: qué conté y qué no c
     render(<ProvenancePanel data={sampleData} onClose={() => {}} />);
     expect(screen.getByText("Mercado")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: /Mercado/ })).not.toBeInTheDocument();
+  });
+
+  it("48 caso borde 10, AC-AYUDA-13: en modo discreto, el título y las líneas ocultan el monto, no el texto", () => {
+    mocks.useDiscreetMode.mockReturnValue({ discreet: true });
+    render(<ProvenancePanel data={sampleData} onClose={() => {}} />);
+    expect(screen.getByRole("region", { name: "De dónde sale este ••••" })).toBeInTheDocument();
+    expect(screen.queryByText("S/318.00", { exact: false })).not.toBeInTheDocument();
+    expect(screen.getByText("14 gastos de Alimentación")).toBeInTheDocument();
   });
 
   it("RUL-HECHO-02: sin countedLines/notCounted/rows, esas secciones no se renderizan", () => {

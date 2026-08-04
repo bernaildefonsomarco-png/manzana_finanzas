@@ -6,6 +6,7 @@ import { Button } from "@/ui/primitivas/button";
 import { Card } from "@/ui/primitivas/card";
 import { MoneyText } from "@/ui/primitivas/money";
 import { BudgetMeter } from "@/ui/domain/budget-meter";
+import { buildBudgetDetailProvenance } from "./budget-provenance";
 import type { BudgetDetailView } from "./budgets-types";
 
 export function BudgetDetailContent({
@@ -41,6 +42,7 @@ export function BudgetDetailContent({
           amount={budget.amount}
           percentage={budget.percentage_exact}
           band={budget.band}
+          loadSpentProvenance={async () => buildBudgetDetailProvenance(budget)}
         />
         <dl className="mt-6 grid gap-4 sm:grid-cols-3">
           <Metric label="Base" value={budget.base_amount} />

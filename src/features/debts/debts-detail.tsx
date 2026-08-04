@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/ui/primitivas/badge";
 import { Button } from "@/ui/primitivas/button";
 import { DiscreetValue } from "@/ui/primitivas/money";
+import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
 import {
   Sheet,
   SheetContent,
@@ -20,6 +21,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/ui/primitivas/sheet";
+import { buildDebtProvenance } from "./debt-provenance";
 import type {
   DebtDetailViewModel,
   DebtDetailWithPayments,
@@ -101,9 +103,14 @@ export function DebtDetailSheet({
             </div>
             <p className="mt-4 text-sm text-text-muted">Saldo pendiente</p>
             <p className="mt-1 font-heading text-3xl font-semibold text-text">
-              <DiscreetValue>
-                {formatDebtMoney(detail.current_balance, detail.currency)}
-              </DiscreetValue>
+              <MoneyWithProvenance
+                ariaLabel={`Ver de dónde sale este saldo pendiente de ${formatDebtMoney(detail.current_balance, detail.currency)}`}
+                loadProvenance={async () => buildDebtProvenance(debt)}
+              >
+                <DiscreetValue>
+                  {formatDebtMoney(detail.current_balance, detail.currency)}
+                </DiscreetValue>
+              </MoneyWithProvenance>
             </p>
             <p className="mt-2 text-sm text-text-secondary">
               Pagado confirmado:{" "}

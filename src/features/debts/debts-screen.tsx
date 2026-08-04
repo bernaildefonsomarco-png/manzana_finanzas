@@ -23,10 +23,12 @@ import { ApiClientError } from "@/features/movements/movements-api";
 import { Badge } from "@/ui/primitivas/badge";
 import { Button } from "@/ui/primitivas/button";
 import { DiscreetValue } from "@/ui/primitivas/money";
+import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
 import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import { Tab, TabList, TabPanel, Tabs } from "@/ui/primitivas/tabs";
 import type { DebtDirection } from "@/shared/types/domain";
 import { getDebtDetail, listDebts } from "./debts-api";
+import { buildDebtProvenance, buildDebtsSummaryProvenance } from "./debt-provenance";
 import {
   DebtCloseDialog,
   DebtEditorDialog,
@@ -309,7 +311,7 @@ export function DebtsScreen({
                 ) : null}
               </div>
             ) : null}
-            <DebtSummaryCards summary={summary} />
+            <DebtSummaryCards summary={summary} debts={debts} />
             <section className="rounded-xl border border-brand-subtle bg-brand-subtle/30 p-4 text-sm leading-6 text-text-secondary">
               Una tarjeta aquí es una deuda simple: no es una cuenta disponible
               ni modela ciclo de facturación. Tampoco compensamos lo que debes
@@ -464,7 +466,7 @@ export function DebtsScreen({
   );
 }
 
-function DebtSummaryCards({ summary }: { summary: DebtSummary }) {
+function DebtSummaryCards({ summary, debts }: { summary: DebtSummary; debts: DebtWithPerson[] }) {
   return (
     <section aria-label="Resumen bruto de deudas" className="grid gap-3 sm:grid-cols-2">
       <SummaryCard
@@ -473,6 +475,8 @@ function DebtSummaryCards({ summary }: { summary: DebtSummary }) {
         usdAmount={summary.total_i_owe_usd}
         icon={<ArrowUpRight className="h-4 w-4" />}
         tone="debt"
+        direction="i_owe"
+        debts={debts}
       />
       <SummaryCard
         label="Te deben"
@@ -480,6 +484,8 @@ function DebtSummaryCards({ summary }: { summary: DebtSummary }) {
         usdAmount={summary.total_they_owe_me_usd}
         icon={<ArrowDownLeft className="h-4 w-4" />}
         tone="success"
+        direction="they_owe_me"
+        debts={debts}
       />
     </section>
   );
@@ -491,12 +497,16 @@ function SummaryCard({
   usdAmount,
   icon,
   tone,
+  direction,
+  debts,
 }: {
   label: string;
   amount: number;
   usdAmount: number;
   icon: ReactNode;
   tone: "debt" | "success";
+  direction: DebtDirection;
+  debts: DebtWithPerson[];
 }) {
   return (
     <article className="rounded-xl border border-border bg-bg-surface-raised p-5 shadow-xs">
@@ -511,7 +521,12 @@ function SummaryCard({
         {label}
       </p>
       <p className="mt-2 font-heading text-3xl font-semibold text-text">
-        <DiscreetValue>{formatDebtMoney(amount)}</DiscreetValue>
+        <MoneyWithProvenance
+          ariaLabel={`Ver de dónde sale este ${formatDebtMoney(amount)} de ${label.toLowerCase()}`}
+          loadProvenance={async () => buildDebtsSummaryProvenance(debts, direction)}
+        >
+          <DiscreetValue>{formatDebtMoney(amount)}</DiscreetValue>
+        </MoneyWithProvenance>
       </p>
       {usdAmount > 0 ? (
         <p className="mt-2 text-sm font-medium text-text-secondary">
@@ -614,9 +629,14 @@ function DebtCard({
             {item.direction === "i_owe" ? "Pendiente" : "Por recibir"}
           </p>
           <p className="mt-1 font-heading text-2xl font-semibold text-text">
-            <DiscreetValue>
-              {formatDebtMoney(item.current_balance, item.currency)}
-            </DiscreetValue>
+            <MoneyWithProvenance
+              ariaLabel={`Ver de dónde sale este ${formatDebtMoney(item.current_balance, item.currency)} de ${item.title}`}
+              loadProvenance={async () => buildDebtProvenance(await getDebtDetail(item.id))}
+            >
+              <DiscreetValue>
+                {formatDebtMoney(item.current_balance, item.currency)}
+              </DiscreetValue>
+            </MoneyWithProvenance>
           </p>
         </div>
       </div>
