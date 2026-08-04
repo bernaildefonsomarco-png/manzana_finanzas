@@ -1,13 +1,12 @@
 // `46` §9 — el trabajador compone el cuerpo en el momento del envío,
 // consultando lo mínimo; esta interfaz es el punto de extensión hacia el
-// proveedor real (Resend, Postmark, SES…). Ninguna credencial de proveedor
-// existe hoy en `.env.local.example` (`AC-MAIL-12`, autenticación de
-// dominio, es evidencia `LIVE`: depende de configurar SPF/DKIM/DMARC en un
-// dominio real, no de código) — `LoggingEmailSender` es el valor por
-// defecto seguro mientras tanto: registra el envío sin credenciales,
-// nunca falla en silencio pretendiendo que se entregó.
+// proveedor real. `AC-MAIL-12` (SPF/DKIM/DMARC) sigue siendo evidencia
+// `LIVE`: depende de un dominio real autenticado ante el proveedor, no de
+// código — `createEmailSender` no puede cerrar eso por sí solo, solo dejar
+// de ser el bloqueador de código.
 
 import { logger } from "@/shared/telemetry/logger";
+import { ResendEmailSender } from "./resend-sender";
 
 export type OutboundEmail = {
   to: string;
@@ -42,8 +41,19 @@ export class LoggingEmailSender implements EmailSender {
   }
 }
 
+/**
+ * Punto único donde se elige el proveedor. Con `RESEND_API_KEY` configurado
+ * (Vercel → Production), envía de verdad; sin él, cae al remitente de
+ * registro (`LoggingEmailSender`) sin fallar el resto del sistema.
+ * `EMAIL_FROM_ADDRESS` es el remitente — Resend exige que su dominio esté
+ * verificado ante ellos (`AC-MAIL-12`); sin `EMAIL_FROM_ADDRESS` propio cae
+ * a `onboarding@resend.dev`, el remitente de prueba de Resend que solo
+ * entrega a la propia cuenta y nunca cierra `AC-MAIL-12`.
+ */
 export function createEmailSender(): EmailSender {
-  // Punto único donde un futuro `RESEND_API_KEY` (o el proveedor que se
-  // elija) se conectaría; hoy siempre cae al remitente de registro.
-  return new LoggingEmailSender();
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) return new LoggingEmailSender();
+
+  const fromAddress = process.env.EMAIL_FROM_ADDRESS || "Manzana <onboarding@resend.dev>";
+  return new ResendEmailSender(apiKey, fromAddress);
 }

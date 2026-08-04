@@ -20,8 +20,11 @@ import type { Movement } from "@/shared/types/domain";
 import { Button } from "@/ui/primitivas/button";
 import { cn } from "@/ui/primitivas/cn";
 import { MoneyText } from "@/ui/primitivas/money";
+import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
 import { ErrorState, LoadingBlock } from "@/ui/primitivas/states";
+import { getMoneyDashboard } from "@/shared/api/money";
 import { getHome, postponeNextAction, setHomeBlockHidden } from "./home-api";
+import { buildFreeMoneyProvenance } from "./free-money-provenance";
 import type {
   HomeBlock,
   HomeBlockKind,
@@ -329,8 +332,17 @@ function FreeMoneyBlock({ data, onNavigate }: { data: HomeFreeMoneyData; onNavig
           <h1 id="home-free-money-title" className="sr-only">
             {`Tienes libres ${formatMoney(data.free_balance)}. ${composition}`}
           </h1>
-          <div aria-hidden="true" className="mt-4">
-            <MoneyText value={data.free_balance} sign="none" className="font-heading text-5xl font-semibold leading-none text-text sm:text-6xl" />
+          <div className="mt-4">
+            <MoneyWithProvenance
+              ariaLabel={`Ver de dónde sale este total de ${formatMoney(data.free_balance)}`}
+              loadProvenance={async () => buildFreeMoneyProvenance(await getMoneyDashboard())}
+            >
+              <MoneyText
+                value={data.free_balance}
+                sign="none"
+                className="font-heading text-5xl font-semibold leading-none text-text sm:text-6xl"
+              />
+            </MoneyWithProvenance>
           </div>
           <p aria-hidden="true" className="mt-4 max-w-xl text-sm leading-6 text-text-secondary">
             {composition}
