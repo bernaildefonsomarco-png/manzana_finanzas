@@ -128,7 +128,7 @@ export async function handleWebAssistantTurn(
   };
 
   const rawPresentTurn = await buildWebPresentTurn({
-    client: input.client,
+    client: serviceClient,
     externalEvent,
     threadId: input.threadId,
   });
@@ -139,7 +139,12 @@ export async function handleWebAssistantTurn(
     ? rawPresentTurn
     : (plan, context) => rawPresentTurn(withoutActionBlocks(plan), context);
 
-  const orchestrator = new FinancialOrchestrator(input.client, {
+  // `FinancialOrchestrator` siempre corre con el cliente de servicio — el
+  // mismo contrato que ya usa el canal de WhatsApp
+  // (`whatsapp-orchestration-handler.ts`): el motor lee `external_event_log`
+  // internamente (solo `service_role`) y filtra por `user_id` en sus propias
+  // consultas, no depende de RLS del cliente que lo invoca.
+  const orchestrator = new FinancialOrchestrator(serviceClient, {
     executeReadyDataActions: shouldExecuteReadyDataActionsForAssistant(),
     presentTurn,
   });
