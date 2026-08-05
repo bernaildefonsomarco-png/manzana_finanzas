@@ -11,6 +11,7 @@ import {
 import { FinancialOrchestrator } from "@/core/orchestrator/financial-orchestrator";
 import { buildWebPresentTurn } from "@/adapters/web/present-turn";
 import { getCurrentDegradation } from "@/core/degradation/current-grade";
+import { createServiceClient } from "@/data/supabase/server";
 import { logger } from "@/shared/telemetry/logger";
 
 // `AC-ASI-17`: en `solo_lectura` no se emiten tarjetas ni siquiera
@@ -67,7 +68,14 @@ export async function handleWebAssistantTurn(
     return { status: "rejected", reason: "empty_text" };
   }
 
-  const existing = await getExternalEventByIdempotencyKey(input.client, {
+  // `external_event_log` solo concede acceso a `service_role` (`008`,
+  // `RLS` sin políticas para `authenticated`) — igual que el webhook de
+  // WhatsApp, que ya usa `createServiceClient` para esta misma tabla. El
+  // resto del turno sigue con `input.client` para no perder el alcance de
+  // RLS sobre los datos propios del usuario.
+  const serviceClient = createServiceClient();
+
+  const existing = await getExternalEventByIdempotencyKey(serviceClient, {
     source: "dashboard",
     idempotency_key: input.idempotencyKey,
   });
@@ -76,7 +84,7 @@ export async function handleWebAssistantTurn(
   }
 
   const payload = { text, thread_id: input.threadId };
-  const externalEvent = await recordExternalEvent(input.client, {
+  const externalEvent = await recordExternalEvent(serviceClient, {
     source: "dashboard",
     event_type: "assistant.turn_received",
     idempotency_key: input.idempotencyKey,

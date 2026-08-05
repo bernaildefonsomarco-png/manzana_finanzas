@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   handleTurn: vi.fn(),
   getCurrentDegradation: vi.fn(),
   receivedPresentTurn: null as unknown,
+  serviceClient: { from: vi.fn(), _marker: "service" as const },
 }));
 
 vi.mock("@/data/repositories/events.repository", () => ({
@@ -29,6 +30,10 @@ vi.mock("@/core/orchestrator/financial-orchestrator", () => ({
 
 vi.mock("@/core/degradation/current-grade", () => ({
   getCurrentDegradation: mocks.getCurrentDegradation,
+}));
+
+vi.mock("@/data/supabase/server", () => ({
+  createServiceClient: () => mocks.serviceClient,
 }));
 
 const NORMAL_DEGRADATION = {
@@ -129,8 +134,15 @@ describe("handleWebAssistantTurn", () => {
       externalEventId: "event-1",
       duplicate: false,
     });
+    // `external_event_log` solo concede acceso a `service_role`: estas dos
+    // llamadas usan el cliente de servicio, nunca el del usuario (que no
+    // tiene permiso sobre esa tabla).
+    expect(mocks.getExternalEventByIdempotencyKey).toHaveBeenCalledWith(
+      mocks.serviceClient,
+      expect.objectContaining({ source: "dashboard", idempotency_key: "key-2" }),
+    );
     expect(mocks.recordExternalEvent).toHaveBeenCalledWith(
-      client,
+      mocks.serviceClient,
       expect.objectContaining({
         source: "dashboard",
         event_type: "assistant.turn_received",
