@@ -5,9 +5,9 @@ import type { PresentedTurn } from "@/core/channel/types";
 import type { PresentTurn, PresentTurnContext } from "@/core/orchestrator/financial-orchestrator";
 import type { PlanTurnBlocksResult } from "@/core/response/response-planner";
 import { ResponseAgent } from "@/agents/response-agent";
-import type { ConversationStyleProfile } from "@/agents/conversation-agent";
 import { getActiveConversationMemoryState } from "@/data/repositories/conversation-memory.repository";
 import { readPersistentConversationStyle } from "@/core/conversation/conversation-style-preferences";
+import { formatConversationStyleInstruction } from "@/core/response/conversation-style-policy";
 import {
   getWhatsAppWindowByUserAndPhone,
   type WhatsAppWindowState,
@@ -155,23 +155,6 @@ function notApplicableEnhancement(reason: "disabled"): PresentedTurn["enhancemen
     styleBlockedReasons: [],
     attemptCount: 0,
   };
-}
-
-function formatConversationStyleInstruction(
-  style: ConversationStyleProfile | null
-): string | null {
-  if (!style) return null;
-
-  const dimensions = [
-    style.response_length !== "inherit" ? `longitud=${style.response_length}` : null,
-    style.formality !== "inherit" ? `formalidad=${style.formality}` : null,
-    style.warmth !== "inherit" ? `calidez=${style.warmth}` : null,
-    style.playfulness !== "inherit" ? `jocosidad=${style.playfulness}` : null,
-    style.directness !== "inherit" ? `directitud=${style.directness}` : null,
-    style.emoji_policy !== "inherit" ? `emojis=${style.emoji_policy}` : null,
-  ].filter((value): value is string => Boolean(value));
-
-  return dimensions.length > 0 ? `${style.instruction} (${dimensions.join(", ")})` : style.instruction;
 }
 
 function readString(value: unknown): string | null {

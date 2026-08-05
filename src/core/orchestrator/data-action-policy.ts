@@ -413,12 +413,13 @@ function planDebtCreationAction(
 ): PlannedDataAction {
   const reasons: string[] = [];
   const hint = action.debt_hint;
-  const expectedDirection =
+  const directionFromMovementType =
     action.movement_type === "prestamo_recibido"
       ? "i_owe"
       : action.movement_type === "prestamo_dado"
         ? "they_owe_me"
         : null;
+  const expectedDirection = hint?.direction ?? directionFromMovementType;
   const personName =
     hint?.person_name?.trim() ?? readRelatedPersonName(action);
 
@@ -426,7 +427,11 @@ function planDebtCreationAction(
     reasons.push("debt_creation_contract_missing");
   }
   if (!expectedDirection) reasons.push("debt_creation_type_invalid");
-  if (hint?.direction && expectedDirection !== hint.direction) {
+  if (
+    directionFromMovementType &&
+    hint?.direction &&
+    directionFromMovementType !== hint.direction
+  ) {
     reasons.push("debt_creation_direction_mismatch");
   }
   if (action.amount === null) reasons.push("missing_amount");

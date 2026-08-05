@@ -9,6 +9,14 @@ import type {
 import type { PlanTurnBlocksResult } from "@/core/response/response-planner";
 import { listPendingItemsBySourceRefPrefix } from "@/data/repositories/pending.repository";
 import { logger } from "@/shared/telemetry/logger";
+import { ResponseAgent } from "@/agents/response-agent";
+import { getActiveConversationMemoryState } from "@/data/repositories/conversation-memory.repository";
+import { readPersistentConversationStyle } from "@/core/conversation/conversation-style-preferences";
+import { formatConversationStyleInstruction } from "@/core/response/conversation-style-policy";
+import {
+  enhanceResponseText,
+  type ResponseAgentEnhancementTrace,
+} from "@/core/response/response-agent-enhancement";
 
 type Client = SupabaseClient<Database>;
 
@@ -26,9 +34,12 @@ export async function buildWebPresentTurn(params: {
   client: Client;
   externalEvent: ExternalEventLog;
   threadId: string;
+  responseAgent?: ResponseAgent;
+  useResponseAgent: boolean;
 }): Promise<PresentTurn> {
   const client = params.client;
   const externalEvent = params.externalEvent;
+  const responseAgent = params.responseAgent ?? new ResponseAgent();
 
   return async (
     plan: PlanTurnBlocksResult,
@@ -38,6 +49,22 @@ export async function buildWebPresentTurn(params: {
     if (!userId) {
       return notPresentable("missing_user");
     }
+
+    // `RSP-WEB-01`: a diferencia de WhatsApp, un turno web casi siempre
+    // persiste varios bloques tipados (propuesta, pregunta, cifra...) que
+    // el frontend renderiza como componentes propios. Solo el bloque
+    // `texto` puro (respuesta conversacional sin UI propia) pasa por
+    // `ResponseAgent`; el resto se persiste exactamente como lo entrego
+    // `response-planner.ts`.
+    const { blocks: presentedBlocks, enhancement } = await enhanceTextoBlockForWeb({
+      client,
+      externalEvent,
+      userId,
+      plan,
+      context,
+      responseAgent,
+      useResponseAgent: params.useResponseAgent,
+    });
 
     // `WEB-D263`: un bloque `propuesta`/`previsualizacion` se enlaza con su
     // pendiente real correlacionando por `source_ref`
@@ -57,7 +84,7 @@ export async function buildWebPresentTurn(params: {
       return [];
     });
 
-    const hasProposalBlock = plan.blocks.some(
+    const hasProposalBlock = presentedBlocks.some(
       (block) => block.kind === "propuesta" || block.kind === "previsualizacion"
     );
     const proposedAction: Json | null =
@@ -69,8 +96,8 @@ export async function buildWebPresentTurn(params: {
         : null;
     const actionStatus = proposedAction ? ("propuesta" as const) : null;
 
-    const evidenceRefs = collectEvidenceRefs(plan.blocks);
-    const text = plan.blocks
+    const evidenceRefs = collectEvidenceRefs(presentedBlocks);
+    const text = presentedBlocks
       .map((block) => ("text" in block ? block.text : null))
       .filter((value): value is string => Boolean(value))
       .join("\n\n");
@@ -79,7 +106,7 @@ export async function buildWebPresentTurn(params: {
       user_id: userId,
       thread_id: params.threadId,
       role: "asistente",
-      content: plan.blocks as unknown as Json,
+      content: presentedBlocks as unknown as Json,
       evidence_refs: evidenceRefs,
       proposed_action: proposedAction,
       action_status: actionStatus,
@@ -103,27 +130,118 @@ export async function buildWebPresentTurn(params: {
     return {
       text: text || null,
       deliveryMode: "web_panel",
-      interactiveOptionCount: countOptions(plan.blocks),
+      interactiveOptionCount: countOptions(presentedBlocks),
       sendStatus: "sent",
       sendReason: plan.reason,
       idempotent: false,
       providerMessageId: null,
       errorCode: null,
-      enhancement: {
-        status: "not_applicable",
-        reason: "web_channel_no_enhancement",
-        confidence: null,
-        provider: null,
-        model: null,
-        latencyMs: null,
-        safetyFlags: [],
-        styleActive: false,
-        styleScope: null,
-        styleAdherence: null,
-        styleBlockedReasons: [],
-        attemptCount: 0,
-      },
+      enhancement,
     };
+  };
+}
+
+/**
+ * Mejora el unico bloque `texto` del turno (si existe) con `ResponseAgent`,
+ * con las mismas salvaguardas que ya usa WhatsApp
+ * (`whatsapp/response-enhancer.ts`, via el nucleo compartido en
+ * `core/response/response-agent-enhancement.ts`): nunca inventa ni pierde
+ * un monto, un link, un codigo de pendiente o una frase de seguridad, y si
+ * el intento se rechaza o falla, el texto original se mantiene sin cambios.
+ */
+async function enhanceTextoBlockForWeb(params: {
+  client: Client;
+  externalEvent: ExternalEventLog;
+  userId: string;
+  plan: PlanTurnBlocksResult;
+  context: PresentTurnContext;
+  responseAgent: ResponseAgent;
+  useResponseAgent: boolean;
+}): Promise<{ blocks: Block[]; enhancement: PresentedTurn["enhancement"] }> {
+  const { client, externalEvent, userId, plan, context, responseAgent, useResponseAgent } =
+    params;
+
+  const textoIndex = plan.blocks.findIndex((block) => block.kind === "texto");
+  if (context.skipEnhancement || !useResponseAgent || textoIndex === -1) {
+    return {
+      blocks: plan.blocks,
+      enhancement: noEnhancementStub("web_channel_no_enhancement"),
+    };
+  }
+
+  const [activeConversationState, preferencesResult] = await Promise.all([
+    getActiveConversationMemoryState(client, {
+      userId,
+      channel: "dashboard",
+      now: externalEvent.received_at,
+    }),
+    client
+      .from("user_preferences")
+      .select("tone_style,discreet_mode_enabled,metadata")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
+
+  const persistentStyle =
+    preferencesResult.error === null
+      ? readPersistentConversationStyle({
+          metadata: preferencesResult.data?.metadata,
+          legacyToneStyle: preferencesResult.data?.tone_style,
+        })
+      : null;
+  const effectiveStyle =
+    context.styleOverride ??
+    activeConversationState?.working_set?.conversation_style ??
+    persistentStyle ??
+    null;
+  const preferredTone =
+    formatConversationStyleInstruction(effectiveStyle) ??
+    (preferencesResult.error === null
+      ? (preferencesResult.data?.tone_style ?? null)
+      : null);
+
+  const textoBlock = plan.blocks[textoIndex] as Extract<Block, { kind: "texto" }>;
+
+  const { text, trace } = await enhanceResponseText({
+    baseText: textoBlock.text,
+    channel: "dashboard",
+    reason: plan.reason,
+    externalEvent,
+    responseAgent,
+    traceId: context.traceId,
+    timezone: context.timezone,
+    discreetMode:
+      preferencesResult.error === null &&
+      preferencesResult.data?.discreet_mode_enabled === true,
+    conversationTurnState: context.conversationTurnState,
+    activeConversationState,
+    preferredTone,
+    conversationStyle: effectiveStyle,
+  });
+
+  const blocks = plan.blocks.map((block, index) =>
+    index === textoIndex ? { ...block, text } : block
+  );
+
+  return { blocks, enhancement: traceToPresentedEnhancement(trace) };
+}
+
+function traceToPresentedEnhancement(
+  trace: ResponseAgentEnhancementTrace
+): PresentedTurn["enhancement"] {
+  return {
+    status: trace.status,
+    reason: trace.reason,
+    confidence: trace.confidence,
+    provider: trace.provider,
+    model: trace.model_name,
+    latencyMs: trace.latency_ms,
+    safetyFlags: trace.safety_flags,
+    styleActive: trace.style_active ?? false,
+    styleScope: trace.style_scope ?? null,
+    styleAdherence: trace.style_adherence ?? null,
+    styleBlockedReasons: trace.style_blocked_reasons ?? [],
+    attemptCount: trace.attempt_count ?? 0,
   };
 }
 
@@ -137,20 +255,24 @@ function notPresentable(reason: string): PresentedTurn {
     idempotent: false,
     providerMessageId: null,
     errorCode: null,
-    enhancement: {
-      status: "not_applicable",
-      reason: "web_channel_no_enhancement",
-      confidence: null,
-      provider: null,
-      model: null,
-      latencyMs: null,
-      safetyFlags: [],
-      styleActive: false,
-      styleScope: null,
-      styleAdherence: null,
-      styleBlockedReasons: [],
-      attemptCount: 0,
-    },
+    enhancement: noEnhancementStub("web_channel_no_enhancement"),
+  };
+}
+
+function noEnhancementStub(reason: string): PresentedTurn["enhancement"] {
+  return {
+    status: "not_applicable",
+    reason,
+    confidence: null,
+    provider: null,
+    model: null,
+    latencyMs: null,
+    safetyFlags: [],
+    styleActive: false,
+    styleScope: null,
+    styleAdherence: null,
+    styleBlockedReasons: [],
+    attemptCount: 0,
   };
 }
 

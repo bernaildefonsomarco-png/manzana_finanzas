@@ -929,6 +929,24 @@ function composeBlockedCaptureText(financialActionPlan: DataActionPlan | undefin
   if (reasons.includes("debt_creation_first_due_date_missing")) {
     return "Entendi la deuda y las cuotas. ¿Cuando vence la primera cuota?";
   }
+  if (reasons.includes("debt_creation_type_invalid")) {
+    return "Entendi que hay una deuda, pero no me quedo claro si tu le debes a la otra persona o si ella te debe a ti. Cual de las dos es?";
+  }
+  if (reasons.includes("debt_creation_contract_missing")) {
+    return "Entendi que quieres registrar una deuda, pero me falto informacion para armarla. Cuentame de nuevo: quien le debe a quien, cuanto y desde cuando.";
+  }
+  if (reasons.includes("debt_creation_direction_mismatch")) {
+    return "Hay algo que no cuadra entre si tu le debes a la persona o si ella te debe a ti. Me lo confirmas?";
+  }
+  if (reasons.includes("debt_creation_person_missing")) {
+    return "Entendi la deuda, pero me falta saber con quien es. Como se llama la persona?";
+  }
+  if (reasons.includes("debt_creation_installment_count_invalid")) {
+    return "El numero de cuotas que me diste no es valido. Dime un numero entre 1 y 240.";
+  }
+  if (reasons.includes("debt_creation_account_not_found")) {
+    return "No encontre la cuenta que mencionaste para esta deuda. Cual cuenta es?";
+  }
   if (reasons.includes("debt_creation_confirmation_required") && debtCreation) {
     const installmentText = debtCreation.installment_count
       ? ` en ${debtCreation.installment_count} cuotas`
@@ -966,10 +984,12 @@ function composeBlockedCaptureText(financialActionPlan: DataActionPlan | undefin
   const missingText =
     missing.length > 0 ? `me falta ${formatSpanishList(missing)}` : "me falta un dato";
 
-  return (
-    `Te entendi, pero no lo registre todavia: ${missingText} para hacerlo sin asumir. ` +
-    'Escribeme algo como: "gaste 20 en desayuno".'
-  );
+  const hasDebtReason = reasons.some((reason) => reason.startsWith("debt_"));
+  const example = hasDebtReason
+    ? ""
+    : ' Escribeme algo como: "gaste 20 en desayuno".';
+
+  return `Te entendi, pero no lo registre todavia: ${missingText} para hacerlo sin asumir.${example}`;
 }
 
 function formatSpanishList(items: string[]): string {

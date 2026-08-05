@@ -641,6 +641,48 @@ describe("planDataAgentFinancialActions", () => {
     });
   });
 
+  it("no bloquea una deuda por type_invalid cuando el hint trae direction pero movement_type no es prestamo", () => {
+    const result = plan({
+      accounts: [],
+      confirmedByUser: true,
+      receivedAt: "2026-07-24T12:00:00.000-05:00",
+      dataAgentOutput: output({
+        requires_confirmation: true,
+        result: [
+          action({
+            movement_type: "gasto",
+            amount: 5,
+            currency: "PEN",
+            occurred_at: null,
+            description: "Le debo a Fabrizio",
+            category_id: null,
+            debt_hint: {
+              operation: "create_debt",
+              direction: "i_owe",
+              kind: "personal",
+              person_name: "Fabrizio",
+              installment_count: null,
+              installment_amount: null,
+              first_due_date: null,
+            },
+            related_person_hint: { display_name: "Fabrizio" },
+          }),
+        ],
+        ambiguities: [],
+      }),
+    });
+
+    expect(result.actions[0].reasons).not.toContain(
+      "debt_creation_type_invalid",
+    );
+    expect(result.kind).toBe("ready_for_core");
+    expect(result.actions[0].debt_creation_input).toMatchObject({
+      direction: "i_owe",
+      related_person_name: "Fabrizio",
+      principal_amount: 5,
+    });
+  });
+
   it("no acciona si el DataAgent no propone movimientos", () => {
     const result = plan({
       dataAgentOutput: output({

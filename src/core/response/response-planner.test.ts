@@ -479,6 +479,126 @@ describe("planTurnBlocks", () => {
     expect(text).not.toContain("categoria");
   });
 
+  it("pide aclarar la direccion de la deuda en vez de mostrar ejemplo de gasto", () => {
+    const financialActionPlan: DataActionPlan = {
+      kind: "blocked",
+      reason: "all_actions_blocked",
+      actions: [
+        {
+          action_id: "action_1",
+          decision: "blocked",
+          risk_level: "medium",
+          reasons: ["debt_creation_type_invalid"],
+          movement_input: null,
+          debt_payment_input: null,
+          debt_creation_input: null,
+        },
+      ],
+      ready_count: 0,
+      requires_confirmation_count: 0,
+      blocked_count: 1,
+    };
+    const result = planTurnBlocks({
+      turnInput: turnInput("le debo 5 soles a mi amigo fabrizio"),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      dataAgentIntent: "record_movement",
+      financialActionPlan,
+      financialActionExecution: {
+        kind: "not_executed",
+        reason: "no_ready_actions",
+        created_count: 0,
+        idempotent_count: 0,
+        movements: [],
+      },
+    });
+
+    expect(result.reason).toBe("blocked_financial_action");
+    const text = blockText(result);
+    expect(text).toContain("le debes a la otra persona");
+    expect(text).not.toContain("gaste 20 en desayuno");
+  });
+
+  it("pide el nombre de la persona cuando falta en la deuda, sin ejemplo de gasto", () => {
+    const financialActionPlan: DataActionPlan = {
+      kind: "blocked",
+      reason: "all_actions_blocked",
+      actions: [
+        {
+          action_id: "action_1",
+          decision: "blocked",
+          risk_level: "medium",
+          reasons: ["debt_creation_person_missing"],
+          movement_input: null,
+          debt_payment_input: null,
+          debt_creation_input: null,
+        },
+      ],
+      ready_count: 0,
+      requires_confirmation_count: 0,
+      blocked_count: 1,
+    };
+    const result = planTurnBlocks({
+      turnInput: turnInput("le debo 5 soles"),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      dataAgentIntent: "record_movement",
+      financialActionPlan,
+      financialActionExecution: {
+        kind: "not_executed",
+        reason: "no_ready_actions",
+        created_count: 0,
+        idempotent_count: 0,
+        movements: [],
+      },
+    });
+
+    expect(result.reason).toBe("blocked_financial_action");
+    const text = blockText(result);
+    expect(text).toContain("Como se llama la persona");
+    expect(text).not.toContain("gaste 20 en desayuno");
+  });
+
+  it("pide confirmar la cuenta de la deuda sin caer en el ejemplo de gasto", () => {
+    const financialActionPlan: DataActionPlan = {
+      kind: "blocked",
+      reason: "all_actions_blocked",
+      actions: [
+        {
+          action_id: "action_1",
+          decision: "blocked",
+          risk_level: "medium",
+          reasons: ["debt_creation_account_not_found"],
+          movement_input: null,
+          debt_payment_input: null,
+          debt_creation_input: null,
+        },
+      ],
+      ready_count: 0,
+      requires_confirmation_count: 0,
+      blocked_count: 1,
+    };
+    const result = planTurnBlocks({
+      turnInput: turnInput("le debo 5 soles a fabrizio desde mi cuenta bcp"),
+      userId: DEFAULT_USER_ID,
+      dataAgentCompleted: true,
+      dataAgentIntent: "record_movement",
+      financialActionPlan,
+      financialActionExecution: {
+        kind: "not_executed",
+        reason: "no_ready_actions",
+        created_count: 0,
+        idempotent_count: 0,
+        movements: [],
+      },
+    });
+
+    expect(result.reason).toBe("blocked_financial_action");
+    const text = blockText(result);
+    expect(text).toContain("No encontre la cuenta");
+    expect(text).not.toContain("gaste 20 en desayuno");
+  });
+
   it("llama borrador a la deuda completa y niega explicitamente haberla creado", () => {
     const financialActionPlan: DataActionPlan = {
       kind: "blocked",

@@ -99,7 +99,7 @@ export type ResponseContextPack = {
   user_id: string;
   locale: "es-PE";
   timezone: string;
-  channel: "whatsapp";
+  channel: "whatsapp" | "dashboard";
   scenario: ResponseScenario;
   base_text: string;
   original_user_text: string;

@@ -68,6 +68,29 @@ export function buildResponseStyleContract(input: {
   };
 }
 
+/**
+ * Traduce un perfil de estilo a la instruccion en lenguaje natural que
+ * consume `ResponseAgent` (`preferredTone`). Vive aqui, no en un adaptador
+ * de canal, porque mas de un canal de mensajeria arma el mismo
+ * `preferredTone` a partir del mismo `ConversationStyleProfile`.
+ */
+export function formatConversationStyleInstruction(
+  style: ConversationStyleProfile | null
+): string | null {
+  if (!style) return null;
+
+  const dimensions = [
+    style.response_length !== "inherit" ? `longitud=${style.response_length}` : null,
+    style.formality !== "inherit" ? `formalidad=${style.formality}` : null,
+    style.warmth !== "inherit" ? `calidez=${style.warmth}` : null,
+    style.playfulness !== "inherit" ? `jocosidad=${style.playfulness}` : null,
+    style.directness !== "inherit" ? `directitud=${style.directness}` : null,
+    style.emoji_policy !== "inherit" ? `emojis=${style.emoji_policy}` : null,
+  ].filter((value): value is string => Boolean(value));
+
+  return dimensions.length > 0 ? `${style.instruction} (${dimensions.join(", ")})` : style.instruction;
+}
+
 export function countEmoji(text: string): number {
   return Array.from(text.matchAll(/\p{Extended_Pictographic}/gu)).length;
 }

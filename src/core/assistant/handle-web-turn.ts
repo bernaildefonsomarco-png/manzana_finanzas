@@ -131,6 +131,7 @@ export async function handleWebAssistantTurn(
     client: serviceClient,
     externalEvent,
     threadId: input.threadId,
+    useResponseAgent: true,
   });
 
   // `AC-ASI-17`: en `solo_lectura` el motor puede seguir respondiendo, pero
