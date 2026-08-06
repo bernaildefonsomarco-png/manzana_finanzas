@@ -55,14 +55,14 @@ export class TurnCoordinator {
         logger.warn("turn_coordinator.conversational_executive_failed", {
           trace_id: input.traceId,
           mode: input.mode,
+          degraded_to_legacy: input.mode === "active",
           error,
         });
-        if (input.mode === "active") throw error;
       }
     }
 
     const result =
-      input.mode === "active"
+      input.mode === "active" && executiveResult
         ? planningResultFromExecutive(executiveResult)
         : await this.dependencies.legacyPlanningAgent.plan(
             input.executiveContext.planning_context,

@@ -419,7 +419,7 @@ export class FinancialOrchestrator {
         externalEventId: externalEvent.id,
         traceId: input.traceId,
         conversationTurnState: conversationTurn.turn_state,
-        skipEnhancement: this.getConversationalExecutiveMode() === "active",
+        skipEnhancement: false,
       });
       const orchestratorReason =
         correctionResolution.kind === "applied"
@@ -642,7 +642,7 @@ export class FinancialOrchestrator {
           traceId: input.traceId,
           conversationTurnState: effectiveConversationTurnState,
           styleOverride: initialOrchestrationPlanning?.compiled.styleUpdate ?? null,
-          skipEnhancement: this.getConversationalExecutiveMode() === "active",
+          skipEnhancement: initialOrchestrationPlanning?.executive != null,
         });
         const orchestratorReason =
           captureDraftResolution.kind === "discarded"
@@ -687,7 +687,7 @@ export class FinancialOrchestrator {
           traceId: input.traceId,
           conversationTurnState: effectiveConversationTurnState,
           styleOverride: initialOrchestrationPlanning?.compiled.styleUpdate ?? null,
-          skipEnhancement: this.getConversationalExecutiveMode() === "active",
+          skipEnhancement: initialOrchestrationPlanning?.executive != null,
         });
         const orchestratorReason =
           pendingResolution.kind === "confirmed"
@@ -764,7 +764,7 @@ export class FinancialOrchestrator {
     }
 
     const dataContextPack = initialDataContextPack;
-    const dataAgentResult = this.getConversationalExecutiveMode() === "active"
+    const dataAgentResult = initialOrchestrationPlanning?.executive != null
       ? dataAgentResultFromExecutive(initialOrchestrationPlanning)
       : await this.dataAgent.extract(dataContextPack, input.traceId);
     const orchestrationPlanning = initialOrchestrationPlanning
@@ -790,7 +790,7 @@ export class FinancialOrchestrator {
         timezone: dataContextPack.timezone,
       });
       const correctionAgentResult =
-        this.getConversationalExecutiveMode() === "active"
+        initialOrchestrationPlanning?.executive != null
           ? correctionResultFromExecutive(
               initialOrchestrationPlanning,
               correctionContextPack,
@@ -816,7 +816,7 @@ export class FinancialOrchestrator {
           conversationTurnState: effectiveConversationTurnState,
           timezone: dataContextPack.timezone,
           styleOverride: orchestrationPlanning?.compiled.styleUpdate ?? null,
-          skipEnhancement: this.getConversationalExecutiveMode() === "active",
+          skipEnhancement: orchestrationPlanning?.executive != null,
         });
         const orchestratorReason =
           correctionAgentResult.output.kind === "requires_confirmation"
@@ -939,9 +939,8 @@ export class FinancialOrchestrator {
       const conversationQuery = usePlanningConversationRoute
         ? orchestrationPlanning.compiled.conversationQuery
         : conversationTurn.query;
-      const executiveActive =
-        this.getConversationalExecutiveMode() === "active";
       const executiveTrace = orchestrationPlanning?.executive ?? null;
+      const executiveActive = executiveTrace !== null;
       const conversationContextPack = executiveActive
         ? conversationContextFromExecutive({
             planning: orchestrationPlanning,
@@ -992,7 +991,7 @@ export class FinancialOrchestrator {
         conversationTurnState: effectiveConversationTurnState,
         timezone: dataContextPack.timezone,
         styleOverride: orchestrationPlanning?.compiled.styleUpdate ?? null,
-        skipEnhancement: this.getConversationalExecutiveMode() === "active",
+        skipEnhancement: executiveActive,
       });
 
       await updateExternalEventStatus(this.client, {
@@ -1303,7 +1302,7 @@ export class FinancialOrchestrator {
           conversationTurnState: params.conversationTurnState,
           timezone: dataContextPack.timezone,
           styleOverride: params.orchestrationPlanning?.compiled.styleUpdate ?? null,
-          skipEnhancement: this.getConversationalExecutiveMode() === "active",
+          skipEnhancement: params.orchestrationPlanning?.executive != null,
         });
     const orchestratorReason = getDataAgentOrchestratorReason({
       financialActionExecution,
@@ -1596,7 +1595,7 @@ export class FinancialOrchestrator {
 
     try {
       const executiveActive =
-        this.getConversationalExecutiveMode() === "active";
+        params.orchestrationPlanning?.executive != null;
       const contextPack = await toolGateway.buildConversationContextPack({
         userId: params.externalEvent.user_id!,
         locale: "es-PE",
@@ -1797,9 +1796,6 @@ export class FinancialOrchestrator {
           }),
       });
     } catch (error) {
-      if (this.getConversationalExecutiveMode() === "active") {
-        throw error;
-      }
       // Shadow/legacy planning can improve a turn but must never block fallback.
       logger.warn("orchestrator.orchestration_planning_failed", {
         trace_id: params.traceId,

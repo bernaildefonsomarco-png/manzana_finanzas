@@ -476,6 +476,7 @@ describe("OpenAIAgentRuntime", () => {
           }),
         ]);
         expect(body.input[0].content).toContain("unica autoridad semantica");
+        expect(body.input[0].content).toContain("active_capture_draft");
         expect(
           body.text.format.schema.properties.response_composition.properties,
         ).toHaveProperty("grounded_claims");

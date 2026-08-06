@@ -81,7 +81,7 @@ export class ConversationalExecutiveAgent {
         trace_id: traceId,
         timeout_ms: getAgentRuntimeTimeoutMs(
           "conversational_executive_agent",
-          25_000
+          30_000
         ),
         max_tool_rounds: 8,
         tool_executor: async ({ tool_name, arguments: rawArguments }) => {

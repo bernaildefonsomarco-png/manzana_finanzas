@@ -49,9 +49,26 @@ describe("TurnCoordinator", () => {
     expect(result.executive?.mode).toBe("shadow");
     expect(result.executive?.divergences).toEqual([]);
   });
+
+  it("en active, si el executive falla, cae al planner legado en vez de lanzar", async () => {
+    const fixture = coordinatorFixture({ executiveShouldThrow: true });
+    const result = await fixture.coordinator.coordinate({
+      mode: "active",
+      executiveContext: fixture.context,
+      traceId: "trace-active-degraded",
+      workingSet: null,
+      executeReadOnlyTool: async () => {
+        throw new Error("no aplica");
+      },
+    });
+
+    expect(fixture.calls()).toEqual({ executive: 1, legacy: 1 });
+    expect(result.result.runtime.provider).toBe("legacy-test");
+    expect(result.executive).toBeNull();
+  });
 });
 
-function coordinatorFixture() {
+function coordinatorFixture(options?: { executiveShouldThrow?: boolean }) {
   const planningContext = buildSafePlanningContext({
     userId: "00000000-0000-4000-8000-000000000001",
     timezone: "America/Lima",
@@ -118,6 +135,9 @@ function coordinatorFixture() {
   const executiveAgent = {
     async run() {
       executiveCalls += 1;
+      if (options?.executiveShouldThrow) {
+        throw new Error("executive timeout");
+      }
       return executiveResult;
     },
   } as unknown as ConversationalExecutiveAgent;

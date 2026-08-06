@@ -17,6 +17,7 @@ import {
 } from "@/data/repositories/assistant.repository";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 // `41` S11: cliente autenticado, sin excepcion de service-role. El
 // compilador de la capa semantica y el resto del motor inyectan la
