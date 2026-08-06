@@ -17,7 +17,12 @@ import {
 } from "@/data/repositories/assistant.repository";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+// El ejecutivo conversacional puede timeoutear a los 30s (su propio
+// presupuesto interno); cuando eso pasa, el turno necesita tiempo
+// ADICIONAL despues de ese timeout para caer al planificador legado
+// (turn-coordinator.ts) sin que la plataforma mate la funcion a mitad de
+// esa caida. 60s le da margen real a esa segunda pasada.
+export const maxDuration = 60;
 
 // `41` S11: cliente autenticado, sin excepcion de service-role. El
 // compilador de la capa semantica y el resto del motor inyectan la
