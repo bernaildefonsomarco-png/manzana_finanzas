@@ -1207,6 +1207,17 @@ export class FinancialOrchestrator {
     });
     const financialActionPlan = dedupPreflight.plan;
 
+    logger.warn("diag.financial_action_plan_debug", {
+      trace_id: params.traceId,
+      confirmed_by_user: Boolean(params.captureDraftReplay),
+      actions: financialActionPlan.actions.map((action) => ({
+        decision: action.decision,
+        reasons: action.reasons,
+        has_debt_creation_input: action.debt_creation_input !== null,
+      })),
+      execute_ready_data_actions: this.options.executeReadyDataActions,
+    });
+
     const dispatcher = new CommandDispatcher(
       new SupabaseFinancialCoreRepository(this.client),
       {

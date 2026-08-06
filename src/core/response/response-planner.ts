@@ -137,7 +137,8 @@ type ProductResponseReason =
   | "correction_needs_selection"
   | "correction_needs_clarification"
   | "blocked_financial_action"
-  | "capture_needs_clarification";
+  | "capture_needs_clarification"
+  | "ready_for_core_not_executed";
 
 type ProductResponse = {
   reason: ProductResponseReason;
@@ -472,6 +473,20 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
       };
     }
     return { reason: "pending_created", intent: "direct_response", shape: "texto", text };
+  }
+
+  if (
+    input.financialActionPlan?.kind === "ready_for_core" &&
+    execution?.kind === "not_executed" &&
+    input.pendingCreation?.kind !== "created"
+  ) {
+    return {
+      reason: "ready_for_core_not_executed",
+      intent: "direct_response",
+      shape: "limite",
+      text: "Confirmaste, pero todavia no pude aplicarlo. Intenta de nuevo en un momento; si sigue sin registrarse, avisame.",
+      manualPath: null,
+    };
   }
 
   if (
