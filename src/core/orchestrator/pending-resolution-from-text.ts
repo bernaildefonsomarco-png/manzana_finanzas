@@ -551,7 +551,8 @@ export function isConfirmationText(value: string): boolean {
     text === "registralo" ||
     text === "guardalo" ||
     text === "guardar" ||
-    /\b(si|ok|okay|dale|listo|va)\s+(confirmo|confirma|confirmar)\b/.test(
+    text === "si" ||
+    /\b(si|ok|okay|dale|listo|va)\b.*\b(confirmo|confirma|confirmar)\b/.test(
       text
     ) ||
     /\b(confirmo|confirma|confirmar)\s+(eso|todo|pendiente)\b/.test(text) ||

@@ -22,6 +22,8 @@ describe("pending resolution intent from text", () => {
     expect(isConfirmationText("registra ese gasto")).toBe(true);
     expect(isConfirmationText("registralo")).toBe(true);
     expect(isConfirmationText("guarda eso")).toBe(true);
+    expect(isConfirmationText("si")).toBe(true);
+    expect(isConfirmationText("si lo confirmo")).toBe(true);
   });
 
   it("no confirma si el usuario niega o descarta", () => {
