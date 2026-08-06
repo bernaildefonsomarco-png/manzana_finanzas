@@ -122,6 +122,8 @@ import {
   maybeResolveCorrection,
 } from "./correction-resolution";
 import {
+  isConfirmationText,
+  isDiscardText,
   isStructuredPendingResolutionText,
   maybeResolvePendingFromText,
   notPendingResolution,
@@ -570,7 +572,9 @@ export class FinancialOrchestrator {
               channel,
             })
         : isStructuredPendingResolutionText(text) ||
-            !initialOrchestrationPlanning
+            !initialOrchestrationPlanning ||
+            isConfirmationText(text) ||
+            isDiscardText(text)
           ? await maybeResolvePendingFromText({
               client: this.client,
               userId: externalEvent.user_id,
@@ -579,6 +583,14 @@ export class FinancialOrchestrator {
               channel,
             })
           : notPendingResolution();
+
+    logger.warn("diag.pending_resolution_debug", {
+      trace_id: input.traceId,
+      text,
+      planned_financial_resolution: plannedFinancialResolution,
+      pending_resolution_kind: pendingResolution.kind,
+      pending_resolution_action: pendingResolution.action,
+    });
 
     if (pendingResolution.kind !== "not_resolution") {
       const captureDraftResolution =
@@ -589,6 +601,13 @@ export class FinancialOrchestrator {
           pendingResolution,
           now: externalEvent.received_at,
         });
+
+      logger.warn("diag.capture_draft_resolution_debug", {
+        trace_id: input.traceId,
+        capture_draft_resolution_kind: captureDraftResolution.kind,
+        capture_draft_resolution_reason: captureDraftResolution.reason,
+        has_draft: captureDraftResolution.draft !== null,
+      });
 
       if (captureDraftResolution.kind === "ready_to_replay") {
         const draftDataContextPack = await this.buildDataContextPack(
@@ -1659,6 +1678,18 @@ export class FinancialOrchestrator {
           userId: params.externalEvent.user_id!,
           channel: params.channel,
           now: params.externalEvent.received_at,
+        }).then((draft) => {
+          logger.warn("diag.capture_draft_at_plan_time", {
+            trace_id: params.traceId,
+            text: params.text,
+            draft_reason: draft?.reason ?? null,
+            draft_original_message: draft?.original_message ?? null,
+            draft_proposed_actions_count:
+              draft?.data_agent_output?.result.length ?? null,
+            draft_debt_hint:
+              draft?.data_agent_output?.result?.[0]?.debt_hint ?? null,
+          });
+          return draft;
         }),
         listPendingItems(this.client, params.externalEvent.user_id!, {
           limit: 5,
