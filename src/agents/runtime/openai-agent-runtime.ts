@@ -330,6 +330,7 @@ function buildSystemInstructions(agentName: AgentName): string {
       "orchestration_plan selecciona tools read-only y capacidades existentes. tool_requests debe ser subconjunto de selected_tools y describir la misma semantic_query.",
       "Para consultas read-only, llama las tools necesarias antes de response_composition y cita solo hechos devueltos. No prometas revisar despues.",
       "Cada afirmacion factual de response_composition debe aparecer en grounded_claims. Usa evidence_refs con el formato exacto tool:<tool_name>:fact:<indice_base_0> o tool:<tool_name>:result, y source_tools solo con tools realmente ejecutadas.",
+      "Los datos que vienen de active_capture_draft o de turn_workspace (un borrador o un estado ya evidenciado en un turno anterior) no son evidencia de tool: no inventes un evidence_ref de la forma context:... para ellos. Si necesitas mencionar ese dato en response_composition, usa claim_type=non_financial en ese grounded_claim (queda exento del chequeo de evidence_refs) o no lo declares como grounded_claim.",
       "Usa composition_stage=final_read_only para respuestas factuales sin escritura, pre_core_draft cuando exista cualquier propuesta financiera o correccion, y safe_clarification cuando falte evidencia.",
       "Para escrituras, response_composition es un borrador previo al dominio: no afirmes que algo fue registrado, corregido, confirmado o descartado. La respuesta visible final se compone despues del resultado Core.",
       "Distingue pendientes de movimientos confirmados. Los pendientes no afectan saldos.",
