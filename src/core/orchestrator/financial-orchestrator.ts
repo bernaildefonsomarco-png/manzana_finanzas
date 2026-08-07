@@ -120,6 +120,7 @@ import {
 import {
   isCorrectionCommandText,
   maybeResolveCorrection,
+  resolveAwaitingCorrectionCommandText,
 } from "./correction-resolution";
 import {
   isConfirmationText,
@@ -404,11 +405,21 @@ export class FinancialOrchestrator {
       };
     }
 
-    if (isCorrectionCommandText(text)) {
+    // `16` §10.3: una correccion propuesta ("¿Lo elimino?") se resuelve con el
+    // comando del boton o con la confirmacion escrita en el turno siguiente;
+    // ambas entran por el mismo camino y ejecutan el mismo comando.
+    const correctionCommandText = isCorrectionCommandText(text)
+      ? text
+      : resolveAwaitingCorrectionCommandText({
+          text,
+          workingSet: activeMemoryState?.working_set ?? null,
+        });
+
+    if (correctionCommandText) {
       const correctionResolution = await maybeResolveCorrection({
         client: this.client,
         userId: externalEvent.user_id,
-        text,
+        text: correctionCommandText,
         traceId: input.traceId,
       });
       const plan = planTurnBlocks({

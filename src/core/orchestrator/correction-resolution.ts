@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { ConversationWorkingSet } from "@/agents/conversation-agent/types";
 import {
   buildAccountCorrectionPatch,
   buildAmountCorrectionPatch,
@@ -20,6 +21,10 @@ import {
   SupabaseFinancialCoreRepository,
   type RecentMovementForCorrection,
 } from "@/data/repositories/movements.repository";
+import {
+  isConfirmationText,
+  isDiscardText,
+} from "./pending-resolution-from-text";
 import type { Database } from "@/data/supabase/types";
 import {
   CATEGORY_IDS,
@@ -207,6 +212,44 @@ export function parseCorrectionCommandText(
     };
   }
 
+  return null;
+}
+
+/**
+ * `16` §10.3: cuando Manzana propone borrar o cambiar un movimiento, el
+ * usuario confirma con el boton (`corr:...`) o escribiendo ("si, eliminalo").
+ * Una propuesta de correccion no crea un pending item, asi que ese "si" no
+ * tiene nada que resolver en `pending-resolution-from-text` ni en el borrador
+ * de captura: sin este puente el turno caia en el respaldo de captura
+ * ("No encontre algo reciente para registrar...") y la eliminacion confirmada
+ * nunca se ejecutaba.
+ *
+ * Devuelve el texto de comando equivalente al boton que el usuario habria
+ * pulsado, o `null` si no hay una correccion inequivoca que resolver.
+ * Solo puentea cuando la ultima accion recordada es exactamente una
+ * correccion propuesta esperando confirmacion: con varios candidatos abiertos
+ * el "si" es ambiguo y `16` §10.3 prohibe resolver varios elementos con un
+ * "ok" ambiguo.
+ */
+export function resolveAwaitingCorrectionCommandText(params: {
+  text: string;
+  workingSet: ConversationWorkingSet | null;
+}): string | null {
+  const lastAction = params.workingSet?.last_action ?? null;
+  if (
+    !lastAction ||
+    lastAction.kind !== "correction_proposed" ||
+    lastAction.status !== "awaiting_confirmation" ||
+    lastAction.command_ids.length !== 1
+  ) {
+    return null;
+  }
+
+  const command = parseCorrectionCommandText(lastAction.command_ids[0]);
+  if (!command || command.kind === "cancel") return null;
+
+  if (isConfirmationText(params.text)) return command.command_id;
+  if (isDiscardText(params.text)) return CORRECTION_CANCEL_COMMAND_ID;
   return null;
 }
 
