@@ -60,7 +60,12 @@ export class ConversationalExecutiveAgent {
     traceId: string,
     executeTool: ConversationalExecutiveToolExecutor
   ): Promise<ConversationalExecutiveRunResult> {
-    let attemptContext = contextPack;
+    // El historial viaja dentro del pack solo para cruzar el coordinador;
+    // aqui se separa: los turnos previos van como mensajes reales del
+    // runtime y el Context Pack serializado sigue describiendo solo el turno
+    // actual, sin duplicar la conversacion.
+    const conversationHistory = contextPack.conversation_history ?? [];
+    let attemptContext = withoutConversationHistory(contextPack);
     let accumulatedLatencyMs = 0;
     let accumulatedCost = 0;
     let hasCost = false;
@@ -76,6 +81,7 @@ export class ConversationalExecutiveAgent {
         provider: getAgentRuntimeProvider("conversational_executive_agent"),
         model_hint: "strong",
         context_pack: attemptContext,
+        conversation_history: conversationHistory,
         tools: EXECUTIVE_TOOLS,
         output_schema: "ConversationalExecutiveOutputSchema@v1",
         trace_id: traceId,
@@ -165,7 +171,7 @@ export class ConversationalExecutiveAgent {
         ) {
           const feedback = extractValidationFeedback(error);
           attemptContext = {
-            ...contextPack,
+            ...withoutConversationHistory(contextPack),
             validation_feedback: {
               attempt: 2,
               issue_codes: feedback.issueCodes,
@@ -186,6 +192,20 @@ export class ConversationalExecutiveAgent {
       },
     );
   }
+}
+
+/**
+ * El pack que se serializa al modelo no lleva el historial: los turnos
+ * previos ya se le entregan como mensajes propios. Duplicarlos dentro del
+ * JSON solo gastaria contexto y volveria a presentar la conversacion como
+ * un dato mas del formulario.
+ */
+function withoutConversationHistory(
+  contextPack: ConversationalExecutiveContextPack,
+): ConversationalExecutiveContextPack {
+  if (!contextPack.conversation_history) return contextPack;
+  const { conversation_history: _historial, ...rest } = contextPack;
+  return rest;
 }
 
 function extractValidationFeedback(error: AgentRuntimeError): {

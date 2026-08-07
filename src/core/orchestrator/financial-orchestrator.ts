@@ -131,6 +131,7 @@ import {
   type PendingResolutionResult,
 } from "./pending-resolution-from-text";
 import { logger } from "@/shared/telemetry/logger";
+import { readThreadConversationHistory } from "@/core/assistant/conversation-history";
 import {
   reconcileCompiledOrchestrationPlan,
   type CompiledOrchestrationPlan,
@@ -1785,6 +1786,18 @@ export class FinancialOrchestrator {
         },
       });
       const executiveMode = this.getConversationalExecutiveMode();
+      // El hilo del asistente web viaja en la metadata del evento externo
+      // (`handle-web-turn.ts`); otros canales todavia no tienen hilo, y ahi
+      // el historial queda vacio sin cambiar nada del turno.
+      const conversationHistory =
+        executiveMode === "off"
+          ? []
+          : await readThreadConversationHistory({
+              client: this.client,
+              userId: params.externalEvent.user_id!,
+              threadId: readString(params.externalEvent.metadata.thread_id),
+              excludeTraceId: params.traceId,
+            });
       const toolGateway = new ToolGateway(this.client);
       const conversationContext = await toolGateway.buildConversationContextPack({
         userId: params.externalEvent.user_id!,
@@ -1810,6 +1823,7 @@ export class FinancialOrchestrator {
           dataContext: params.dataContextPack,
           conversationContext,
         }),
+        conversation_history: conversationHistory,
         constraints: [
           "La IA propone; el dominio valida; el Core ejecuta.",
           "Las tools son read-only y sus resultados son la unica fuente factual actual.",

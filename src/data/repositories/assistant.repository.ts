@@ -202,6 +202,42 @@ export async function listAssistantMessages(
   return (data ?? []) as AssistantMessage[];
 }
 
+/**
+ * `SCR-ASI-03`: los ultimos mensajes del hilo, devueltos en orden de lectura
+ * (mas antiguo primero). `listAssistantMessages` pagina desde el inicio del
+ * hilo, que es lo que necesita la pantalla; para reconstruir el contexto
+ * reciente de una conversacion hace falta la cola, no la cabeza.
+ */
+export async function listRecentAssistantMessages(
+  client: Client,
+  userId: string,
+  threadId: string,
+  options: { limit: number }
+): Promise<AssistantMessage[]> {
+  const { data, error } = await client
+    .from("assistant_messages")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("thread_id", threadId)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(options.limit);
+
+  if (error) {
+    logger.error("assistant_messages.list_recent_failed", {
+      error,
+      user_id: userId,
+      thread_id: threadId,
+    });
+    throw new AssistantRepositoryError(
+      "ASSISTANT_REPOSITORY_ERROR",
+      "No se pudieron leer los mensajes recientes"
+    );
+  }
+
+  return ((data ?? []) as AssistantMessage[]).reverse();
+}
+
 export function toJsonContent(value: unknown): Json {
   return value as Json;
 }

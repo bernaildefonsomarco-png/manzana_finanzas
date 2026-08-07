@@ -19,6 +19,7 @@ import {
   PlanningWorkflowSchema,
   type OrchestrationPlanningContextPack,
 } from "@/agents/orchestration-planning-agent/types";
+import type { AgentConversationTurn } from "@/agents/runtime/types";
 import type { TurnWorkspace } from "@/core/conversation/turn-workspace";
 import { SemanticQuerySchema } from "@/core/semantics/query";
 
@@ -155,6 +156,13 @@ export type ConversationalExecutiveContextPack = {
   data_context: DataContextPack;
   conversation_context: ConversationContextPack;
   turn_workspace: TurnWorkspace;
+  /**
+   * Turnos previos del hilo, mas antiguo primero y sin el mensaje actual.
+   * Viaja en el pack solo como transporte: el agente lo levanta a mensajes
+   * `user`/`assistant` del runtime y no lo serializa dentro del Context Pack
+   * (`RUL-ASI-11`: el modelo lee una conversacion, no un formulario).
+   */
+  conversation_history?: AgentConversationTurn[];
   constraints: string[];
   validation_feedback?: {
     attempt: number;

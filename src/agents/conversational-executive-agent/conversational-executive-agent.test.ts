@@ -129,6 +129,63 @@ describe("ConversationalExecutiveAgent", () => {
     ).toBe(true);
   });
 
+  it("entrega el historial del hilo al runtime y no lo duplica en el Context Pack", async () => {
+    const local = new LocalFixtureConversationalExecutiveAgentRuntime();
+    let capturedRequest: AgentRuntimeRequest<unknown> | null = null;
+    const runtime: AgentRuntime = {
+      async run<TContext, TOutput>(
+        request: AgentRuntimeRequest<TContext>,
+      ): Promise<AgentRuntimeResponse<TOutput>> {
+        capturedRequest = request as AgentRuntimeRequest<unknown>;
+        return local.run<TContext, TOutput>(request);
+      },
+    };
+    const agent = new ConversationalExecutiveAgent(runtime);
+
+    await agent.run(
+      {
+        ...contextPack(),
+        conversation_history: [
+          { role: "user", text: "gaste 20 en desayuno" },
+          { role: "assistant", text: "Anotado: S/20.00 en desayuno." },
+        ],
+      },
+      "trace-historial",
+      async () => ({
+        tool_name: "query_movements",
+        status: "called",
+        facts: [
+          "movement_count=5",
+          "date_label=movimientos recientes",
+          "net_amount=S/ -68.00",
+        ],
+        warnings: [],
+        data: {
+          date_label: "movimientos recientes",
+          reference_source: null,
+          net_amount: -68,
+          movements: [
+            movement("food-1", 20, "Desayuno", "2026-07-15T09:00:00-05:00"),
+            movement("food-2", 20, "Almuerzo", "2026-07-14T13:00:00-05:00"),
+            movement("food-3", 8, "Cafe", "2026-07-14T16:00:00-05:00"),
+            movement("food-4", 10, "Desayuno", "2026-07-14T08:00:00-05:00"),
+            movement("food-5", 10, "Cafe", "2026-06-29T17:00:00-05:00"),
+          ],
+        },
+      }),
+    );
+
+    const request = capturedRequest as AgentRuntimeRequest<unknown> | null;
+    expect(request?.conversation_history).toEqual([
+      { role: "user", text: "gaste 20 en desayuno" },
+      { role: "assistant", text: "Anotado: S/20.00 en desayuno." },
+    ]);
+    expect(
+      (request?.context_pack as ConversationalExecutiveContextPack)
+        .conversation_history,
+    ).toBeUndefined();
+  });
+
   it("regenera una sola vez con feedback tipado cuando falla el grounding", async () => {
     const local = new LocalFixtureConversationalExecutiveAgentRuntime();
     let calls = 0;

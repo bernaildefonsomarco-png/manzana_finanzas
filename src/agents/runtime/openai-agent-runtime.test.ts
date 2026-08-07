@@ -696,4 +696,119 @@ describe("OpenAIAgentRuntime", () => {
     expect(result.output).toMatchObject({ goal: "query", confidence: 0.9 });
     expect(result.runtime.provider).toBe("api");
   });
+
+  it("emite el historial del hilo como turnos user/assistant antes del turno actual", async () => {
+    let capturedInput: Array<{ role: string; content: string }> = [];
+    const runtime = new OpenAIAgentRuntime({
+      apiKey: "sk-test",
+      modelName: "model-test",
+      endpoint: "https://api.openai.test/v1/responses",
+      fetcher: async (_url, init) => {
+        capturedInput = JSON.parse(String(init?.body)).input;
+        return okConversationResponse();
+      },
+    });
+
+    await runtime.run({
+      ...conversationAgentRequest,
+      tools: [],
+      conversation_history: [
+        { role: "user", text: "gaste 20 en desayuno" },
+        { role: "assistant", text: "Anotado: S/20.00 en desayuno." },
+        { role: "user", text: "y cuanto llevo esta semana?" },
+        { role: "assistant", text: "Llevas S/120.00 esta semana." },
+      ],
+    });
+
+    expect(capturedInput.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(capturedInput[1].content).toBe("gaste 20 en desayuno");
+    expect(capturedInput[4].content).toBe("Llevas S/120.00 esta semana.");
+    // El turno actual sigue siendo el Context Pack serializado, al final.
+    expect(capturedInput[5].content).toContain("puedo gastar 50 hoy?");
+    expect(capturedInput[5].content).toContain("context_pack");
+  });
+
+  it("mantiene dos mensajes cuando el hilo no tiene historial previo", async () => {
+    let capturedInput: Array<{ role: string; content: string }> = [];
+    const runtime = new OpenAIAgentRuntime({
+      apiKey: "sk-test",
+      modelName: "model-test",
+      endpoint: "https://api.openai.test/v1/responses",
+      fetcher: async (_url, init) => {
+        capturedInput = JSON.parse(String(init?.body)).input;
+        return okConversationResponse();
+      },
+    });
+
+    await runtime.run({ ...conversationAgentRequest, tools: [] });
+
+    expect(capturedInput.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+    ]);
+  });
+
+  it("recorta el historial a los ultimos 20 mensajes y descarta los vacios", async () => {
+    let capturedInput: Array<{ role: string; content: string }> = [];
+    const runtime = new OpenAIAgentRuntime({
+      apiKey: "sk-test",
+      modelName: "model-test",
+      endpoint: "https://api.openai.test/v1/responses",
+      fetcher: async (_url, init) => {
+        capturedInput = JSON.parse(String(init?.body)).input;
+        return okConversationResponse();
+      },
+    });
+
+    await runtime.run({
+      ...conversationAgentRequest,
+      tools: [],
+      conversation_history: [
+        { role: "user", text: "   " },
+        ...Array.from({ length: 30 }, (_unused, index) => ({
+          role: (index % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+          text: `mensaje ${index}`,
+        })),
+      ],
+    });
+
+    // system + 20 del historial + el turno actual.
+    expect(capturedInput).toHaveLength(22);
+    expect(capturedInput[1].content).toBe("mensaje 10");
+    expect(capturedInput[20].content).toBe("mensaje 29");
+  });
 });
+
+function okConversationResponse(): Response {
+  return new Response(
+    JSON.stringify({
+      output: [
+        {
+          type: "message",
+          content: [
+            {
+              type: "output_text",
+              text: JSON.stringify({
+                response_text: "Listo.",
+                answer_kind: "balance_snapshot",
+                confidence: 0.9,
+                cited_facts: [],
+                used_tools: [],
+                follow_up_question: null,
+                safety_flags: ["read_only"],
+              }),
+            },
+          ],
+        },
+      ],
+    }),
+    { status: 200 }
+  );
+}

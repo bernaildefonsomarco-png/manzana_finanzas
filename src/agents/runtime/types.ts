@@ -44,11 +44,27 @@ export type ToolCallSummary = {
   status: "skipped" | "called" | "failed";
 };
 
+/**
+ * Un turno ya ocurrido del hilo, tal como debe verlo el modelo: un mensaje
+ * con autor, no una linea dentro de un JSON. El Context Pack describe el
+ * estado del turno actual; esto describe que se dijeron antes.
+ */
+export type AgentConversationTurn = {
+  role: "user" | "assistant";
+  text: string;
+};
+
 export type AgentRuntimeRequest<TContext> = {
   agent_name: AgentName;
   provider: RuntimeProvider;
   model_hint: ModelHint;
   context_pack: TContext;
+  /**
+   * Historial real del hilo, mas antiguo primero y sin el mensaje del turno
+   * actual (ese ya viaja en el Context Pack). Opcional: un agente sin hilo
+   * — extraccion de email, senales, insights — simplemente no lo manda.
+   */
+  conversation_history?: AgentConversationTurn[];
   tools: ToolDefinition[];
   output_schema: string;
   trace_id: string;

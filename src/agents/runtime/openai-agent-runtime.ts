@@ -18,6 +18,7 @@ import {
 } from "@/agents/orchestration-planning-agent/types";
 import { AgentRuntimeError } from "./errors";
 import type {
+  AgentConversationTurn,
   AgentName,
   AgentRuntime,
   AgentRuntimeRequest,
@@ -268,6 +269,7 @@ function buildOpenAIInput<TContext>(
       role: "system",
       content: buildSystemInstructions(request.agent_name),
     },
+    ...buildConversationHistoryMessages(request.conversation_history),
     {
       role: "user",
       content: JSON.stringify(
@@ -283,6 +285,41 @@ function buildOpenAIInput<TContext>(
       ),
     },
   ];
+}
+
+/**
+ * Limite de mensajes previos que se reenvian. Es un tope de contexto y de
+ * latencia, no una regla de producto: un hilo largo se recuerda por sus
+ * ultimos intercambios, no entero.
+ */
+const MAX_CONVERSATION_HISTORY_MESSAGES = 20;
+
+/** Tope por mensaje: un turno viejo aporta lo dicho, no cada cifra listada. */
+const MAX_CONVERSATION_HISTORY_CHARS = 1200;
+
+/**
+ * Los turnos previos viajan como mensajes `user`/`assistant` reales, antes
+ * del mensaje del turno actual. Sin esto el modelo recibe un formulario de
+ * un solo turno y no tiene forma de saber que ya hablo con esta persona.
+ */
+function buildConversationHistoryMessages(
+  history: AgentConversationTurn[] | undefined,
+): Array<Record<string, unknown>> {
+  if (!history || history.length === 0) return [];
+
+  return history
+    .filter((turn) => turn.text.trim().length > 0)
+    .slice(-MAX_CONVERSATION_HISTORY_MESSAGES)
+    .map((turn) => ({
+      role: turn.role,
+      content: truncateHistoryText(turn.text.trim()),
+    }));
+}
+
+function truncateHistoryText(text: string): string {
+  return text.length <= MAX_CONVERSATION_HISTORY_CHARS
+    ? text
+    : `${text.slice(0, MAX_CONVERSATION_HISTORY_CHARS)}…`;
 }
 
 function buildFunctionTools<TContext>(request: AgentRuntimeRequest<TContext>) {
