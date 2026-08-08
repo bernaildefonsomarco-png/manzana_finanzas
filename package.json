@@ -15,6 +15,7 @@
     "test:smoke:agents": "vitest run --config vitest.smoke.config.ts",
     "test:presupuesto": "node scripts/gates/presupuesto-npm-test.mjs",
     "test:e2e": "playwright test",
+    "memoria:backfill-embeddings": "npx --yes tsx scripts/backfill-financial-memory-embeddings.ts",
     "matriz:generar": "node scripts/matriz/generar.ts",
     "matriz:listar-g3": "node scripts/matriz/listar-g3.ts",
     "catalogo:generar": "node scripts/catalogo/generar.ts",
@@ -74,6 +75,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.7",
     "jsdom": "^29.1.1",
+    "supabase": "^2.111.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^4.1.8"

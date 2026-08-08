@@ -7,7 +7,12 @@ import type {
 } from "@/agents/learning-signal-agent";
 import type { Database, Json } from "@/data/supabase/types";
 import { logger } from "@/shared/telemetry/logger";
-import type { FinancialMemoryItem } from "./financial-memory.repository";
+import {
+  rememberFinancialMemoryEmbedding,
+  withoutEmbeddingColumns,
+  type FinancialMemoryItem,
+  type FinancialMemoryRow,
+} from "./financial-memory.repository";
 
 type Client = SupabaseClient<Database>;
 
@@ -179,7 +184,13 @@ export async function promoteLearningCandidate(
       },
     );
     if (error) throw error;
-    return data ? normalizeMemoryItem(data) : null;
+    if (!data) return null;
+    const memory = normalizeMemoryItem(data);
+    // `RUL-MEM-15`: el recuerdo nace aqui y aqui recibe su vector. Si falla, el
+    // recuerdo queda igual de valido y solo se recupera por tokens hasta que lo
+    // alcance el backfill; nunca deshace la promocion.
+    await rememberFinancialMemoryEmbedding(client, memory);
+    return memory;
   } catch (error) {
     logger.warn("learning.candidate_promotion_failed", {
       error,
@@ -228,11 +239,9 @@ function normalizeCandidate(
   };
 }
 
-function normalizeMemoryItem(
-  row: Database["public"]["Tables"]["financial_memory_items"]["Row"],
-): FinancialMemoryItem {
+function normalizeMemoryItem(row: FinancialMemoryRow): FinancialMemoryItem {
   return {
-    ...row,
+    ...withoutEmbeddingColumns(row),
     kind: row.kind as FinancialMemoryItem["kind"],
     confidence: Number(row.confidence),
     confirmation_status:

@@ -1600,6 +1600,10 @@ export type Database = {
           confidence: number
           confirmation_status: string
           created_at: string
+          embedding: string | null
+          embedding_generated_at: string | null
+          embedding_input_hash: string | null
+          embedding_model: string | null
           evidence_ref: string
           evidence_source: string
           explanation: string | null
@@ -1632,6 +1636,10 @@ export type Database = {
           confidence: number
           confirmation_status?: string
           created_at?: string
+          embedding?: string | null
+          embedding_generated_at?: string | null
+          embedding_input_hash?: string | null
+          embedding_model?: string | null
           evidence_ref: string
           evidence_source: string
           explanation?: string | null
@@ -1664,6 +1672,10 @@ export type Database = {
           confidence?: number
           confirmation_status?: string
           created_at?: string
+          embedding?: string | null
+          embedding_generated_at?: string | null
+          embedding_input_hash?: string | null
+          embedding_model?: string | null
           evidence_ref?: string
           evidence_source?: string
           explanation?: string | null
@@ -5191,6 +5203,15 @@ export type Database = {
       run_budget_daily_lifecycle: {
         Args: { p_as_of: string; p_user_id?: string }
         Returns: Json
+      }
+      search_financial_memory_semantic: {
+        Args: {
+          p_limit?: number
+          p_now?: string
+          p_query_embedding: string
+          p_user_id: string
+        }
+        Returns: { id: string; similarity: number }[]
       }
       set_dashboard_nudge_preference: {
         Args: {
