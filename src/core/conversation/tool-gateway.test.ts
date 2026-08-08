@@ -236,6 +236,7 @@ function activeCaptureMemory(): ConversationMemoryState {
     user_id: "user-1",
     channel: "whatsapp",
     scope: "default",
+    thread_key: "",
     last_intent: "record_movement",
     last_query_kind: null,
     last_query_text: "gaste 20 en desayuno y dime como voy esta semana",

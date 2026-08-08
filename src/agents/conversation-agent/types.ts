@@ -308,11 +308,21 @@ export const ConversationWorkingSetSchema = z.object({
         "completed",
         "cancelled",
         "failed",
+        // `23` §5b.1: una propuesta sin confirmar caduca a los 15 minutos o
+        // al cambiar de tema. `expired` es ese estado: la propuesta ya no se
+        // puede ejecutar con un "si" posterior (`AC-RT-13`).
+        "expired",
       ]),
       source_ref: z.string().nullable(),
       movement_ids: z.array(z.string()).max(10),
       pending_item_ids: z.array(z.string()).max(10),
       command_ids: z.array(z.string()).max(5),
+      // Hilo al que pertenece la accion. Opcional porque los estados escritos
+      // antes de `WEB-D289` no lo tienen: sin sello, una confirmacion escrita
+      // no puede ejecutarse (lado seguro).
+      thread_key: z.string().max(200).nullable().optional(),
+      // Momento en que deja de valer una confirmacion escrita (`23` §5b.1).
+      confirmation_expires_at: z.string().nullable().optional(),
     })
     .nullable(),
   unresolved_slots: z.array(z.string().max(120)).max(10),

@@ -172,6 +172,7 @@ function memoryState(
     user_id: "user-1",
     channel: "whatsapp",
     scope: "capture_draft",
+    thread_key: "",
     last_intent: "record_movement",
     last_query_kind: null,
     last_query_text: null,

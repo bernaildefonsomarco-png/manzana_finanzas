@@ -16,6 +16,7 @@ import { DataAgent, type DataContextPack } from "@/agents/data-agent";
 import {
   CorrectionAgent,
   isCorrectionLikeText,
+  type CorrectionAgentOutput,
   type CorrectionMovementCandidate,
 } from "@/agents/correction-agent";
 import {
@@ -71,7 +72,10 @@ import {
   rememberConversationPlanningState,
   rememberConversationOutcome,
   rememberConversationTurn,
+  rememberExpiredCorrectionProposal,
+  withExpiredCorrectionProposal,
 } from "@/core/conversation/conversation-memory";
+import { resolveTurnThreadKey } from "@/core/conversation/thread-scope";
 import { ToolGateway } from "@/core/conversation/tool-gateway";
 import { buildTurnWorkspace } from "@/core/conversation/turn-workspace";
 import {
@@ -119,8 +123,9 @@ import {
 } from "./financial-action-preflight";
 import {
   isCorrectionCommandText,
+  lapsedCorrectionResolution,
   maybeResolveCorrection,
-  resolveAwaitingCorrectionCommandText,
+  resolveAwaitingCorrection,
 } from "./correction-resolution";
 import {
   isConfirmationText,
@@ -179,6 +184,9 @@ export type TurnOrchestrationResult = {
     | "accepted_with_correction_confirmation"
     | "accepted_with_correction_selection"
     | "accepted_with_correction_clarification"
+    // `23` §5b.1 / `AC-RT-13`: llego una confirmacion para una propuesta que ya
+    // habia caducado (vencida, de otro hilo o sin sello). No se ejecuto nada.
+    | "accepted_with_correction_lapsed"
     | "accepted_with_memory_control"
     | "missing_external_event"
     | "missing_user"
@@ -309,11 +317,19 @@ export class FinancialOrchestrator {
     const text = turnInput.text;
     const profile = await getProfile(this.client, externalEvent.user_id);
     const timezone = profile?.timezone ?? "America/Lima";
+    // `23` §5b.1 / `WEB-D096`: el estado conversacional pertenece a una
+    // conversacion, no al usuario entero. Sin esta clave, una propuesta hecha
+    // en un hilo seguia armada en todos los demas.
+    const threadKey = resolveTurnThreadKey({
+      channel,
+      metadata: externalEvent.metadata,
+    });
     let activeMemoryState = await getActiveConversationMemoryState(
       this.client,
       {
         userId: externalEvent.user_id,
         channel,
+        threadKey,
         now: externalEvent.received_at,
       },
     );
@@ -364,6 +380,7 @@ export class FinancialOrchestrator {
         client: this.client,
         userId: externalEvent.user_id,
         channel,
+        threadKey,
         intent: "memory_control",
         userMessage: text,
         resultSummary: memoryControl.response_text,
@@ -408,12 +425,106 @@ export class FinancialOrchestrator {
     // `16` §10.3: una correccion propuesta ("¿Lo elimino?") se resuelve con el
     // comando del boton o con la confirmacion escrita en el turno siguiente;
     // ambas entran por el mismo camino y ejecutan el mismo comando.
+    //
+    // `23` §5b.1: esa confirmacion escrita solo vale en el mismo hilo, dentro
+    // de los 15 minutos y en el turno siguiente. Cualquier otro turno caduca la
+    // propuesta (`AC-RT-13`), para que un "si" sobre otro tema no dispare una
+    // eliminacion que el usuario ya no tiene en mente.
+    const awaitingCorrection = resolveAwaitingCorrection({
+      text,
+      workingSet: activeMemoryState?.working_set ?? null,
+      threadKey,
+      now: externalEvent.received_at,
+    });
+
+    if (
+      awaitingCorrection.kind === "lapsed_by_topic_change" ||
+      awaitingCorrection.kind === "lapsed_confirmation"
+    ) {
+      logger.warn("orchestrator.correction_proposal_lapsed", {
+        trace_id: input.traceId,
+        external_event_id: externalEvent.id,
+        lapse_kind: awaitingCorrection.kind,
+        lapse_reason:
+          awaitingCorrection.kind === "lapsed_confirmation"
+            ? awaitingCorrection.reason
+            : "topic_change",
+        command_count: awaitingCorrection.commandIds.length,
+      });
+      const expiredState = await rememberExpiredCorrectionProposal({
+        client: this.client,
+        userId: externalEvent.user_id,
+        channel,
+        threadKey,
+        previousState: activeMemoryState,
+        now: externalEvent.received_at,
+      });
+      // Aunque la escritura falle, el resto del turno trabaja con la propuesta
+      // ya caducada: nada de este turno la puede volver a armar sola.
+      activeMemoryState = expiredState ?? applyExpiredCorrection(
+        activeMemoryState,
+        externalEvent.received_at,
+      );
+    }
+
+    // Comandos de la propuesta que acaba de caducar en este turno: si el
+    // ejecutivo los repite tal cual sobre un mensaje que no pide ninguna
+    // correccion (un saludo, otro tema), no se vuelven a emitir como accion.
+    const lapsedCorrectionCommandIds =
+      awaitingCorrection.kind === "lapsed_by_topic_change"
+        ? awaitingCorrection.commandIds
+        : [];
+
+    // Una confirmacion que llego tarde, de otro hilo o sin sello se responde,
+    // no se ejecuta ni se descarta en silencio (`AC-RT-13`).
+    if (
+      awaitingCorrection.kind === "lapsed_confirmation" &&
+      !isCorrectionCommandText(text)
+    ) {
+      const correctionResolution = lapsedCorrectionResolution(
+        awaitingCorrection.reason,
+      );
+      const plan = planTurnBlocks({
+        turnInput,
+        userId: externalEvent.user_id,
+        conversationTurnState: conversationTurn.turn_state,
+        correctionResolution,
+      });
+      const presented = await this.presentTurn(plan, {
+        turnInput,
+        externalEventId: externalEvent.id,
+        traceId: input.traceId,
+        conversationTurnState: conversationTurn.turn_state,
+        skipEnhancement: false,
+      });
+
+      await updateExternalEventStatus(this.client, {
+        external_event_id: externalEvent.id,
+        status: "accepted",
+        metadata: {
+          orchestrator_status: "accepted",
+          orchestrator_reason: "accepted_with_correction_lapsed",
+          agent_runtime_required: false,
+          correction_resolution_kind: correctionResolution.kind,
+          correction_resolution_reason: correctionResolution.reason,
+          correction_resolution_error_code: correctionResolution.error_code,
+          correction_lapse_reason: awaitingCorrection.reason,
+          ...presentedTurnMetadata(plan, presented),
+        },
+      });
+
+      return {
+        externalEventId: externalEvent.id,
+        status: "accepted",
+        reason: "accepted_with_correction_lapsed",
+      };
+    }
+
     const correctionCommandText = isCorrectionCommandText(text)
       ? text
-      : resolveAwaitingCorrectionCommandText({
-          text,
-          workingSet: activeMemoryState?.working_set ?? null,
-        });
+      : awaitingCorrection.kind === "confirmable"
+        ? awaitingCorrection.commandText
+        : null;
 
     if (correctionCommandText) {
       const correctionResolution = await maybeResolveCorrection({
@@ -450,6 +561,7 @@ export class FinancialOrchestrator {
           client: this.client,
           userId: externalEvent.user_id,
           channel,
+          threadKey,
           intent: "correction",
           userMessage: text,
           resultSummary:
@@ -541,6 +653,7 @@ export class FinancialOrchestrator {
           client: this.client,
           userId: externalEvent.user_id,
           channel,
+          threadKey,
           userMessage: text,
           sourceRef: externalEvent.id,
           compiled: initialOrchestrationPlanning.compiled,
@@ -610,6 +723,7 @@ export class FinancialOrchestrator {
           client: this.client,
           userId: externalEvent.user_id,
           channel,
+          threadKey,
           pendingResolution,
           now: externalEvent.received_at,
         });
@@ -737,6 +851,7 @@ export class FinancialOrchestrator {
             client: this.client,
             userId: externalEvent.user_id!,
             channel,
+            threadKey,
             intent: "pending_resolution",
             userMessage: text,
             resultSummary:
@@ -831,7 +946,29 @@ export class FinancialOrchestrator {
               input.traceId,
             );
 
-      if (correctionAgentResult.output.kind !== "not_correction") {
+      // `23` §5b.1: una propuesta caducada por cambio de tema no se rearma
+      // sola. Si el modelo repite exactamente la que acaba de caducar sobre un
+      // mensaje que no pide ninguna correccion ("hola"), el turno no vuelve a
+      // emitirla como accion confirmable.
+      const repeatsLapsedProposal = isLapsedCorrectionRepeat({
+        output: correctionAgentResult.output,
+        lapsedCommandIds: lapsedCorrectionCommandIds,
+        text,
+        dataAgentIntent: dataAgentResult.output.intent,
+      });
+
+      if (repeatsLapsedProposal) {
+        logger.warn("orchestrator.correction_proposal_repeat_suppressed", {
+          trace_id: input.traceId,
+          external_event_id: externalEvent.id,
+          lapsed_command_ids: lapsedCorrectionCommandIds,
+        });
+      }
+
+      if (
+        !repeatsLapsedProposal &&
+        correctionAgentResult.output.kind !== "not_correction"
+      ) {
         const plan = planTurnBlocks({
           turnInput,
           userId: externalEvent.user_id,
@@ -869,6 +1006,7 @@ export class FinancialOrchestrator {
             client: this.client,
             userId: externalEvent.user_id!,
             channel,
+            threadKey,
             intent: "correction",
             userMessage: text,
             resultSummary:
@@ -947,6 +1085,7 @@ export class FinancialOrchestrator {
         client: this.client,
         userId: externalEvent.user_id,
         channel,
+        threadKey,
         originalMessage: text,
         receivedAt: externalEvent.received_at,
         sourceRef: externalEvent.id,
@@ -1002,6 +1141,7 @@ export class FinancialOrchestrator {
       await rememberConversationTurn({
         client: this.client,
         channel,
+        threadKey,
         contextPack: conversationContextPack,
         answer: conversationAgentResult.output,
         sourceRef: externalEvent.id,
@@ -1360,6 +1500,10 @@ export class FinancialOrchestrator {
         client: this.client,
         userId,
         channel,
+        threadKey: resolveTurnThreadKey({
+          channel,
+          metadata: externalEvent.metadata,
+        }),
         intent: dataAgentResult.output.intent,
         userMessage: params.originalMessage,
         resultSummary:
@@ -1552,6 +1696,10 @@ export class FinancialOrchestrator {
     const { externalEvent, channel } = params;
     const userId = externalEvent.user_id!;
     const now = new Date(externalEvent.received_at);
+    const threadKey = resolveTurnThreadKey({
+      channel,
+      metadata: externalEvent.metadata,
+    });
 
     if (
       params.financialActionExecution.kind === "executed" ||
@@ -1561,6 +1709,7 @@ export class FinancialOrchestrator {
         client: this.client,
         userId,
         channel,
+        threadKey,
         reason: params.replayed ? "confirmed" : "superseded",
         now,
       });
@@ -1588,6 +1737,7 @@ export class FinancialOrchestrator {
       client: this.client,
       userId,
       channel,
+      threadKey,
       originalMessage: params.originalMessage,
       receivedAt: params.receivedAt,
       sourceRef: params.sourceRef,
@@ -1662,6 +1812,10 @@ export class FinancialOrchestrator {
       await rememberConversationTurn({
         client: this.client,
         channel: params.channel,
+        threadKey: resolveTurnThreadKey({
+          channel: params.channel,
+          metadata: params.externalEvent.metadata,
+        }),
         contextPack,
         answer: result.output,
         sourceRef: params.externalEvent.id,
@@ -1700,6 +1854,10 @@ export class FinancialOrchestrator {
           client: this.client,
           userId: params.externalEvent.user_id!,
           channel: params.channel,
+          threadKey: resolveTurnThreadKey({
+            channel: params.channel,
+            metadata: params.externalEvent.metadata,
+          }),
           now: params.externalEvent.received_at,
         }).then((draft) => {
           logger.warn("diag.capture_draft_at_plan_time", {
@@ -1920,6 +2078,10 @@ export class FinancialOrchestrator {
         client: this.client,
         userId: externalEvent.user_id!,
         channel,
+        threadKey: resolveTurnThreadKey({
+          channel,
+          metadata: externalEvent.metadata,
+        }),
         now: externalEvent.received_at,
       }),
     ]);
@@ -2153,6 +2315,10 @@ export class FinancialOrchestrator {
         getActiveConversationMemoryState(this.client, {
           userId,
           channel: params.channel,
+          threadKey: resolveTurnThreadKey({
+            channel: params.channel,
+            metadata: params.externalEvent.metadata,
+          }),
           now: params.externalEvent.received_at,
         }),
         this.client
@@ -2206,6 +2372,54 @@ export class FinancialOrchestrator {
       ],
     };
   }
+}
+
+type ActiveConversationMemoryState = Awaited<
+  ReturnType<typeof getActiveConversationMemoryState>
+>;
+
+/**
+ * Deja el estado en memoria con la propuesta ya caducada aunque la escritura
+ * en base haya fallado: el resto del turno nunca vuelve a verla armada.
+ */
+function applyExpiredCorrection(
+  state: ActiveConversationMemoryState,
+  now: string,
+): ActiveConversationMemoryState {
+  if (!state) return state;
+  return {
+    ...state,
+    working_set: withExpiredCorrectionProposal(state.working_set, now),
+  };
+}
+
+/**
+ * `23` §5b.1 / `AC-RT-13`: repetir una propuesta que acaba de caducar sobre un
+ * turno que no pide ninguna correccion es exactamente el defecto reproducido
+ * en produccion ("hola" -> "¿Lo elimino?"). Solo se suprime la repeticion
+ * exacta: si el usuario vuelve a pedir la correccion, o el modelo propone otra
+ * cosa, el turno sigue su curso normal.
+ */
+function isLapsedCorrectionRepeat(params: {
+  output: CorrectionAgentOutput;
+  lapsedCommandIds: string[];
+  text: string;
+  dataAgentIntent: string;
+}): boolean {
+  if (params.lapsedCommandIds.length === 0) return false;
+  if (params.dataAgentIntent === "correction") return false;
+  if (isCorrectionLikeText(params.text)) return false;
+
+  const proposed =
+    params.output.kind === "requires_confirmation"
+      ? [params.output.command.command_id]
+      : params.output.kind === "candidate_selection_required"
+        ? params.output.commands.map((command) => command.command_id)
+        : [];
+  if (proposed.length === 0) return false;
+
+  const lapsed = new Set(params.lapsedCommandIds);
+  return proposed.every((commandId) => lapsed.has(commandId));
 }
 
 function correctionCandidateToConversationReference(

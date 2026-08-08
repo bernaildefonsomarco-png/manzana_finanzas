@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationalExecutiveAgent } from "@/agents/conversational-executive-agent";
 import type { ConversationAgent } from "@/agents/conversation-agent";
 import type { DataAgent } from "@/agents/data-agent";
@@ -14,10 +14,19 @@ import { FinancialOrchestrator } from "./financial-orchestrator";
  * en el turno siguiente el usuario confirma escribiendo. Antes del arreglo ese
  * "si" caia en el resolutor de pendientes -> borrador de captura y respondia
  * "No encontre algo reciente para registrar con seguridad", sin eliminar nada.
+ *
+ * La segunda mitad del fichero cubre el defecto que ese puente dejo abierto
+ * (`23` §5b.1, `AC-RT-13`): la propuesta quedaba armada indefinidamente y en
+ * cualquier hilo, asi que un "hola" la re-emitia y un "si" posterior sobre otro
+ * tema podia ejecutar la eliminacion.
  */
 
 const USER_ID = "00000000-0000-4000-8000-000000000001";
 const MOVEMENT_ID = "00000000-0000-4000-8000-000000000010";
+const THREAD_ID = "00000000-0000-4000-8000-0000000000aa";
+const OTHER_THREAD_ID = "00000000-0000-4000-8000-0000000000bb";
+const THREAD_KEY = `hilo:${THREAD_ID}`;
+const RECEIVED_AT = "2026-08-06T10:00:00.000-05:00";
 
 const externalEventFixture = {
   id: "event-correction-confirm-1",
@@ -25,14 +34,14 @@ const externalEventFixture = {
   event_type: "assistant_turn",
   idempotency_key: "idem-correction-confirm-1",
   user_id: USER_ID,
-  received_at: "2026-08-06T10:00:00.000-05:00",
+  received_at: RECEIVED_AT,
   status: "received" as const,
   payload_hash: "hash",
   payload_ref: null,
   trace_id: "trace-correction-confirm",
-  metadata: {},
-  created_at: "2026-08-06T10:00:00.000-05:00",
-  updated_at: "2026-08-06T10:00:00.000-05:00",
+  metadata: { thread_id: THREAD_ID } as Record<string, unknown>,
+  created_at: RECEIVED_AT,
+  updated_at: RECEIVED_AT,
 };
 
 const movementFixture: Movement = {
@@ -71,10 +80,20 @@ const movementFixture: Movement = {
 const hoisted = vi.hoisted(() => ({
   dispatch: vi.fn(),
   memoryState: null as unknown,
+  eventMetadata: { thread_id: "00000000-0000-4000-8000-0000000000aa" } as Record<
+    string,
+    unknown
+  >,
+  receivedAt: "2026-08-06T10:00:00.000-05:00",
+  upserts: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock("@/data/repositories/events.repository", () => ({
-  getExternalEventById: vi.fn(async () => externalEventFixture),
+  getExternalEventById: vi.fn(async () => ({
+    ...externalEventFixture,
+    metadata: hoisted.eventMetadata,
+    received_at: hoisted.receivedAt,
+  })),
   updateExternalEventStatus: vi.fn(async () => undefined),
 }));
 
@@ -85,7 +104,10 @@ vi.mock("@/data/repositories/conversation-memory.repository", async (importOrigi
   return {
     ...actual,
     getActiveConversationMemoryState: vi.fn(async () => hoisted.memoryState),
-    upsertConversationMemoryState: vi.fn(async () => null),
+    upsertConversationMemoryState: vi.fn(async (_client, input) => {
+      hoisted.upserts.push(input as Record<string, unknown>);
+      return null;
+    }),
   };
 });
 
@@ -114,12 +136,20 @@ vi.mock("@/core/finance", async (importOriginal) => {
 });
 
 /** Memoria conversacional tal como la deja el turno de la propuesta. */
-function memoryStateWithProposedDelete() {
+function memoryStateWithProposedDelete(
+  overrides: {
+    threadKey?: string | null;
+    confirmationExpiresAt?: string | null;
+    status?: "awaiting_confirmation" | "expired";
+  } = {},
+) {
   return {
     id: "state-1",
     user_id: USER_ID,
     channel: "dashboard" as const,
     scope: "default",
+    thread_key:
+      overrides.threadKey === undefined ? THREAD_KEY : overrides.threadKey ?? "",
     last_intent: "correction",
     last_query_kind: null,
     last_query_text: "elimine al gasto de pan porfa",
@@ -143,11 +173,17 @@ function memoryStateWithProposedDelete() {
         "Creo que te refieres a Pan S/5.00. ¿Lo elimino?",
       last_action: {
         kind: "correction_proposed" as const,
-        status: "awaiting_confirmation" as const,
+        status: overrides.status ?? ("awaiting_confirmation" as const),
         source_ref: externalEventFixture.id,
         movement_ids: [MOVEMENT_ID],
         pending_item_ids: [],
         command_ids: [`corr:delete:${MOVEMENT_ID}`],
+        thread_key:
+          overrides.threadKey === undefined ? THREAD_KEY : overrides.threadKey,
+        confirmation_expires_at:
+          overrides.confirmationExpiresAt === undefined
+            ? "2026-08-06T10:15:00.000-05:00"
+            : overrides.confirmationExpiresAt,
       },
       unresolved_slots: [],
       movement_referents: [MOVEMENT_ID],
@@ -207,7 +243,64 @@ function fakePresentedTurn(): PresentedTurn {
   };
 }
 
-function buildOrchestrator() {
+/**
+ * Turno normal que no habla de ninguna correccion: el planificador falla (se
+ * traga el error y sigue sin plan) y el agente de datos no propone nada, asi
+ * que el turno termina como respuesta conversacional.
+ */
+function buildContinuingAgents(options: { answerKind?: "clarification" | "unsupported" } = {}) {
+  return {
+    dataAgent: {
+      extract: vi.fn(async () => ({
+        output: {
+          intent: "conversation" as const,
+          result: [],
+          confidence: 0.9,
+          requires_confirmation: false,
+          ambiguities: [],
+        },
+        runtime: {
+          provider: "local_deterministic" as const,
+          model_name: "test",
+          latency_ms: 1,
+        },
+        safety: { policy_flags: [], redaction_applied: false },
+      })),
+    } as unknown as DataAgent,
+    conversationAgent: {
+      answer: vi.fn(async () => ({
+        output: {
+          response_text: "¡Hola! ¿Qué hacemos hoy?",
+          answer_kind: (options.answerKind ?? "clarification") as
+            | "clarification"
+            | "unsupported",
+          confidence: 0.9,
+          cited_facts: [],
+          used_tools: [],
+          follow_up_question: null,
+          safety_flags: [],
+        },
+        runtime: {
+          provider: "local_deterministic" as const,
+          model_name: "test",
+          latency_ms: 1,
+        },
+        tool_calls: [],
+        safety: { policy_flags: [], redaction_applied: false },
+      })),
+    } as unknown as ConversationAgent,
+  };
+}
+
+function buildOrchestrator(
+  options: {
+    continueTurn?: boolean;
+    answerKind?: "clarification" | "unsupported";
+  } = {},
+) {
+  const continuing = options.continueTurn
+    ? buildContinuingAgents({ answerKind: options.answerKind })
+    : null;
   const executiveRun = vi.fn(async () => {
     throw new Error("el ejecutivo no deberia decidir una correccion ya propuesta");
   });
@@ -224,16 +317,20 @@ function buildOrchestrator() {
         throw new Error("planner legado no deberia correr");
       }),
     } as unknown as OrchestrationPlanningAgent,
-    dataAgent: {
-      extract: vi.fn(async () => {
-        throw new Error("data agent no deberia correr");
-      }),
-    } as unknown as DataAgent,
-    conversationAgent: {
-      answer: vi.fn(async () => {
-        throw new Error("conversation agent no deberia correr");
-      }),
-    } as unknown as ConversationAgent,
+    dataAgent:
+      continuing?.dataAgent ??
+      ({
+        extract: vi.fn(async () => {
+          throw new Error("data agent no deberia correr");
+        }),
+      } as unknown as DataAgent),
+    conversationAgent:
+      continuing?.conversationAgent ??
+      ({
+        answer: vi.fn(async () => {
+          throw new Error("conversation agent no deberia correr");
+        }),
+      } as unknown as ConversationAgent),
     presentTurn,
   });
 
@@ -250,6 +347,54 @@ function turnInput(text: string) {
     context: { where: null, filters: null, selected: null, visible: [] },
     channel: "dashboard" as const,
   };
+}
+
+beforeEach(() => {
+  hoisted.memoryState = null;
+  hoisted.eventMetadata = { thread_id: THREAD_ID };
+  hoisted.receivedAt = RECEIVED_AT;
+  hoisted.upserts = [];
+  hoisted.dispatch.mockReset();
+});
+
+/** Todos los `last_action` que el turno dejo escritos, en orden. */
+function writtenActions(): Array<Record<string, unknown>> {
+  return hoisted.upserts
+    .map((upsert) => {
+      const metadata = upsert?.metadata as
+        | { working_set?: { last_action?: Record<string, unknown> | null } }
+        | undefined;
+      return metadata?.working_set?.last_action ?? null;
+    })
+    .filter((action): action is Record<string, unknown> => action !== null);
+}
+
+/**
+ * Estado conversacional tal como queda en base despues del turno anterior: el
+ * ultimo upsert que escribio un `working_set`, o el estado previo intacto si el
+ * turno no escribio ninguno (que es justo cuando la propuesta se quedaba
+ * pegada).
+ */
+function memoryStateAfterTurn(previous: ReturnType<typeof memoryStateWithProposedDelete>) {
+  for (let index = hoisted.upserts.length - 1; index >= 0; index -= 1) {
+    const metadata = hoisted.upserts[index]?.metadata as
+      | { working_set?: Record<string, unknown> }
+      | undefined;
+    if (metadata?.working_set) {
+      return {
+        ...previous,
+        metadata,
+        working_set: metadata.working_set,
+      } as typeof previous;
+    }
+  }
+  return previous;
+}
+
+function writtenCorrectionActions(): Array<Record<string, unknown>> {
+  return writtenActions().filter(
+    (action) => action.kind === "correction_proposed",
+  );
 }
 
 describe("confirmacion escrita de una eliminacion propuesta", () => {
@@ -297,5 +442,129 @@ describe("confirmacion escrita de una eliminacion propuesta", () => {
 
     expect(hoisted.dispatch).not.toHaveBeenCalled();
     expect(result.reason).not.toBe("accepted_with_correction_applied");
+  });
+});
+
+/**
+ * Secuencia real capturada en produccion, en el mismo hilo:
+ *
+ *   usuario  -> "elimine al gasto de pan porfa"
+ *   asistente-> "Creo que te refieres a Pan S/5.00. ¿Lo elimino?"
+ *   usuario  -> "hola"
+ *   asistente-> "Creo que te refieres a Pan S/5.00. ¿Lo elimino?"   <- defecto
+ *
+ * `23` §5b.1: la propuesta caduca "a los 15 minutos, o al cambiar de tema", y
+ * al caducar no puede quedar armada para que un "si" posterior la dispare
+ * (`AC-RT-13`).
+ */
+describe("una propuesta pendiente caduca al cambiar de tema (`23` §5b.1)", () => {
+  it("un saludo no ejecuta la eliminacion y deja la propuesta caducada", async () => {
+    hoisted.memoryState = memoryStateWithProposedDelete();
+    const { orchestrator } = buildOrchestrator({ continueTurn: true });
+
+    await orchestrator.handleTurn({
+      externalEventId: externalEventFixture.id,
+      traceId: "trace-hola",
+      turnInput: turnInput("hola"),
+    });
+
+    expect(hoisted.dispatch).not.toHaveBeenCalled();
+
+    // La propuesta quedo caducada y sin comandos: nada que un "si" posterior
+    // pueda disparar.
+    expect(writtenCorrectionActions()).toEqual([
+      expect.objectContaining({ status: "expired", command_ids: [] }),
+    ]);
+  });
+
+  it("y el 'si' del turno siguiente ya no elimina nada", async () => {
+    const estadoInicial = memoryStateWithProposedDelete();
+    hoisted.memoryState = estadoInicial;
+    // `answer_kind: "unsupported"` no escribe memoria conversacional
+    // (`rememberConversationTurn` sale antes): reproduce el caso real en que
+    // el turno intermedio no reescribe `last_action` y la propuesta se quedaba
+    // pegada esperando un "si".
+    const saludo = buildOrchestrator({
+      continueTurn: true,
+      answerKind: "unsupported",
+    });
+
+    await saludo.orchestrator.handleTurn({
+      externalEventId: externalEventFixture.id,
+      traceId: "trace-hola",
+      turnInput: turnInput("hola"),
+    });
+
+    // El segundo turno arranca del estado que dejo el primero, no de uno
+    // inventado: es la secuencia completa del reporte de produccion.
+    hoisted.memoryState = memoryStateAfterTurn(estadoInicial);
+    hoisted.upserts = [];
+    hoisted.dispatch.mockReset();
+    const confirmacion = buildOrchestrator({ continueTurn: true });
+
+    const result = await confirmacion.orchestrator.handleTurn({
+      externalEventId: externalEventFixture.id,
+      traceId: "trace-si-tardio",
+      turnInput: turnInput("si"),
+    });
+
+    expect(hoisted.dispatch).not.toHaveBeenCalled();
+    expect(result.reason).not.toBe("accepted_with_correction_applied");
+  });
+});
+
+describe("la propuesta pendiente pertenece a un hilo y a un momento", () => {
+  it("un 'si' en otra conversacion no ejecuta la eliminacion de la primera", async () => {
+    hoisted.memoryState = memoryStateWithProposedDelete();
+    hoisted.eventMetadata = { thread_id: OTHER_THREAD_ID };
+    const { orchestrator } = buildOrchestrator({ continueTurn: true });
+
+    const result = await orchestrator.handleTurn({
+      externalEventId: externalEventFixture.id,
+      traceId: "trace-otro-hilo",
+      turnInput: turnInput("si te confirmo eliminalo"),
+    });
+
+    expect(hoisted.dispatch).not.toHaveBeenCalled();
+    expect(result.reason).not.toBe("accepted_with_correction_applied");
+    // Y no le toca la propuesta al hilo que si la esta esperando.
+    expect(writtenCorrectionActions()).toEqual([]);
+  });
+
+  it("pasados los 15 minutos se responde la caducidad en vez de eliminar", async () => {
+    hoisted.memoryState = memoryStateWithProposedDelete();
+    hoisted.receivedAt = "2026-08-06T10:20:00.000-05:00";
+    const { orchestrator, presentTurn } = buildOrchestrator();
+
+    const result = await orchestrator.handleTurn({
+      externalEventId: externalEventFixture.id,
+      traceId: "trace-vencida",
+      turnInput: turnInput("si te confirmo eliminalo"),
+    });
+
+    expect(hoisted.dispatch).not.toHaveBeenCalled();
+    expect(result.reason).toBe("accepted_with_correction_lapsed");
+
+    const text = presentTurn.mock.calls[0][0].blocks
+      .map((block) => ("text" in block ? block.text : ""))
+      .join(" ");
+    expect(text).toContain("quedó pendiente y ya venció");
+  });
+
+  it("un estado sin sello de hilo (escrito antes del arreglo) no se confirma", async () => {
+    hoisted.memoryState = memoryStateWithProposedDelete({ threadKey: null });
+    const { orchestrator, presentTurn } = buildOrchestrator();
+
+    const result = await orchestrator.handleTurn({
+      externalEventId: externalEventFixture.id,
+      traceId: "trace-sin-hilo",
+      turnInput: turnInput("si te confirmo eliminalo"),
+    });
+
+    expect(hoisted.dispatch).not.toHaveBeenCalled();
+    expect(result.reason).toBe("accepted_with_correction_lapsed");
+    expect(presentTurn.mock.calls[0][0].reason).toBe(
+      "correction_needs_clarification",
+    );
   });
 });

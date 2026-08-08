@@ -112,7 +112,10 @@ export type CorrectionResolutionResult =
         | "movement_inactive"
         | "reference_not_found"
         | "risk_policy"
-        | "core_error";
+        | "core_error"
+        // `23` §5b.1 / `AC-RT-13`: la propuesta caduco antes de que llegara la
+        // confirmacion. No se ejecuta y se le dice al usuario.
+        | "proposal_lapsed";
       command: ParsedCorrectionCommand | null;
       movement: null;
       idempotent: false;
@@ -216,6 +219,45 @@ export function parseCorrectionCommandText(
 }
 
 /**
+ * `23` §5b.1: una propuesta sin confirmar vale 15 minutos, o hasta que el
+ * usuario cambia de tema. Pasado eso, confirmarla seria ejecutar algo que el
+ * usuario ya no tiene presente, que es justo lo que el principio de control
+ * evita.
+ */
+export const CORRECTION_CONFIRMATION_TTL_MS = 15 * 60 * 1000;
+
+export type AwaitingCorrectionResolution =
+  /** No hay ninguna correccion esperando confirmacion. */
+  | { kind: "none" }
+  /** Confirmacion o descarte validos: mismo hilo, dentro de la vigencia. */
+  | {
+      kind: "confirmable";
+      commandText: string;
+      commandIds: string[];
+    }
+  /**
+   * El usuario confirmo (o descarto) pero la propuesta ya no vale. No se
+   * ejecuta y **se dice** (`AC-RT-13`): nunca se ejecuta ni se descarta en
+   * silencio.
+   */
+  | {
+      kind: "lapsed_confirmation";
+      reason: "confirmation_window_expired" | "thread_unknown";
+      commandIds: string[];
+    }
+  /**
+   * Hay una propuesta viva pero pertenece a otra conversacion. Este turno la
+   * ignora por completo: ni la ejecuta ni la toca, porque caducarla aqui seria
+   * decidir por el hilo que si la esta esperando.
+   */
+  | { kind: "other_thread"; commandIds: string[] }
+  /**
+   * Turno que no es ni confirmacion ni descarte con una propuesta viva de este
+   * hilo: `23` §5b.1 la caduca por cambio de tema.
+   */
+  | { kind: "lapsed_by_topic_change"; commandIds: string[] };
+
+/**
  * `16` §10.3: cuando Manzana propone borrar o cambiar un movimiento, el
  * usuario confirma con el boton (`corr:...`) o escribiendo ("si, eliminalo").
  * Una propuesta de correccion no crea un pending item, asi que ese "si" no
@@ -224,33 +266,140 @@ export function parseCorrectionCommandText(
  * ("No encontre algo reciente para registrar...") y la eliminacion confirmada
  * nunca se ejecutaba.
  *
- * Devuelve el texto de comando equivalente al boton que el usuario habria
- * pulsado, o `null` si no hay una correccion inequivoca que resolver.
- * Solo puentea cuando la ultima accion recordada es exactamente una
- * correccion propuesta esperando confirmacion: con varios candidatos abiertos
- * el "si" es ambiguo y `16` §10.3 prohibe resolver varios elementos con un
- * "ok" ambiguo.
+ * Solo puentea cuando la ultima accion recordada es exactamente una correccion
+ * propuesta esperando confirmacion: con varios candidatos abiertos el "si" es
+ * ambiguo y `16` §10.3 prohibe resolver varios elementos con un "ok" ambiguo.
+ *
+ * Ademas exige que la propuesta siga siendo suya y siga viva (`23` §5b.1):
+ *
+ *  - **mismo hilo**: el estado conversacional era global por usuario, asi que
+ *    una propuesta de otra conversacion podia ejecutarse con un "si" que
+ *    hablaba de otra cosa. Sin sello de hilo —estados escritos antes de este
+ *    arreglo, o base sin la migracion `069`— la propuesta **no** es
+ *    confirmable: el lado seguro es preguntar de mas;
+ *  - **dentro de la vigencia**: 15 minutos desde que se propuso;
+ *  - **adyacencia**: cualquier turno intermedio que no sea confirmacion ni
+ *    descarte la caduca (`lapsed_by_topic_change`), de modo que un "si"
+ *    posterior ya no encuentra nada armado.
  */
-export function resolveAwaitingCorrectionCommandText(params: {
+export function resolveAwaitingCorrection(params: {
   text: string;
   workingSet: ConversationWorkingSet | null;
-}): string | null {
+  /** Hilo del turno actual (`resolveTurnThreadKey`). */
+  threadKey: string;
+  /** Instante del turno, en ISO. */
+  now: string;
+}): AwaitingCorrectionResolution {
   const lastAction = params.workingSet?.last_action ?? null;
   if (
     !lastAction ||
     lastAction.kind !== "correction_proposed" ||
     lastAction.status !== "awaiting_confirmation" ||
-    lastAction.command_ids.length !== 1
+    lastAction.command_ids.length === 0
   ) {
-    return null;
+    return { kind: "none" };
   }
 
-  const command = parseCorrectionCommandText(lastAction.command_ids[0]);
-  if (!command || command.kind === "cancel") return null;
+  const commandIds = [...lastAction.command_ids];
+  const storedThreadKey = lastAction.thread_key ?? null;
+  const answersTheProposal =
+    isConfirmationText(params.text) || isDiscardText(params.text);
 
-  if (isConfirmationText(params.text)) return command.command_id;
-  if (isDiscardText(params.text)) return CORRECTION_CANCEL_COMMAND_ID;
-  return null;
+  // Otra conversacion: este turno no la ejecuta ni la caduca.
+  if (storedThreadKey && storedThreadKey !== params.threadKey) {
+    return { kind: "other_thread", commandIds };
+  }
+
+  if (!answersTheProposal) {
+    return { kind: "lapsed_by_topic_change", commandIds };
+  }
+
+  if (!storedThreadKey) {
+    return {
+      kind: "lapsed_confirmation",
+      reason: "thread_unknown",
+      commandIds,
+    };
+  }
+
+  if (isConfirmationWindowExpired(lastAction.confirmation_expires_at, params.now)) {
+    return {
+      kind: "lapsed_confirmation",
+      reason: "confirmation_window_expired",
+      commandIds,
+    };
+  }
+
+  // Con varios candidatos abiertos el "si" no elige ninguno (`16` §10.3): la
+  // propuesta queda caducada por este turno, no ejecutada a medias.
+  if (commandIds.length !== 1) {
+    return { kind: "lapsed_by_topic_change", commandIds };
+  }
+
+  const command = parseCorrectionCommandText(commandIds[0]);
+  if (!command || command.kind === "cancel") {
+    return { kind: "lapsed_by_topic_change", commandIds };
+  }
+
+  if (isDiscardText(params.text)) {
+    return {
+      kind: "confirmable",
+      commandText: CORRECTION_CANCEL_COMMAND_ID,
+      commandIds,
+    };
+  }
+
+  return { kind: "confirmable", commandText: command.command_id, commandIds };
+}
+
+/**
+ * Puente de compatibilidad: devuelve el texto de comando equivalente al boton
+ * que el usuario habria pulsado, o `null` si no hay una correccion inequivoca,
+ * viva y de este mismo hilo que resolver.
+ */
+export function resolveAwaitingCorrectionCommandText(params: {
+  text: string;
+  workingSet: ConversationWorkingSet | null;
+  threadKey: string;
+  now: string;
+}): string | null {
+  const resolution = resolveAwaitingCorrection(params);
+  return resolution.kind === "confirmable" ? resolution.commandText : null;
+}
+
+/**
+ * Sin sello de vigencia (estados anteriores a este arreglo) la propuesta se
+ * considera vencida: el lado seguro.
+ */
+function isConfirmationWindowExpired(
+  confirmationExpiresAt: string | null | undefined,
+  now: string
+): boolean {
+  if (!confirmationExpiresAt) return true;
+  const expiresAt = Date.parse(confirmationExpiresAt);
+  const current = Date.parse(now);
+  if (Number.isNaN(expiresAt) || Number.isNaN(current)) return true;
+  return current >= expiresAt;
+}
+
+/**
+ * Resultado de una confirmacion que llego tarde o sin sello de hilo: nada se
+ * ejecuta, y el planificador lo comunica (`AC-RT-13`).
+ */
+export function lapsedCorrectionResolution(
+  reason: "confirmation_window_expired" | "thread_unknown"
+): Extract<CorrectionResolutionResult, { kind: "failed" }> {
+  return {
+    kind: "failed",
+    reason: "proposal_lapsed",
+    command: null,
+    movement: null,
+    idempotent: false,
+    error_code:
+      reason === "thread_unknown"
+        ? "CORRECTION_PROPOSAL_THREAD_UNKNOWN"
+        : "CORRECTION_PROPOSAL_EXPIRED",
+  };
 }
 
 export async function maybeResolveCorrection(params: {

@@ -8,6 +8,7 @@ import type {
   ConversationToolName,
   ConversationWorkingSet,
 } from "@/agents/conversation-agent";
+import { CORRECTION_CONFIRMATION_TTL_MS } from "@/core/orchestrator/correction-resolution";
 import type { CompiledOrchestrationPlan } from "@/core/orchestrator/orchestration-plan";
 import {
   type ConversationMemoryState,
@@ -49,6 +50,8 @@ export async function rememberConversationTurn(input: {
   answer: ConversationalAnswer;
   sourceRef?: string | null;
   traceId?: string | null;
+  /** Hilo del turno (`resolveTurnThreadKey`). Sin el, escribe en el estado heredado. */
+  threadKey?: string;
 }) {
   if (input.answer.answer_kind === "unsupported") return null;
 
@@ -68,6 +71,7 @@ export async function rememberConversationTurn(input: {
   return upsertConversationMemoryState(input.client, {
     userId: input.contextPack.user_id,
     channel: input.channel,
+    threadKey: input.threadKey,
     lastIntent: input.contextPack.query.kind,
     lastQueryKind: input.contextPack.query.kind,
     lastQueryText: input.contextPack.query.normalized_text,
@@ -89,6 +93,8 @@ export async function rememberConversationTurn(input: {
       turn_state: input.contextPack.turn_state,
       working_set: buildConversationWorkingSet({
         previous: input.contextPack.active_conversation_state.working_set,
+        threadKey: input.threadKey ?? null,
+        now: input.contextPack.received_at,
         topic: topicForQuery(input.contextPack.query.kind),
         goal: "query",
         userMessage: input.contextPack.original_message,
@@ -138,6 +144,8 @@ export async function rememberConversationOutcome(input: {
   client: Client;
   userId: string;
   channel: ConversationMemoryChannel;
+  /** Hilo del turno (`resolveTurnThreadKey`). Sin el, escribe en el estado heredado. */
+  threadKey?: string;
   intent: string;
   userMessage: string;
   resultSummary: string;
@@ -170,6 +178,7 @@ export async function rememberConversationOutcome(input: {
   });
   const workingSet = buildConversationWorkingSet({
     previous: input.previous ?? null,
+    threadKey: input.threadKey ?? null,
     topic: input.topic,
     goal: input.goal,
     userMessage: input.userMessage,
@@ -189,6 +198,7 @@ export async function rememberConversationOutcome(input: {
   return upsertConversationMemoryState(input.client, {
     userId: input.userId,
     channel: input.channel,
+    threadKey: input.threadKey,
     lastIntent: input.intent,
     lastQueryKind: null,
     lastQueryText: summarizeAnswer(input.userMessage),
@@ -207,6 +217,8 @@ export async function rememberConversationPlanningState(input: {
   client: Client;
   userId: string;
   channel: ConversationMemoryChannel;
+  /** Hilo del turno (`resolveTurnThreadKey`). Sin el, escribe en el estado heredado. */
+  threadKey?: string;
   userMessage: string;
   sourceRef?: string | null;
   compiled: CompiledOrchestrationPlan;
@@ -250,6 +262,7 @@ export async function rememberConversationPlanningState(input: {
   return upsertConversationMemoryState(input.client, {
     userId: input.userId,
     channel: input.channel,
+    threadKey: input.threadKey,
     lastIntent: input.compiled.goal,
     lastQueryKind:
       input.compiled.conversationQuery.kind === "unsupported"
@@ -274,8 +287,85 @@ export async function rememberConversationPlanningState(input: {
   });
 }
 
+/**
+ * Caduca la propuesta de correccion que quedo esperando confirmacion
+ * (`23` §5b.1: "15 minutos, o al cambiar de tema").
+ *
+ * Devuelve el mismo working set si no habia nada que caducar, para que el
+ * llamador pueda usar el resultado siempre.
+ */
+export function withExpiredCorrectionProposal(
+  workingSet: ConversationWorkingSet | null,
+  now: string,
+): ConversationWorkingSet | null {
+  const lastAction = workingSet?.last_action ?? null;
+  if (
+    !workingSet ||
+    !lastAction ||
+    lastAction.kind !== "correction_proposed" ||
+    lastAction.status !== "awaiting_confirmation"
+  ) {
+    return workingSet;
+  }
+
+  return {
+    ...workingSet,
+    last_action: {
+      ...lastAction,
+      status: "expired",
+      // Sin comandos no queda nada que un "si" posterior pueda disparar, ni
+      // aunque la escritura de abajo falle en otro turno.
+      command_ids: [],
+      confirmation_expires_at: null,
+    },
+    updated_at: now,
+  };
+}
+
+/**
+ * Persiste esa caducidad sin tocar el resto del estado: no es una respuesta
+ * del asistente ni un turno nuevo, solo la propuesta que dejo de valer.
+ */
+export async function rememberExpiredCorrectionProposal(input: {
+  client: Client;
+  userId: string;
+  channel: ConversationMemoryChannel;
+  threadKey?: string;
+  previousState: ConversationMemoryState | null;
+  now: string;
+}): Promise<ConversationMemoryState | null> {
+  const workingSet = withExpiredCorrectionProposal(
+    input.previousState?.working_set ?? null,
+    input.now,
+  );
+  if (!workingSet) return input.previousState;
+
+  return upsertConversationMemoryState(input.client, {
+    userId: input.userId,
+    channel: input.channel,
+    threadKey: input.threadKey,
+    lastIntent: input.previousState?.last_intent ?? null,
+    lastQueryKind: input.previousState?.last_query_kind ?? null,
+    lastQueryText: input.previousState?.last_query_text ?? null,
+    lastQueryDateRange: input.previousState?.last_query_date_range ?? null,
+    lastToolName: input.previousState?.last_tool_name ?? null,
+    lastResultSummary: input.previousState?.last_result_summary ?? null,
+    referencedMovements: input.previousState?.referenced_movements ?? [],
+    referencedEntities: input.previousState?.referenced_entities ?? [],
+    continuityHint: input.previousState?.continuity_hint ?? null,
+    sourceRef: input.previousState?.source_ref ?? null,
+    expiresAt: input.previousState?.expires_at,
+    metadata: {
+      ...(input.previousState?.metadata ?? {}),
+      working_set: workingSet,
+    },
+  });
+}
+
 function buildConversationWorkingSet(input: {
   previous: ConversationWorkingSet | null;
+  /** Hilo dueño de la accion; `null` mientras la superficie no tenga hilo. */
+  threadKey?: string | null;
   topic: ConversationWorkingSet["topic"];
   goal: ConversationWorkingSet["goal"];
   userMessage: string;
@@ -294,6 +384,7 @@ function buildConversationWorkingSet(input: {
   focusSet?: ConversationFocusSet | null;
   now?: string;
 }): ConversationWorkingSet {
+  const now = input.now ?? new Date().toISOString();
   return {
     version: "v1",
     topic: input.topic,
@@ -307,6 +398,16 @@ function buildConversationWorkingSet(input: {
       movement_ids: input.movementIds.slice(0, 10),
       pending_item_ids: (input.pendingItemIds ?? []).slice(0, 10),
       command_ids: (input.commandIds ?? []).slice(0, 5),
+      // El sello de hilo y la vigencia son lo que impide que un "si" de otra
+      // conversacion —o de dentro de dos horas— ejecute esta accion
+      // (`23` §5b.1, `AC-RT-13`).
+      thread_key: input.threadKey ?? null,
+      confirmation_expires_at:
+        input.actionStatus === "awaiting_confirmation"
+          ? new Date(
+              Date.parse(now) + CORRECTION_CONFIRMATION_TTL_MS,
+            ).toISOString()
+          : null,
     },
     unresolved_slots: input.unresolvedSlots.slice(0, 10),
     movement_referents:
@@ -323,7 +424,7 @@ function buildConversationWorkingSet(input: {
       null,
     focus_set: input.focusSet ?? input.previous?.focus_set ?? null,
     conversation_style: input.previous?.conversation_style ?? null,
-    updated_at: input.now ?? new Date().toISOString(),
+    updated_at: now,
   };
 }
 

@@ -725,6 +725,7 @@ export type Database = {
           referenced_movements: Json
           scope: string
           source_ref: string | null
+          thread_key: string
           updated_at: string
           user_id: string
         }
@@ -745,6 +746,7 @@ export type Database = {
           referenced_movements?: Json
           scope?: string
           source_ref?: string | null
+          thread_key?: string
           updated_at?: string
           user_id: string
         }
@@ -765,6 +767,7 @@ export type Database = {
           referenced_movements?: Json
           scope?: string
           source_ref?: string | null
+          thread_key?: string
           updated_at?: string
           user_id?: string
         }

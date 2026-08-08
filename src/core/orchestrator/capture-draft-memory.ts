@@ -91,6 +91,11 @@ export async function rememberCaptureDraft(input: {
   client: Client;
   userId: string;
   channel: ConversationMemoryChannel;
+  /**
+   * Hilo del turno (`resolveTurnThreadKey`). Con la migracion `069` aplicada,
+   * el borrador vive en su conversacion y no lo ve otra.
+   */
+  threadKey?: string;
   originalMessage: string;
   receivedAt: string;
   sourceRef: string | null;
@@ -114,6 +119,7 @@ export async function rememberCaptureDraft(input: {
   return upsertConversationMemoryState(input.client, {
     userId: input.userId,
     channel: input.channel,
+    threadKey: input.threadKey,
     scope: CAPTURE_DRAFT_SCOPE,
     lastIntent: input.dataAgentOutput?.intent ?? "record_movement",
     lastQueryKind: null,
@@ -137,6 +143,7 @@ export async function clearCaptureDraftMemory(input: {
   client: Client;
   userId: string;
   channel: ConversationMemoryChannel;
+  threadKey?: string;
   reason: "confirmed" | "discarded" | "superseded" | "expired_or_invalid";
   now?: Date;
 }): Promise<ConversationMemoryState | null> {
@@ -145,6 +152,7 @@ export async function clearCaptureDraftMemory(input: {
   return upsertConversationMemoryState(input.client, {
     userId: input.userId,
     channel: input.channel,
+    threadKey: input.threadKey,
     scope: CAPTURE_DRAFT_SCOPE,
     lastIntent: null,
     lastQueryKind: null,
@@ -170,11 +178,13 @@ export async function getActiveCaptureDraftMemory(input: {
   client: Client;
   userId: string;
   channel: ConversationMemoryChannel;
+  threadKey?: string;
   now?: string;
 }): Promise<CaptureDraftMemory | null> {
   const state = await getActiveConversationMemoryState(input.client, {
     userId: input.userId,
     channel: input.channel,
+    threadKey: input.threadKey,
     scope: CAPTURE_DRAFT_SCOPE,
     now: input.now,
   });
@@ -186,6 +196,7 @@ export async function resolveCaptureDraftFromNoActivePending(input: {
   client: Client;
   userId: string;
   channel: ConversationMemoryChannel;
+  threadKey?: string;
   pendingResolution: PendingResolutionResult;
   now?: string;
 }): Promise<CaptureDraftResolutionResult> {
@@ -207,6 +218,7 @@ export async function resolveCaptureDraftFromNoActivePending(input: {
     client: input.client,
     userId: input.userId,
     channel: input.channel,
+    threadKey: input.threadKey,
     now: input.now,
   });
 
@@ -224,6 +236,7 @@ export async function resolveCaptureDraftFromNoActivePending(input: {
       client: input.client,
       userId: input.userId,
       channel: input.channel,
+      threadKey: input.threadKey,
       reason: "discarded",
       now: input.now ? new Date(input.now) : undefined,
     });

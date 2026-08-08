@@ -253,7 +253,10 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
       reason: "correction_needs_clarification",
       intent: "direct_response",
       shape: "texto",
-      text: composeCorrectionFailedText(),
+      text:
+        correctionResolution.reason === "proposal_lapsed"
+          ? composeCorrectionLapsedText()
+          : composeCorrectionFailedText(),
     };
   }
 
@@ -1026,6 +1029,19 @@ function composeCorrectionClarificationText(
 
   if (!movementsUrl) return base;
   return `${base}\nPuedes revisarlo desde Movimientos: ${movementsUrl}`;
+}
+
+/**
+ * `23` §5b.1 / `AC-RT-13`: una propuesta caducada **se dice**, no se ejecuta ni
+ * se descarta en silencio. Tampoco se vuelve a armar sola: el usuario la pide
+ * otra vez y Manzana la prepara de nuevo, para que la confirmacion siguiente
+ * hable de algo que el usuario si tiene presente.
+ */
+function composeCorrectionLapsedText(): string {
+  return (
+    "La operación que te propuse quedó pendiente y ya venció, así que no cambié nada. " +
+    "Si todavía la quieres, pídemela otra vez y la preparo de nuevo."
+  );
 }
 
 function composeCorrectionFailedText(): string {

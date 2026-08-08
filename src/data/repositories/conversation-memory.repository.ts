@@ -6,10 +6,13 @@ import type {
   ConversationWorkingSet,
 } from "@/agents/conversation-agent";
 import { ConversationWorkingSetSchema } from "@/agents/conversation-agent";
+import { LEGACY_THREAD_KEY } from "@/core/conversation/thread-scope";
 import type { Database, Json } from "@/data/supabase/types";
 import { logger } from "@/shared/telemetry/logger";
 
 type Client = SupabaseClient<Database>;
+type ConversationMemoryStateInsert =
+  Database["public"]["Tables"]["conversation_memory_states"]["Insert"];
 
 export type ConversationMemoryChannel = "whatsapp" | "dashboard";
 
@@ -18,6 +21,12 @@ export type ConversationMemoryState = {
   user_id: string;
   channel: ConversationMemoryChannel;
   scope: string;
+  /**
+   * Hilo dueño del estado (`069_conversation_memory_thread_scope.sql`).
+   * Vale `LEGACY_THREAD_KEY` cuando la fila es anterior a la migracion o
+   * cuando la columna todavia no existe en la base.
+   */
+  thread_key: string;
   last_intent: string | null;
   last_query_kind: ConversationQueryKind | null;
   last_query_text: string | null;
@@ -38,6 +47,12 @@ export type UpsertConversationMemoryStateInput = {
   userId: string;
   channel: ConversationMemoryChannel;
   scope?: string;
+  /**
+   * Hilo del turno que escribe (`resolveTurnThreadKey`). Omitirlo escribe en
+   * la fila heredada sin hilo: solo lo hacen las superficies que no tienen
+   * conversacion propia (busqueda natural).
+   */
+  threadKey?: string;
   lastIntent: string | null;
   lastQueryKind: ConversationQueryKind | null;
   lastQueryText: string | null;
@@ -56,28 +71,78 @@ const DEFAULT_SCOPE = "default";
 const DEFAULT_TTL_MS = 2 * 60 * 60 * 1000;
 const MAX_REFERENCED_MOVEMENTS = 10;
 
+const THREAD_COLUMN = "thread_key";
+const THREAD_CONFLICT_TARGET = "user_id,scope,thread_key";
+const LEGACY_CONFLICT_TARGET = "user_id,scope";
+
+/**
+ * `069_conversation_memory_thread_scope.sql` separa el estado por hilo. La
+ * migracion se despliega despues del codigo, asi que este modulo funciona con
+ * y sin la columna: si la base todavia no la tiene, cae al comportamiento
+ * heredado (una fila por `user_id,scope`) en vez de dejar de escribir memoria.
+ *
+ * Degradar aqui es seguro porque la barrera que impide ejecutar una correccion
+ * vieja **no** depende de esta columna: vive en `working_set.last_action`
+ * (`metadata`, jsonb que siempre existe) y la comprueba
+ * `resolveAwaitingCorrection`.
+ */
+type ThreadColumnState = "unknown" | "present" | "absent";
+let threadColumnState: ThreadColumnState = "unknown";
+
+/** Solo para pruebas: vuelve a preguntar si la columna existe. */
+export function resetConversationMemoryThreadScopeCache(): void {
+  threadColumnState = "unknown";
+}
+
+export function isConversationMemoryThreadScopeEnforced(): boolean {
+  return threadColumnState !== "absent";
+}
+
 export async function getActiveConversationMemoryState(
   client: Client,
   input: {
     userId: string;
     channel: ConversationMemoryChannel;
     scope?: string;
+    /**
+     * Cuando se pasa, solo devuelve el estado de ese hilo. Omitirlo devuelve
+     * el mas reciente del usuario sin mirar el hilo (superficies de solo
+     * lectura que no participan de una conversacion).
+     */
+    threadKey?: string;
     now?: string;
   }
 ): Promise<ConversationMemoryState | null> {
-  try {
-    const now = input.now ?? new Date().toISOString();
-    const { data, error } = await client
+  const now = input.now ?? new Date().toISOString();
+  const filterByThread =
+    input.threadKey !== undefined && threadColumnState !== "absent";
+
+  const read = async (withThread: boolean) => {
+    const query = client
       .from("conversation_memory_states")
       .select("*")
       .eq("user_id", input.userId)
       .eq("scope", input.scope ?? DEFAULT_SCOPE)
-      .gt("expires_at", now)
+      .gt("expires_at", now);
+
+    return (withThread ? query.eq(THREAD_COLUMN, input.threadKey!) : query)
       .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
+  };
 
-    if (error) throw error;
+  try {
+    const { data, error } = await read(filterByThread);
+    if (error) {
+      if (filterByThread && isMissingThreadColumnError(error)) {
+        rememberThreadColumnAbsent("read", error);
+        const retry = await read(false);
+        if (retry.error) throw retry.error;
+        return retry.data ? normalizeMemoryState(retry.data) : null;
+      }
+      throw error;
+    }
+    if (filterByThread) threadColumnState = "present";
     return data ? normalizeMemoryState(data) : null;
   } catch (error) {
     logger.warn("conversation_memory.read_failed", {
@@ -93,36 +158,58 @@ export async function upsertConversationMemoryState(
   client: Client,
   input: UpsertConversationMemoryStateInput
 ): Promise<ConversationMemoryState | null> {
-  try {
-    const expiresAt =
-      input.expiresAt ?? new Date(Date.now() + DEFAULT_TTL_MS).toISOString();
-    const { data, error } = await client
+  const expiresAt =
+    input.expiresAt ?? new Date(Date.now() + DEFAULT_TTL_MS).toISOString();
+  const row: ConversationMemoryStateInsert = {
+    user_id: input.userId,
+    channel: input.channel,
+    scope: input.scope ?? DEFAULT_SCOPE,
+    last_intent: input.lastIntent,
+    last_query_kind: input.lastQueryKind,
+    last_query_text: input.lastQueryText,
+    last_query_date_range: input.lastQueryDateRange as unknown as Json,
+    last_tool_name: input.lastToolName,
+    last_result_summary: input.lastResultSummary,
+    referenced_movements: input.referencedMovements.slice(
+      0,
+      MAX_REFERENCED_MOVEMENTS
+    ) as unknown as Json,
+    referenced_entities: (input.referencedEntities ?? []) as unknown as Json,
+    continuity_hint: input.continuityHint,
+    source_ref: input.sourceRef ?? null,
+    expires_at: expiresAt,
+    metadata: (input.metadata ?? {}) as Json,
+  };
+
+  const write = async (withThread: boolean) => {
+    const payload: ConversationMemoryStateInsert = withThread
+      ? { ...row, thread_key: input.threadKey ?? LEGACY_THREAD_KEY }
+      : row;
+
+    return client
       .from("conversation_memory_states")
-      .upsert(
-        {
-          user_id: input.userId,
-          channel: input.channel,
-          scope: input.scope ?? DEFAULT_SCOPE,
-          last_intent: input.lastIntent,
-          last_query_kind: input.lastQueryKind,
-          last_query_text: input.lastQueryText,
-          last_query_date_range: input.lastQueryDateRange as unknown as Json,
-          last_tool_name: input.lastToolName,
-          last_result_summary: input.lastResultSummary,
-          referenced_movements: input.referencedMovements
-            .slice(0, MAX_REFERENCED_MOVEMENTS) as unknown as Json,
-          referenced_entities: (input.referencedEntities ?? []) as unknown as Json,
-          continuity_hint: input.continuityHint,
-          source_ref: input.sourceRef ?? null,
-          expires_at: expiresAt,
-          metadata: (input.metadata ?? {}) as Json,
-        },
-        { onConflict: "user_id,scope" }
-      )
+      .upsert(payload, {
+        onConflict: withThread
+          ? THREAD_CONFLICT_TARGET
+          : LEGACY_CONFLICT_TARGET,
+      })
       .select("*")
       .single();
+  };
 
-    if (error) throw error;
+  try {
+    const useThread = threadColumnState !== "absent";
+    const { data, error } = await write(useThread);
+    if (error) {
+      if (useThread && isMissingThreadColumnError(error)) {
+        rememberThreadColumnAbsent("write", error);
+        const retry = await write(false);
+        if (retry.error) throw retry.error;
+        return normalizeMemoryState(retry.data);
+      }
+      throw error;
+    }
+    if (useThread) threadColumnState = "present";
     return normalizeMemoryState(data);
   } catch (error) {
     logger.warn("conversation_memory.write_failed", {
@@ -134,6 +221,45 @@ export async function upsertConversationMemoryState(
   }
 }
 
+function rememberThreadColumnAbsent(
+  operation: "read" | "write",
+  error: unknown
+): void {
+  if (threadColumnState !== "absent") {
+    logger.warn("conversation_memory.thread_scope_unavailable", {
+      operation,
+      error,
+      migration: "069_conversation_memory_thread_scope.sql",
+    });
+  }
+  threadColumnState = "absent";
+}
+
+/**
+ * `42703` (columna inexistente), `PGRST204` (columna ausente en la cache de
+ * esquema) y `42P10` (el `on conflict` no encuentra indice unico) son las tres
+ * formas en que PostgREST responde cuando la migracion todavia no corrio.
+ * Un falso positivo solo degrada al comportamiento heredado, nunca escribe de
+ * mas ni ejecuta nada.
+ */
+function isMissingThreadColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const record = error as { code?: unknown; message?: unknown; details?: unknown };
+  const code = typeof record.code === "string" ? record.code : "";
+  if (code === "42703" || code === "PGRST204" || code === "42P10") return true;
+
+  const text = [record.message, record.details]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ")
+    .toLowerCase();
+  if (!text.includes(THREAD_COLUMN)) return false;
+  return (
+    text.includes("does not exist") ||
+    text.includes("schema cache") ||
+    text.includes("could not find")
+  );
+}
+
 function normalizeMemoryState(
   row: Database["public"]["Tables"]["conversation_memory_states"]["Row"]
 ): ConversationMemoryState {
@@ -142,6 +268,8 @@ function normalizeMemoryState(
     user_id: row.user_id,
     channel: row.channel as ConversationMemoryChannel,
     scope: row.scope,
+    thread_key:
+      typeof row.thread_key === "string" ? row.thread_key : LEGACY_THREAD_KEY,
     last_intent: row.last_intent,
     last_query_kind: isConversationQueryKind(row.last_query_kind)
       ? row.last_query_kind
