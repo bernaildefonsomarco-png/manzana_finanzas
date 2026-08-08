@@ -703,14 +703,6 @@ export class FinancialOrchestrator {
             })
           : notPendingResolution();
 
-    logger.warn("diag.pending_resolution_debug", {
-      trace_id: input.traceId,
-      text,
-      planned_financial_resolution: plannedFinancialResolution,
-      pending_resolution_kind: pendingResolution.kind,
-      pending_resolution_action: pendingResolution.action,
-    });
-
     if (pendingResolution.kind !== "not_resolution") {
       const captureDraftResolution =
         await resolveCaptureDraftFromNoActivePending({
@@ -721,13 +713,6 @@ export class FinancialOrchestrator {
           pendingResolution,
           now: externalEvent.received_at,
         });
-
-      logger.warn("diag.capture_draft_resolution_debug", {
-        trace_id: input.traceId,
-        capture_draft_resolution_kind: captureDraftResolution.kind,
-        capture_draft_resolution_reason: captureDraftResolution.reason,
-        has_draft: captureDraftResolution.draft !== null,
-      });
 
       if (captureDraftResolution.kind === "ready_to_replay") {
         const draftDataContextPack = await this.buildDataContextPack(
@@ -761,8 +746,30 @@ export class FinancialOrchestrator {
           pendingResolution,
           captureDraftResolution,
           text,
-          allowDeterministicFallback: !initialOrchestrationPlanning,
+          orchestrationRoute:
+            initialOrchestrationPlanning?.compiled.route ?? null,
         });
+
+      // `19` §4.1 / `AC-OBS-02`: la cadena de decision del turno se registra
+      // con codigos e identificadores. Nunca el texto del usuario, el mensaje
+      // original del borrador ni las pistas de deuda (llevan nombres propios).
+      logger.info("orchestrator.pending_resolution_routed", {
+        trace_id: input.traceId,
+        external_event_id: externalEvent.id,
+        planned_financial_action: plannedFinancialResolution?.action ?? null,
+        planned_financial_target: plannedFinancialResolution?.target ?? null,
+        planned_financial_confidence:
+          plannedFinancialResolution?.confidence ?? null,
+        orchestration_route:
+          initialOrchestrationPlanning?.compiled.route ?? null,
+        pending_resolution_kind: pendingResolution.kind,
+        pending_resolution_action: pendingResolution.action,
+        pending_resolution_reason: pendingResolution.reason,
+        capture_draft_resolution_kind: captureDraftResolution.kind,
+        capture_draft_resolution_reason: captureDraftResolution.reason,
+        has_capture_draft: captureDraftResolution.draft !== null,
+        routed_to_correction: shouldTryCorrectionAfterPendingMiss,
+      });
 
       if (
         (captureDraftResolution.kind === "discarded" ||
@@ -1353,17 +1360,6 @@ export class FinancialOrchestrator {
     });
     const financialActionPlan = dedupPreflight.plan;
 
-    logger.warn("diag.financial_action_plan_debug", {
-      trace_id: params.traceId,
-      confirmed_by_user: Boolean(params.captureDraftReplay),
-      actions: financialActionPlan.actions.map((action) => ({
-        decision: action.decision,
-        reasons: action.reasons,
-        has_debt_creation_input: action.debt_creation_input !== null,
-      })),
-      execute_ready_data_actions: this.options.executeReadyDataActions,
-    });
-
     const dispatcher = new CommandDispatcher(
       new SupabaseFinancialCoreRepository(this.client),
       {
@@ -1853,18 +1849,6 @@ export class FinancialOrchestrator {
             metadata: params.externalEvent.metadata,
           }),
           now: params.externalEvent.received_at,
-        }).then((draft) => {
-          logger.warn("diag.capture_draft_at_plan_time", {
-            trace_id: params.traceId,
-            text: params.text,
-            draft_reason: draft?.reason ?? null,
-            draft_original_message: draft?.original_message ?? null,
-            draft_proposed_actions_count:
-              draft?.data_agent_output?.result.length ?? null,
-            draft_debt_hint:
-              draft?.data_agent_output?.result?.[0]?.debt_hint ?? null,
-          });
-          return draft;
         }),
         listPendingItems(this.client, params.externalEvent.user_id!, {
           limit: 5,
@@ -2623,21 +2607,38 @@ function buildCaptureDraftResolutionBridge(
   };
 }
 
+/**
+ * "Descartalo" sin ningun pendiente ni borrador activo no es un turno perdido:
+ * casi siempre pide deshacer algo ya registrado. Sin este desvio el turno
+ * termina en una aclaracion ("no hay nada que descartar") y nunca llega a la
+ * ruta de correccion.
+ *
+ * El criterio es el mismo que decide la ruta de correccion mas abajo: si hubo
+ * plan semantico manda el plan —el clasificador por expresiones regulares no
+ * puede sobrescribir una decision del ejecutivo—, y solo cuando no hubo plan
+ * (ejecutivo y planner legado caidos) el clasificador deterministico es el
+ * unico criterio disponible.
+ */
 export function shouldRoutePendingMissToCorrection(params: {
   pendingResolution: PendingResolutionResult;
   captureDraftResolution: CaptureDraftResolutionResult;
   text: string;
-  allowDeterministicFallback: boolean;
+  orchestrationRoute: CompiledOrchestrationPlan["route"] | null;
 }): boolean {
-  const normalizedText = normalizeConversationText(params.text);
-
-  return (
-    params.allowDeterministicFallback &&
+  const isPendingMiss =
     params.pendingResolution.kind === "needs_clarification" &&
     params.pendingResolution.reason === "no_active_pending" &&
     params.pendingResolution.action === "discard" &&
     params.captureDraftResolution.kind === "needs_clarification" &&
-    params.captureDraftResolution.reason === "no_active_capture_draft" &&
+    params.captureDraftResolution.reason === "no_active_capture_draft";
+  if (!isPendingMiss) return false;
+
+  if (params.orchestrationRoute !== null) {
+    return params.orchestrationRoute === "correction_agent";
+  }
+
+  const normalizedText = normalizeConversationText(params.text);
+  return (
     !/\bpendiente(s)?\b/.test(normalizedText) &&
     isCorrectionLikeText(params.text)
   );

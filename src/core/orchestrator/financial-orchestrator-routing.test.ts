@@ -32,7 +32,7 @@ describe("FinancialOrchestrator routing", () => {
         pendingResolution: noActivePendingDiscard,
         captureDraftResolution: noActiveCaptureDraft,
         text: "descartalo",
-        allowDeterministicFallback: true,
+        orchestrationRoute: null,
       })
     ).toBe(true);
   });
@@ -43,7 +43,7 @@ describe("FinancialOrchestrator routing", () => {
         pendingResolution: noActivePendingDiscard,
         captureDraftResolution: noActiveCaptureDraft,
         text: "descarta pendiente",
-        allowDeterministicFallback: true,
+        orchestrationRoute: null,
       })
     ).toBe(false);
   });
@@ -70,7 +70,7 @@ describe("FinancialOrchestrator routing", () => {
         pendingResolution: noActivePendingDiscard,
         captureDraftResolution: discardedDraft,
         text: "descartalo",
-        allowDeterministicFallback: true,
+        orchestrationRoute: null,
       })
     ).toBe(false);
   });
@@ -81,7 +81,48 @@ describe("FinancialOrchestrator routing", () => {
         pendingResolution: noActivePendingDiscard,
         captureDraftResolution: noActiveCaptureDraft,
         text: "descartalo",
-        allowDeterministicFallback: false,
+        orchestrationRoute: "data_agent",
+      }),
+    ).toBe(false);
+  });
+
+  // Con el ejecutivo conversacional activo siempre hay plan, asi que el desvio
+  // solo existe si obedece al plan: antes se apagaba entero y esta proteccion
+  // no corria nunca en produccion.
+  it("reenvia a correccion cuando el plan dice que el turno es una correccion", () => {
+    expect(
+      shouldRoutePendingMissToCorrection({
+        pendingResolution: noActivePendingDiscard,
+        captureDraftResolution: noActiveCaptureDraft,
+        text: "descartalo",
+        orchestrationRoute: "correction_agent",
+      }),
+    ).toBe(true);
+  });
+
+  it("obedece al plan aunque el clasificador deterministico no reconozca el texto", () => {
+    expect(
+      shouldRoutePendingMissToCorrection({
+        pendingResolution: noActivePendingDiscard,
+        captureDraftResolution: noActiveCaptureDraft,
+        text: "ese de ayer no va",
+        orchestrationRoute: "correction_agent",
+      }),
+    ).toBe(true);
+  });
+
+  it("no reenvia con plan de correccion si el borrador quedo invalido", () => {
+    expect(
+      shouldRoutePendingMissToCorrection({
+        pendingResolution: noActivePendingDiscard,
+        captureDraftResolution: {
+          kind: "needs_clarification",
+          reason: "invalid_capture_draft",
+          action: "discard",
+          draft: null,
+        } satisfies CaptureDraftResolutionResult,
+        text: "descartalo",
+        orchestrationRoute: "correction_agent",
       }),
     ).toBe(false);
   });
