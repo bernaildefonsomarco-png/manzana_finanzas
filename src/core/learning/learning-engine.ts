@@ -233,8 +233,19 @@ export class LearningEngine {
     claimValue: Record<string, unknown>;
     traceId?: string;
     observedAt?: string;
+    /**
+     * Confianza de quien interpreto la declaracion. Se propaga al candidato
+     * para que `evaluateLearningCandidate` decida de verdad: con el `1` fijo
+     * de antes toda frase quedaba aceptada y el umbral de 0.85 no filtraba
+     * nada. Por omision se conserva la certeza absoluta para los llamadores
+     * que ya venian con evidencia confirmada.
+     */
+    confidence?: number;
   }): Promise<LearningOutcome[]> {
     const observedAt = input.observedAt ?? new Date().toISOString();
+    const confidence = Number.isFinite(input.confidence)
+      ? Math.min(1, Math.max(0, input.confidence as number))
+      : 1;
     const proposal = withPolicyExpiry(
       LearningCandidateProposalSchema.parse({
         kind: "preference",
@@ -242,7 +253,7 @@ export class LearningEngine {
         summary: input.summary,
         search_terms: input.searchTerms,
         basis: "explicit_user_statement",
-        confidence: 1,
+        confidence,
         sensitivity: "normal",
         requires_user_confirmation: false,
         valid_until: null,

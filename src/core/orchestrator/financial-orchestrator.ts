@@ -1,8 +1,8 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CommandDispatcher } from "@/core/finance";
-import { LearningEngine } from "@/core/learning";
+import { captureExplicitConversationStyle } from "@/core/learning/conversation-style-capture";
 import { handleMemoryControlFromText } from "@/core/learning/memory-control-from-text";
-import type { Database, Json } from "@/data/supabase/types";
+import type { Database } from "@/data/supabase/types";
 import {
   ConversationAgent,
   type ConversationContextPack,
@@ -46,11 +46,7 @@ import { DebtPaymentCommandHandler } from "@/core/debts/debt-payment-command";
 import { SupabaseDebtPaymentExecutionPort } from "@/data/repositories/debt-payment-command.repository";
 import { DebtCreationCommandHandler } from "@/core/debts/debt-creation-command";
 import { SupabaseDebtCreationExecutionPort } from "@/data/repositories/debt-creation-command.repository";
-import {
-  listFinancialMemory,
-  manageFinancialMemory,
-  searchConfirmedFinancialMemory,
-} from "@/data/repositories/financial-memory.repository";
+import { searchConfirmedFinancialMemory } from "@/data/repositories/financial-memory.repository";
 import {
   getExternalEventById,
   updateExternalEventStatus,
@@ -90,10 +86,7 @@ import {
   dataAgentResultFromCaptureDraft,
   dataAgentResultFromExecutive,
 } from "@/core/conversation/executive-adapters";
-import {
-  readPersistentConversationStyle,
-  writePersistentConversationStyle,
-} from "@/core/conversation/conversation-style-preferences";
+import { readPersistentConversationStyle } from "@/core/conversation/conversation-style-preferences";
 import { getActiveConversationMemoryState } from "@/data/repositories/conversation-memory.repository";
 import {
   clearCaptureDraftMemory,
@@ -668,6 +661,7 @@ export class FinancialOrchestrator {
         evidenceRef: externalEvent.id,
         observedAt: externalEvent.received_at,
         traceId: input.traceId,
+        confidence: initialOrchestrationPlanning.compiled.confidence,
       });
     }
     const effectiveConversationTurnState =
@@ -2185,6 +2179,11 @@ export class FinancialOrchestrator {
     };
   }
 
+  /**
+   * Delegado en `captureExplicitConversationStyle`, que ya trae las puertas de
+   * durabilidad, consentimiento y confianza, y que nunca lanza. El turno sigue
+   * su curso pase lo que pase con la captura.
+   */
   private async persistExplicitConversationStyle(input: {
     userId: string;
     styleUpdate: ConversationStyleProfile | null;
@@ -2192,110 +2191,12 @@ export class FinancialOrchestrator {
     evidenceRef: string;
     observedAt: string;
     traceId: string;
+    confidence: number;
   }) {
-    if (!input.resetStyle && input.styleUpdate?.scope !== "persistent") return;
-
-    const styleMemories = (
-      await listFinancialMemory(this.client, {
-        userId: input.userId,
-        statuses: ["confirmed", "suspended"],
-        limit: 200,
-      })
-    ).filter((memory) =>
-      memory.canonical_key.startsWith("preference:conversation_style:"),
-    );
-
-    if (input.resetStyle) {
-      for (const memory of styleMemories) {
-        await manageFinancialMemory(this.client, {
-          userId: input.userId,
-          memoryId: memory.id,
-          action: "forget",
-          reason: "explicit_conversation_style_reset",
-          idempotencyKey:
-            `conversation-style-reset:${input.evidenceRef}:${memory.id}`,
-        });
-      }
-    } else if (input.styleUpdate) {
-      const outcomes = await new LearningEngine(this.client).learnExplicitPreference({
-        userId: input.userId,
-        canonicalKey:
-          `preference:conversation_style:${input.evidenceRef}`,
-        summary:
-          "Preferencia de conversación: " +
-          formatConversationStyleInstruction(input.styleUpdate),
-        searchTerms: [
-          "preferencia",
-          "conversacion",
-          "estilo",
-          input.styleUpdate.response_length,
-          input.styleUpdate.formality,
-          input.styleUpdate.directness,
-        ],
-        evidenceRef: input.evidenceRef,
-        claimValue: {
-          conversation_style: input.styleUpdate,
-        },
-        observedAt: input.observedAt,
-        traceId: input.traceId,
-      });
-      const promoted = outcomes.find(
-        (outcome) => outcome.promoted_to_memory && outcome.memory_id,
-      );
-      if (!promoted?.memory_id) {
-        logger.warn("orchestrator.conversation_style_learning_not_promoted", {
-          user_id: input.userId,
-          trace_id: input.traceId,
-          evidence_ref: input.evidenceRef,
-          outcomes,
-        });
-        return;
-      }
-      for (const memory of styleMemories) {
-        if (memory.id === promoted.memory_id) continue;
-        await manageFinancialMemory(this.client, {
-          userId: input.userId,
-          memoryId: memory.id,
-          action: "forget",
-          reason: "superseded_by_explicit_conversation_style",
-          idempotencyKey:
-            `conversation-style-replace:${input.evidenceRef}:${memory.id}`,
-        });
-      }
-    }
-
-    const toneStyle = input.resetStyle
-      ? null
-      : formatConversationStyleInstruction(input.styleUpdate);
-    const preferences = await this.client
-      .from("user_preferences")
-      .select("metadata")
-      .eq("user_id", input.userId)
-      .maybeSingle();
-
-    if (preferences.error) {
-      logger.warn("orchestrator.conversation_style_persist_failed", {
-        user_id: input.userId,
-        error: preferences.error,
-      });
-      return;
-    }
-
-    const metadata = writePersistentConversationStyle({
-      metadata: preferences.data?.metadata,
-      style: input.resetStyle ? null : input.styleUpdate,
+    await captureExplicitConversationStyle({
+      client: this.client,
+      ...input,
     });
-    const { error } = await this.client
-      .from("user_preferences")
-      .update({ tone_style: toneStyle, metadata: metadata as Json })
-      .eq("user_id", input.userId);
-
-    if (error) {
-      logger.warn("orchestrator.conversation_style_persist_failed", {
-        user_id: input.userId,
-        error,
-      });
-    }
   }
 
   private async buildCorrectionContextPack(params: {
@@ -2651,29 +2552,6 @@ function normalizeConversationText(text: string): string {
     .replace(/[^\w\s/.,?]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function formatConversationStyleInstruction(
-  style: ConversationStyleProfile | null,
-): string | null {
-  if (!style) return null;
-
-  const dimensions = [
-    style.response_length !== "inherit"
-      ? `longitud=${style.response_length}`
-      : null,
-    style.formality !== "inherit" ? `formalidad=${style.formality}` : null,
-    style.warmth !== "inherit" ? `calidez=${style.warmth}` : null,
-    style.playfulness !== "inherit"
-      ? `jocosidad=${style.playfulness}`
-      : null,
-    style.directness !== "inherit" ? `directitud=${style.directness}` : null,
-    style.emoji_policy !== "inherit" ? `emojis=${style.emoji_policy}` : null,
-  ].filter((value): value is string => Boolean(value));
-
-  return dimensions.length > 0
-    ? `${style.instruction} (${dimensions.join(", ")})`
-    : style.instruction;
 }
 
 export function shouldRouteZeroActionTurnToConversation(input: {
