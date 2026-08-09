@@ -2,10 +2,10 @@
 
 import type { ReactNode } from "react";
 import type { Block, BlockOption, EvidenceReference } from "@/core/channel/types";
-import { Button } from "@/ui/primitivas/button";
 import { MoneyText } from "@/ui/primitivas/money";
 import { cn } from "@/ui/primitivas/cn";
 import { EvidenceLink } from "./evidence-link";
+import { AccionBlockView } from "./blocks/accion-block-view";
 import { HallazgoBlockView } from "./blocks/hallazgo-block-view";
 import { LimiteBlockView } from "./blocks/limite-block-view";
 import { ListaBlockView } from "./blocks/lista-block-view";
@@ -33,19 +33,15 @@ export type BlockRendererProps = {
   block: Block;
   handlers: BlockRendererHandlers;
   /**
-   * `propuesta`/`previsualizacion` no traen campos ni casillas — eso vive
-   * en el pending item correlacionado por `source_ref`
-   * (`buildWebPresentTurn`, `WEB-D263`). Quien monta la pantalla lo
-   * resuelve (fetch al pending item) y devuelve el `ConfirmationCard` o
-   * `MassivePreviewCard` ya armado; mientras no resuelve, se ve un
-   * esqueleto (no se inventa contenido, `RUL-ASI-13`).
+   * `propuesta`/`previsualizacion` no traen campos ni casillas: eso vive en el
+   * pending item correlacionado por `source_ref` (`buildWebPresentTurn`,
+   * `WEB-D263`), y quien monta la pantalla lo resuelve y devuelve la tarjeta
+   * ya armada. Sin resolutor, `PropuestaBlockView` decide entre las opciones
+   * del bloque y el esqueleto.
    */
   resolveProposal?: (block: PropuestaBlock) => ReactNode;
   resolveMassivePreview?: (block: PrevisualizacionBlock) => ReactNode;
-  /**
-   * Apaga las opciones pulsables mientras hay un turno en vuelo, para que dos
-   * clics seguidos no manden dos confirmaciones de lo mismo.
-   */
+  /** Apaga las opciones mientras hay un turno en vuelo: un clic, una confirmacion. */
   optionsDisabled?: boolean;
   className?: string;
 };
@@ -98,30 +94,19 @@ export function BlockRenderer({
     case "propuesta":
       return (
         <div className={className}>
-          {resolveProposal ? (
-            resolveProposal(block)
-          ) : block.options.length > 0 ? (
-            // Sin pending item que resolver, las opciones del propio bloque
-            // son la unica forma de responder con un clic. El esqueleto queda
-            // para el caso que lo justifica: la propuesta que espera datos que
-            // todavia no llegaron (`RUL-ASI-13`).
-            <PropuestaBlockView
-              block={block}
-              onSelectOption={handlers.onSelectOption}
-              disabled={optionsDisabled}
-            />
-          ) : (
-            <ProposalSkeleton title={block.text} />
-          )}
+          <PropuestaBlockView
+            block={block}
+            resolve={resolveProposal}
+            onSelectOption={handlers.onSelectOption}
+            disabled={optionsDisabled}
+          />
         </div>
       );
 
     case "previsualizacion":
       return (
         <div className={className}>
-          {resolveMassivePreview
-            ? resolveMassivePreview(block)
-            : <ProposalSkeleton title={block.text} />}
+          {resolveMassivePreview?.(block) ?? <ProposalSkeleton title={block.text} />}
         </div>
       );
 
@@ -142,14 +127,7 @@ export function BlockRenderer({
     case "accion":
       return (
         <div className={className}>
-          <Button
-            type="button"
-            variant="secondary"
-            size="sm"
-            onClick={() => handlers.onTriggerAction?.(block)}
-          >
-            {block.text}
-          </Button>
+          <AccionBlockView block={block} onTriggerAction={handlers.onTriggerAction} />
         </div>
       );
 
