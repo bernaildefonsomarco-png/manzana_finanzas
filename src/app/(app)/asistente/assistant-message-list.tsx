@@ -18,11 +18,14 @@ export function AssistantMessageList({
   threadId,
   isLoading,
   isSending,
+  onSendMessage,
 }: {
   messages: AssistantMessageWithBlocks[];
   threadId: string | null;
   isLoading: boolean;
   isSending: boolean;
+  /** Lo necesitan las opciones pulsables de `propuesta` (`AssistantMessage`). */
+  onSendMessage?: (text: string) => Promise<unknown>;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const isSlow = useAssistantSlowTurn(isSending);
@@ -55,7 +58,13 @@ export function AssistantMessageList({
   return (
     <div aria-live="polite" className="space-y-4 overflow-y-auto p-4">
       {messages.map((message) => (
-        <AssistantMessage key={message.id} message={message} threadId={threadId} />
+        <AssistantMessage
+          key={message.id}
+          message={message}
+          threadId={threadId}
+          onSendMessage={onSendMessage}
+          isSending={isSending}
+        />
       ))}
       {isSending ? (
         <div className="flex items-center gap-2 text-xs text-text-muted" role="status">

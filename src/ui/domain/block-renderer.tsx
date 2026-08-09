@@ -11,6 +11,7 @@ import { LimiteBlockView } from "./blocks/limite-block-view";
 import { ListaBlockView } from "./blocks/lista-block-view";
 import { MostrarBlockView } from "./blocks/mostrar-block-view";
 import { PreguntaBlockView } from "./blocks/pregunta-block-view";
+import { PropuestaBlockView } from "./blocks/propuesta-block-view";
 import { ProposalSkeleton } from "./blocks/proposal-skeleton";
 
 export type ListaItem = { label: string; references: EvidenceReference[] };
@@ -41,6 +42,11 @@ export type BlockRendererProps = {
    */
   resolveProposal?: (block: PropuestaBlock) => ReactNode;
   resolveMassivePreview?: (block: PrevisualizacionBlock) => ReactNode;
+  /**
+   * Apaga las opciones pulsables mientras hay un turno en vuelo, para que dos
+   * clics seguidos no manden dos confirmaciones de lo mismo.
+   */
+  optionsDisabled?: boolean;
   className?: string;
 };
 
@@ -54,6 +60,7 @@ export function BlockRenderer({
   handlers,
   resolveProposal,
   resolveMassivePreview,
+  optionsDisabled,
   className,
 }: BlockRendererProps) {
   switch (block.kind) {
@@ -91,7 +98,21 @@ export function BlockRenderer({
     case "propuesta":
       return (
         <div className={className}>
-          {resolveProposal ? resolveProposal(block) : <ProposalSkeleton title={block.text} />}
+          {resolveProposal ? (
+            resolveProposal(block)
+          ) : block.options.length > 0 ? (
+            // Sin pending item que resolver, las opciones del propio bloque
+            // son la unica forma de responder con un clic. El esqueleto queda
+            // para el caso que lo justifica: la propuesta que espera datos que
+            // todavia no llegaron (`RUL-ASI-13`).
+            <PropuestaBlockView
+              block={block}
+              onSelectOption={handlers.onSelectOption}
+              disabled={optionsDisabled}
+            />
+          ) : (
+            <ProposalSkeleton title={block.text} />
+          )}
         </div>
       );
 

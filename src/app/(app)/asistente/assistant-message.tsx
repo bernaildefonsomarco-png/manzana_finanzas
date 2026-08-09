@@ -2,10 +2,11 @@
 
 import { useId } from "react";
 import { useRouter } from "next/navigation";
-import type { EvidenceReference } from "@/core/channel/types";
+import type { BlockOption, EvidenceReference } from "@/core/channel/types";
 import { BlockRenderer, type BlockRendererHandlers } from "@/ui/domain/block-renderer";
 import type { AssistantMessageWithBlocks } from "./assistant-types";
 import { AssistantProposalCard } from "./assistant-proposal-card";
+import { focusAssistantComposer } from "./focus-assistant-composer";
 
 function firstPendingItemId(message: AssistantMessageWithBlocks): string | null {
   const action = message.proposed_action as { pending_item_ids?: unknown } | null;
@@ -17,9 +18,19 @@ function firstPendingItemId(message: AssistantMessageWithBlocks): string | null 
 export function AssistantMessage({
   message,
   threadId,
+  onSendMessage,
+  isSending,
 }: {
   message: AssistantMessageWithBlocks;
   threadId: string | null;
+  /**
+   * Pulsar una opcion de `propuesta` manda su `option.id` como turno: ese id
+   * ya es el comando (`corr:<accion>:<uuid>`), el mismo payload que devuelve
+   * el boton en WhatsApp. Asi los dos canales resuelven por el mismo camino
+   * en vez de tener uno propio cada uno.
+   */
+  onSendMessage?: (text: string) => Promise<unknown>;
+  isSending?: boolean;
 }) {
   const router = useRouter();
   const headingId = useId();
@@ -27,6 +38,14 @@ export function AssistantMessage({
   const pendingItemId = firstPendingItemId(message);
 
   const handlers: BlockRendererHandlers = {
+    onSelectOption: (option: BlockOption) => {
+      if (!onSendMessage || isSending) return;
+      // El error ya se refleja en la conversacion; aqui solo hay que evitar
+      // que la promesa quede sin atender y devolver el foco (`RUL-ASI-22`).
+      void onSendMessage(option.id)
+        .catch(() => undefined)
+        .finally(focusAssistantComposer);
+    },
     onShowEvidence: (references: EvidenceReference[]) => {
       const [first] = references;
       if (references.length === 1 && first.kind === "movement") {
@@ -62,7 +81,12 @@ export function AssistantMessage({
                 threadId={threadId}
               />
             ) : (
-              <BlockRenderer key={index} block={block} handlers={handlers} />
+              <BlockRenderer
+                key={index}
+                block={block}
+                handlers={handlers}
+                optionsDisabled={isSending}
+              />
             )
           )}
         </div>

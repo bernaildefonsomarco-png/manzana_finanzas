@@ -59,6 +59,7 @@ export function AssistantPanelContent({
           threadId={threadId}
           isLoading={isLoadingThread}
           isSending={isSending}
+          onSendMessage={sendMessage}
         />
       </div>
       <AssistantComposer onSend={async (text) => void (await sendMessage(text))} disabled={isSending} />
