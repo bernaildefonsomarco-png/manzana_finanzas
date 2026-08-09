@@ -338,7 +338,28 @@ const CONVERSATION_TOOLS = [
   {
     name: "get_spending_summary",
     description:
-      "Agrupa movimientos confirmados por categoria, subcategoria, persona o tag.",
+      "Agrupa por categoria los movimientos ya filtrados del turno.",
+    readOnly: true,
+    input_schema: EMPTY_TOOL_INPUT_SCHEMA,
+  },
+  {
+    name: "get_budget_summary",
+    description:
+      "Consulta presupuestos del periodo con lo gastado, lo que queda y su banda.",
+    readOnly: true,
+    input_schema: EMPTY_TOOL_INPUT_SCHEMA,
+  },
+  {
+    name: "get_report_period",
+    description:
+      "Consulta el reporte oficial del periodo: gasto, ingreso, categorias y exclusiones.",
+    readOnly: true,
+    input_schema: EMPTY_TOOL_INPUT_SCHEMA,
+  },
+  {
+    name: "get_projection_snapshot",
+    description:
+      "Consulta la proyeccion del mes: dinero libre, ritmo diario y cierre proyectado.",
     readOnly: true,
     input_schema: EMPTY_TOOL_INPUT_SCHEMA,
   },

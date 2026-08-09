@@ -8,6 +8,34 @@ import {
   ToolGateway,
 } from "./tool-gateway";
 
+const repos = vi.hoisted(() => ({
+  listBudgetsWithProgress: vi.fn(),
+  listGoals: vi.fn(),
+  getReportPeriod: vi.fn(),
+  getProjectionSnapshot: vi.fn(),
+  getActiveAccounts: vi.fn(),
+  getActiveBoxes: vi.fn(),
+  getClassificationCatalog: vi.fn(),
+}));
+
+vi.mock("@/data/repositories/budgets.repository", () => ({
+  listBudgetsWithProgress: repos.listBudgetsWithProgress,
+  listGoals: repos.listGoals,
+}));
+vi.mock("@/data/repositories/reports.repository", () => ({
+  getReportPeriod: repos.getReportPeriod,
+}));
+vi.mock("@/data/repositories/projections.repository", () => ({
+  getProjectionSnapshot: repos.getProjectionSnapshot,
+}));
+vi.mock("@/data/repositories/accounts.repository", () => ({
+  getActiveAccounts: repos.getActiveAccounts,
+  getActiveBoxes: repos.getActiveBoxes,
+}));
+vi.mock("@/data/repositories/classification.repository", () => ({
+  getClassificationCatalog: repos.getClassificationCatalog,
+}));
+
 const followUpQuery: ConversationQuery = {
   kind: "movement_search",
   normalized_text: "y a que hora fue ese?",
@@ -418,5 +446,601 @@ describe("ToolGateway.executeAuthorizedTool: consultar_datos_abiertos (20b S5, W
     // La comprobacion ocurre antes de llegar al switch: si esto se rompe,
     // "get_balance_snapshot" seguiria adelante y llamaria al cliente real.
     expect(client.from).not.toHaveBeenCalled();
+  });
+});
+
+// --- Tools de dominio completo: presupuestos, reportes, proyeccion, metas ---
+// Cada tool es una puerta delgada a un motor de `src/core/` que ya tiene sus
+// propios tests. Lo que se prueba aqui es la puerta: que el usuario correcto
+// llegue al repositorio, que la evidencia (`facts`) exista para el compilador
+// y que el caso vacio no se confunda con un cero afirmable.
+
+const otherUserId = "00000000-0000-4000-8000-0000000000ff";
+
+function emptyClient() {
+  return { from: vi.fn() } as never;
+}
+
+function budgetRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "budget-1",
+    user_id: userId,
+    category_id: "alimentacion",
+    category_name: "Alimentacion",
+    currency: "PEN",
+    period_kind: "mensual",
+    period_start: "2026-08-01",
+    period_end: "2026-08-31",
+    base_amount: 600,
+    rollover_amount: 0,
+    amount: 600,
+    kind: "presupuesto",
+    rollover: false,
+    auto_renew: true,
+    alerted_thresholds: [],
+    source: "manual",
+    status: "activo",
+    created_at: "2026-08-01T00:00:00.000Z",
+    updated_at: "2026-08-01T00:00:00.000Z",
+    deleted_at: null,
+    metadata: {},
+    spent: 450,
+    remaining: 150,
+    pct: 0.75,
+    percentage: 75,
+    percentage_exact: 75,
+    band: "cerca",
+    movement_ids: ["m1", "m2"],
+    ...overrides,
+  };
+}
+
+function reportResult(overrides: Record<string, unknown> = {}) {
+  return {
+    gastoTotal: 1200,
+    ingresoTotal: 3000,
+    gastoMovementCount: 18,
+    ingresoMovementCount: 2,
+    byCategory: [
+      { category_id: "alimentacion", total: 800, movement_count: 12 },
+      { category_id: null, total: 400, movement_count: 6 },
+    ],
+    exclusions: [{ reason: "transferencia", count: 3 }],
+    countedMovementIds: ["m1", "m2"],
+    ...overrides,
+  };
+}
+
+function projectionSnapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    has_pen_accounts: true,
+    breakdown: { currency: "PEN", lines: [] },
+    projection: {
+      currency: "PEN",
+      period_start: "2026-08-01",
+      period_end: "2026-08-31",
+      as_of: "2026-08-09",
+      free_money_cents: 120_000,
+      uncovered_commitments_cents: 45_000,
+      observed_days: 9,
+      sample_start: "2026-08-01",
+      sample_end: "2026-08-09",
+      daily_spend_cents: [],
+      daily_pace_cents: 3_500,
+      q1_cents: 0,
+      q3_cents: 0,
+      iqr_cents: 0,
+      days_remaining: 22,
+      sufficient_data: true,
+      insufficiency_reason: null,
+      projection_cents: 43_000,
+      range: null,
+      assumptions: [
+        { kind: "daily_pace", amount_cents: 3_500, basis: "median_14_lima_calendar_days", refs: ["m1"] },
+        { kind: "days_remaining", value: 22, refs: [] },
+      ],
+      ...(overrides.projection as Record<string, unknown> | undefined),
+    },
+    situation: {
+      currency: "PEN",
+      period_start: "2026-08-01",
+      period_end: "2026-08-31",
+      as_of: "2026-08-09",
+      coverage: { availability: "available", uncovered_cents: 45_000, covered: false, refs: [] },
+      spending_income: {
+        availability: "available",
+        spending_cents: 90_000,
+        income_cents: 300_000,
+        ratio_basis_points: 3_000,
+        refs: [],
+      },
+      reserve: { availability: "available", total_cents: 250_000, refs: [] },
+      debts: { availability: "available", overdue_count: 1, due_this_month_count: 2, refs: [] },
+      summary_facts: ["cobertura=descubierta"],
+    },
+  };
+}
+
+describe("ToolGateway.executeAuthorizedTool: get_budget_summary", () => {
+  it("responde el periodo con lo gastado, la banda y evidencia citable", async () => {
+    repos.listBudgetsWithProgress.mockResolvedValue([
+      budgetRow(),
+      budgetRow({ id: "budget-2", category_name: "Transporte", spent: 700, amount: 500, remaining: -200, percentage: 140, band: "superado" }),
+    ]);
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_budget_summary",
+      userId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.facts).toContain("budget_count=2");
+    expect(result.facts).toContain("exceeded_count=1");
+    expect(result.facts).toContain("period=2026-08-01..2026-08-31");
+    expect(
+      result.facts.some((fact) => fact.startsWith("budget:Transporte=")),
+    ).toBe(true);
+    expect(result.warnings).toEqual([]);
+    expect(result.data.budget_count).toBe(2);
+  });
+
+  it("sin presupuestos avisa en vez de dejar que el modelo afirme un limite", async () => {
+    repos.listBudgetsWithProgress.mockResolvedValue([]);
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_budget_summary",
+      userId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.facts).toContain("budget_count=0");
+    expect(result.warnings).toHaveLength(1);
+    expect(result.warnings[0]).toContain("no tiene presupuestos");
+  });
+
+  it("consulta con el cliente autenticado del gateway y solo el usuario del turno", async () => {
+    repos.listBudgetsWithProgress.mockResolvedValue([]);
+    const client = emptyClient();
+    const gateway = new ToolGateway(client);
+
+    await gateway.executeAuthorizedTool({
+      toolName: "get_budget_summary",
+      userId: otherUserId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(repos.listBudgetsWithProgress).toHaveBeenCalledWith(
+      client,
+      otherUserId,
+      expect.objectContaining({ periodKind: "mensual", date: "2026-08-01" }),
+    );
+  });
+
+  it("un rango de una semana usa el periodo semanal, no el mensual", async () => {
+    repos.listBudgetsWithProgress.mockResolvedValue([]);
+    const gateway = new ToolGateway(emptyClient());
+
+    await gateway.executeAuthorizedTool({
+      toolName: "get_budget_summary",
+      userId,
+      query: {
+        ...augustQuery(),
+        date_range: {
+          start: "2026-08-03T05:00:00.000Z",
+          end: "2026-08-09T23:59:59.000Z",
+          label: "esta semana",
+        },
+      },
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(repos.listBudgetsWithProgress).toHaveBeenCalledWith(
+      expect.anything(),
+      userId,
+      expect.objectContaining({ periodKind: "semanal" }),
+    );
+  });
+});
+
+describe("ToolGateway.executeAuthorizedTool: get_report_period", () => {
+  it("devuelve el total oficial, el desglose etiquetado y la comparacion previa", async () => {
+    repos.getReportPeriod
+      .mockResolvedValueOnce(reportResult())
+      .mockResolvedValueOnce(reportResult({ gastoTotal: 1000, byCategory: [] }));
+    repos.getClassificationCatalog.mockResolvedValue({
+      version: 1,
+      categories: [{ id: "alimentacion", label: "Alimentacion", is_sensitive: false }],
+      subcategories: [],
+      tags: [],
+      related_people: [],
+    });
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_report_period",
+      userId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.facts).toContain("expense_total=S/1200.00");
+    expect(result.facts).toContain("income_total=S/3000.00");
+    expect(result.facts).toContain("previous_expense_total=S/1000.00");
+    expect(result.facts).toContain("expense_difference=S/200.00");
+    expect(result.facts).toContain("excluded:transferencia=3");
+    expect(
+      result.facts.some((fact) => fact.startsWith("category:Alimentacion=")),
+    ).toBe(true);
+    // Una categoria vacia se nombra, no se pierde.
+    expect(
+      result.facts.some((fact) => fact.startsWith("category:Sin categoria=")),
+    ).toBe(true);
+    expect(result.warnings).toContain(
+      "3 movimiento(s) excluido(s) por transferencia: no son gasto del periodo.",
+    );
+  });
+
+  it("un periodo sin movimientos avisa en vez de reportar un cero limpio", async () => {
+    repos.getReportPeriod.mockResolvedValue(
+      reportResult({
+        gastoTotal: 0,
+        ingresoTotal: 0,
+        gastoMovementCount: 0,
+        ingresoMovementCount: 0,
+        byCategory: [],
+        exclusions: [],
+        countedMovementIds: [],
+      }),
+    );
+    repos.getClassificationCatalog.mockResolvedValue({
+      version: 1,
+      categories: [],
+      subcategories: [],
+      tags: [],
+      related_people: [],
+    });
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_report_period",
+      userId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.facts).toContain("expense_total=S/0.00");
+    expect(result.warnings[0]).toContain("No hay movimientos contables");
+  });
+
+  it("pide los dos periodos con el cliente del gateway y el usuario del turno", async () => {
+    repos.getReportPeriod.mockResolvedValue(reportResult());
+    repos.getClassificationCatalog.mockResolvedValue({
+      version: 1,
+      categories: [],
+      subcategories: [],
+      tags: [],
+      related_people: [],
+    });
+    const client = emptyClient();
+    const gateway = new ToolGateway(client);
+
+    await gateway.executeAuthorizedTool({
+      toolName: "get_report_period",
+      userId: otherUserId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(repos.getReportPeriod).toHaveBeenCalledWith(client, otherUserId, {
+      from: "2026-08-01",
+      to: "2026-08-31",
+    });
+    // `RUL-REP-04`: el periodo anterior viaja en la misma llamada, no en otra
+    // ronda de tools.
+    expect(repos.getReportPeriod).toHaveBeenCalledWith(client, otherUserId, {
+      from: "2026-07-01",
+      to: "2026-07-31",
+    });
+    expect(repos.getClassificationCatalog).toHaveBeenCalledWith(
+      client,
+      otherUserId,
+    );
+  });
+});
+
+describe("ToolGateway.executeAuthorizedTool: get_projection_snapshot", () => {
+  it("expone dinero libre, ritmo, cierre proyectado y sus supuestos", async () => {
+    repos.getProjectionSnapshot.mockResolvedValue(projectionSnapshot());
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_projection_snapshot",
+      userId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.facts).toContain("free_money=S/1200.00");
+    expect(result.facts).toContain("daily_pace=S/35.00");
+    expect(result.facts).toContain("days_remaining=22");
+    expect(result.facts).toContain("projected_close=S/430.00");
+    expect(
+      result.facts.some((fact) => fact.startsWith("assumption:daily_pace=")),
+    ).toBe(true);
+    expect(result.facts).toContain("cobertura=descubierta");
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("sin datos suficientes prohibe afirmar un cierre de mes", async () => {
+    repos.getProjectionSnapshot.mockResolvedValue(
+      projectionSnapshot({
+        projection: {
+          sufficient_data: false,
+          insufficiency_reason: "fewer_than_7_observable_days",
+          projection_cents: null,
+          range: null,
+          assumptions: [],
+          period_start: "2026-08-01",
+          period_end: "2026-08-31",
+          as_of: "2026-08-09",
+          free_money_cents: 0,
+          uncovered_commitments_cents: 0,
+          observed_days: 2,
+          daily_pace_cents: 0,
+          days_remaining: 22,
+        },
+      }),
+    );
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_projection_snapshot",
+      userId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.facts).toContain(
+      "projected_close=no_disponible:fewer_than_7_observable_days",
+    );
+    expect(result.warnings[0]).toContain("No hay datos suficientes");
+  });
+
+  it("proyecta con el cliente del gateway y solo para el usuario del turno", async () => {
+    repos.getProjectionSnapshot.mockResolvedValue(projectionSnapshot());
+    const client = emptyClient();
+    const gateway = new ToolGateway(client);
+
+    await gateway.executeAuthorizedTool({
+      toolName: "get_projection_snapshot",
+      userId: otherUserId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(repos.getProjectionSnapshot).toHaveBeenCalledWith(
+      client,
+      otherUserId,
+    );
+  });
+});
+
+describe("ToolGateway.executeAuthorizedTool: get_financial_structure con metas", () => {
+  it("responde cuentas, cajas y el avance de cada meta en una sola llamada", async () => {
+    repos.getActiveAccounts.mockResolvedValue([
+      {
+        id: "account-1",
+        name: "BCP",
+        type: "banco",
+        currency: "PEN",
+        current_balance: 3200,
+        is_default: true,
+      },
+    ]);
+    repos.getActiveBoxes.mockResolvedValue([
+      {
+        id: "box-1",
+        account_id: "account-1",
+        name: "Viaje",
+        type: "meta",
+        current_balance: 900,
+        target_amount: 3000,
+        target_date: "2026-12-31",
+      },
+    ]);
+    repos.listGoals.mockResolvedValue([
+      {
+        id: "goal-1",
+        name: "Viaje a Cusco",
+        status: "activa",
+        target_amount: 3000,
+        target_date: "2026-12-31",
+        box_id: "box-1",
+        box: { name: "Viaje" },
+        current_balance: 900,
+        progress_pct: 30,
+        monthly_pace: 525,
+      },
+    ]);
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_financial_structure",
+      userId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.facts).toContain("account_count=1");
+    expect(result.facts).toContain("box_count=1");
+    expect(result.facts).toContain("goal_count=1");
+    expect(
+      result.facts.some(
+        (fact) =>
+          fact.startsWith("goal:Viaje a Cusco=") &&
+          fact.includes("30%") &&
+          fact.includes("ritmo S/525.00/mes"),
+      ),
+    ).toBe(true);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("sin metas responde cero sin advertencias, porque cero es la verdad", async () => {
+    repos.getActiveAccounts.mockResolvedValue([]);
+    repos.getActiveBoxes.mockResolvedValue([]);
+    repos.listGoals.mockResolvedValue([]);
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_financial_structure",
+      userId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.facts).toContain("goal_count=0");
+    expect(result.warnings).toEqual([]);
+    expect(result.data.goals).toEqual([]);
+  });
+
+  it("si las metas fallan, cuentas y cajas siguen respondiendo y se avisa", async () => {
+    repos.getActiveAccounts.mockResolvedValue([
+      {
+        id: "account-1",
+        name: "BCP",
+        type: "banco",
+        currency: "PEN",
+        current_balance: 3200,
+        is_default: true,
+      },
+    ]);
+    repos.getActiveBoxes.mockResolvedValue([]);
+    repos.listGoals.mockRejectedValue(new Error("rls denied"));
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_financial_structure",
+      userId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.facts).toContain("account_count=1");
+    expect(result.warnings[0]).toContain("no afirmes que el usuario no tiene metas");
+  });
+
+  it("lee metas con el cliente del gateway y solo para el usuario del turno", async () => {
+    repos.getActiveAccounts.mockResolvedValue([]);
+    repos.getActiveBoxes.mockResolvedValue([]);
+    repos.listGoals.mockResolvedValue([]);
+    const client = emptyClient();
+    const gateway = new ToolGateway(client);
+
+    await gateway.executeAuthorizedTool({
+      toolName: "get_financial_structure",
+      userId: otherUserId,
+      query: augustQuery(),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(repos.listGoals).toHaveBeenCalledWith(
+      client,
+      otherUserId,
+      expect.objectContaining({ statuses: ["activa", "alcanzada", "pausada"] }),
+    );
+  });
+});
+
+function augustQuery(): ConversationQuery {
+  return {
+    kind: "movement_search",
+    normalized_text: "como voy este mes",
+    requested_amount: null,
+    date_range: {
+      start: "2026-08-01T05:00:00.000Z",
+      end: "2026-08-31T23:59:59.000Z",
+      label: "agosto de 2026",
+    },
+    confidence: 0.95,
+  };
+}
+
+describe("get_report_period: eleccion del periodo anterior", () => {
+  it("un rango de una semana se compara contra la semana inmediatamente previa", async () => {
+    repos.getReportPeriod.mockResolvedValue(reportResult());
+    repos.getClassificationCatalog.mockResolvedValue({
+      version: 1,
+      categories: [],
+      subcategories: [],
+      tags: [],
+      related_people: [],
+    });
+    const gateway = new ToolGateway(emptyClient());
+
+    await gateway.executeAuthorizedTool({
+      toolName: "get_report_period",
+      userId,
+      query: {
+        ...augustQuery(),
+        date_range: {
+          start: "2026-08-03T05:00:00.000Z",
+          end: "2026-08-09T23:59:59.000Z",
+          label: "esta semana",
+        },
+      },
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(repos.getReportPeriod).toHaveBeenCalledWith(
+      expect.anything(),
+      userId,
+      { from: "2026-07-27", to: "2026-08-02" },
+    );
+  });
+});
+
+describe("get_projection_snapshot sin query", () => {
+  it("responde igual sin query, porque la proyeccion no tiene parametros", async () => {
+    repos.getProjectionSnapshot.mockResolvedValue(projectionSnapshot());
+    const gateway = new ToolGateway(emptyClient());
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "get_projection_snapshot",
+      userId,
+      query: null,
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("called");
+    expect(result.facts).toContain("free_money=S/1200.00");
   });
 });

@@ -563,14 +563,30 @@ const TOOL_DESCRIPTIONS: Record<ConversationToolName, string> = {
   get_classification_catalog:
     "Consulta categorias, subcategorias, tags y personas disponibles.",
   get_pending_details: "Consulta detalle seguro de pendientes.",
-  get_financial_structure: "Consulta cuentas, cajas y estructura financiera.",
+  get_financial_structure:
+    "Consulta cuentas, cajas y metas de ahorro con su avance y ritmo mensual.",
   get_insights: "Consulta Descubrimientos vigentes.",
   get_insight_evidence: "Consulta evidencia de un Descubrimiento.",
   get_record_provenance: "Consulta origen y trazabilidad de movimientos.",
   get_user_context_summary:
     "Consulta preferencias, aliases, correcciones y contexto permitido.",
   get_spending_summary:
-    "Agrupa movimientos confirmados por dimensiones financieras.",
+    "Agrupa por categoria los movimientos ya filtrados del turno. Es una " +
+    "vista conversacional sobre un conjunto acotado, no el total oficial de " +
+    "un periodo: para eso usa get_report_period.",
+  get_budget_summary:
+    "Consulta presupuestos y limites del periodo con lo gastado, lo que " +
+    "queda, el porcentaje y la banda (holgado/atencion/cerca/superado). " +
+    "Usa el date_range del turno para elegir semana, quincena o mes.",
+  get_report_period:
+    "Consulta el reporte oficial de un periodo: gasto total, ingreso total, " +
+    "desglose por categoria, comparacion con el periodo anterior y que " +
+    "movimientos quedaron excluidos y por que. Es la misma cifra que " +
+    "muestra la pantalla de Reportes.",
+  get_projection_snapshot:
+    "Consulta la proyeccion del mes en curso: dinero libre, compromisos ya " +
+    "descontados, ritmo diario de gasto, dias restantes y cierre proyectado " +
+    "con su rango y sus supuestos.",
   consultar_datos_abiertos:
     "Consulta abierta (20b S5): compone de/donde/agrupar_por/medir/ordenar/limitar " +
     "sobre movimientos cuando ninguna de las otras tools cubre la pregunta. " +

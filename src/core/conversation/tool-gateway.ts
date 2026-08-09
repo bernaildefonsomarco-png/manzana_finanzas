@@ -12,9 +12,31 @@ import type {
 import { compileSemanticQuery, executeSemanticQuery } from "@/core/semantics/compiler";
 import type { SemanticQuery } from "@/core/semantics/query";
 import {
+  budgetPeriodContaining,
+  selectTopBudgetSummaries,
+  type BudgetPeriodKind,
+} from "@/core/budgets";
+import {
+  compareReportPeriods,
+  topCategoriesWithOthers,
+  type ReportPeriodResult,
+} from "@/core/reports/report-engine";
+import {
   getActiveAccounts,
   getActiveBoxes,
 } from "@/data/repositories/accounts.repository";
+import {
+  listBudgetsWithProgress,
+  listGoals,
+  type BudgetWithProgress,
+  type GoalWithProgress,
+} from "@/data/repositories/budgets.repository";
+import { getReportPeriod } from "@/data/repositories/reports.repository";
+import { getProjectionSnapshot } from "@/data/repositories/projections.repository";
+import {
+  addCalendarDays,
+  isoDateInLima,
+} from "@/shared/dates/lima";
 import { getClassificationCatalog as loadClassificationCatalog } from "@/data/repositories/classification.repository";
 import {
   getActiveConversationMemoryState,
@@ -48,7 +70,7 @@ import type {
   UpcomingCommitmentSummary,
 } from "@/data/repositories/recurring.repository";
 import type { Database } from "@/data/supabase/types";
-import type { Account, Box, Movement } from "@/shared/types/domain";
+import type { Account, Box, CategoryId, Movement } from "@/shared/types/domain";
 import { logger } from "@/shared/telemetry/logger";
 
 type Client = SupabaseClient<Database>;
@@ -274,6 +296,12 @@ export class ToolGateway {
     if (input.toolName === "consultar_datos_abiertos") {
       return this.queryDatosAbiertos(input.userId, input.semanticQuery ?? null);
     }
+    // La proyeccion no tiene parametros: siempre es el mes en curso. Exigirle
+    // una query solo abriria una forma de fallar el turno por un campo que la
+    // tool no usa.
+    if (input.toolName === "get_projection_snapshot") {
+      return this.getProjectionSnapshot(input.userId);
+    }
     if (!input.query) {
       logger.error("tool_gateway.missing_query_for_closed_tool", {
         tool_name: input.toolName,
@@ -332,6 +360,10 @@ export class ToolGateway {
           input.activeMemoryState,
           input.turnState.should_use_active_memory,
         );
+      case "get_budget_summary":
+        return this.getBudgetSummary(input.userId, query);
+      case "get_report_period":
+        return this.getReportPeriod(input.userId, query);
     }
   }
 
@@ -738,13 +770,21 @@ export class ToolGateway {
     }
   }
 
+  /**
+   * Cuentas, cajas y metas en una sola puerta. Las metas viven en otra tabla
+   * que las cajas, pero la pregunta del usuario es una sola ("como voy con
+   * mis cajas y mis metas"), asi que se responden en la misma llamada en vez
+   * de gastar una segunda ronda de tools.
+   */
   private async getFinancialStructure(
     userId: string,
   ): Promise<ConversationToolResult> {
     try {
-      const [accounts, boxes] = await Promise.all([
+      const asOf = isoDateInLima();
+      const [accounts, boxes, goals] = await Promise.all([
         getActiveAccounts(this.client, userId),
         getActiveBoxes(this.client, userId),
+        this.listGoalsWithoutFailingStructure(userId, asOf),
       ]);
       const boxesByAccount = new Map<string, Box[]>();
       for (const box of boxes) {
@@ -752,14 +792,21 @@ export class ToolGateway {
         current.push(box);
         boxesByAccount.set(box.account_id, current);
       }
+      const activeGoals = goals ?? [];
       return {
         tool_name: "get_financial_structure",
         status: "called",
         facts: [
           `account_count=${accounts.length}`,
           `box_count=${boxes.length}`,
+          `goal_count=${activeGoals.length}`,
+          ...activeGoals.slice(0, 5).map(formatGoalFact),
         ],
-        warnings: [],
+        // Una meta que no se pudo leer no puede quedar en silencio: el modelo
+        // afirmaria "no tienes metas" sobre una consulta que fallo.
+        warnings: goals === null
+          ? ["No se pudieron leer las metas; no afirmes que el usuario no tiene metas."]
+          : [],
         data: {
           accounts: accounts.map((account) => ({
             id: account.id,
@@ -777,6 +824,8 @@ export class ToolGateway {
               target_date: box.target_date,
             })),
           })),
+          goals_as_of: asOf,
+          goals: activeGoals.map(formatGoalForTool),
         },
       };
     } catch (error) {
@@ -785,6 +834,236 @@ export class ToolGateway {
         user_id: userId,
       });
       return failedTool("get_financial_structure");
+    }
+  }
+
+  /**
+   * Las metas son un agregado nuevo dentro de una tool que ya funcionaba: si
+   * fallan, la estructura financiera sigue respondiendo cuentas y cajas.
+   */
+  private async listGoalsWithoutFailingStructure(
+    userId: string,
+    asOf: string,
+  ): Promise<GoalWithProgress[] | null> {
+    try {
+      return await listGoals(this.client, userId, {
+        statuses: ["activa", "alcanzada", "pausada"],
+        limit: 40,
+        asOf,
+      });
+    } catch (error) {
+      logger.warn("tool_gateway.goals_failed", { error, user_id: userId });
+      return null;
+    }
+  }
+
+  /**
+   * `RUL-PRES-09`: el periodo del asistente es el mismo de `/presupuestos`.
+   * Se reutiliza `listBudgetsWithProgress`, que ya aplica el filtro canonico
+   * de `movementCountsForBudget`; aqui no se recalcula ningun gasto.
+   */
+  private async getBudgetSummary(
+    userId: string,
+    query: ConversationQuery,
+  ): Promise<ConversationToolResult> {
+    try {
+      const periodKind = budgetPeriodKindFromQuery(query);
+      const referenceDate = referenceDateFromQuery(query);
+      const period = budgetPeriodContaining(referenceDate, periodKind);
+      const budgets = await listBudgetsWithProgress(this.client, userId, {
+        date: referenceDate,
+        periodKind,
+        statuses: ["activo", "pausado"],
+        limit: 50,
+      });
+      const exceeded = budgets.filter((budget) => budget.band === "superado");
+      const nearLimit = budgets.filter((budget) => budget.band === "cerca");
+      const totals = budgets.reduce(
+        (accumulated, budget) => ({
+          amount: accumulated.amount + Number(budget.amount),
+          spent: accumulated.spent + Number(budget.spent),
+        }),
+        { amount: 0, spent: 0 },
+      );
+
+      return {
+        tool_name: "get_budget_summary",
+        status: "called",
+        facts: [
+          `period_kind=${periodKind}`,
+          `period=${period.start}..${period.end}`,
+          `budget_count=${budgets.length}`,
+          `exceeded_count=${exceeded.length}`,
+          `near_limit_count=${nearLimit.length}`,
+          `budgeted_total=${formatMoney(roundMoney(totals.amount))}`,
+          `spent_total=${formatMoney(roundMoney(totals.spent))}`,
+          ...selectTopBudgetSummaries(budgets).map(formatBudgetFact),
+        ],
+        warnings:
+          budgets.length === 0
+            ? [
+                `El usuario no tiene presupuestos ${periodKind}es activos en ${period.start}..${period.end}. No hay limite que comparar.`,
+              ]
+            : [],
+        data: {
+          period_kind: periodKind,
+          period,
+          reference_date: referenceDate,
+          budget_count: budgets.length,
+          budgeted_total: roundMoney(totals.amount),
+          spent_total: roundMoney(totals.spent),
+          budgets: budgets.map(formatBudgetForTool),
+        },
+      };
+    } catch (error) {
+      logger.error("tool_gateway.budget_summary_failed", {
+        error,
+        user_id: userId,
+      });
+      return failedTool("get_budget_summary");
+    }
+  }
+
+  /**
+   * `RUL-REP-01`: la cifra del asistente y la de `/reportes` deben ser la
+   * misma, y se logra llamando al mismo motor (`computeReportPeriod` via
+   * `getReportPeriod`), nunca reimplementando la agregacion.
+   * `RUL-REP-04`: la comparacion con el periodo anterior viaja en la misma
+   * llamada para no forzar una segunda ronda de tools.
+   */
+  private async getReportPeriod(
+    userId: string,
+    query: ConversationQuery,
+  ): Promise<ConversationToolResult> {
+    try {
+      const window = reportWindowFromQuery(query);
+      const [current, previous, catalog] = await Promise.all([
+        getReportPeriod(this.client, userId, {
+          from: window.from,
+          to: window.to,
+        }),
+        getReportPeriod(this.client, userId, {
+          from: window.previous_from,
+          to: window.previous_to,
+        }),
+        loadClassificationCatalog(this.client, userId),
+      ]);
+      const labelById = new Map(
+        catalog.categories.map((category) => [category.id, category.label]),
+      );
+      const comparison = compareReportPeriods(current, previous);
+      const ranked = topCategoriesWithOthers(current.byCategory);
+
+      return {
+        tool_name: "get_report_period",
+        status: "called",
+        facts: [
+          `period=${window.from}..${window.to}`,
+          `period_label=${window.label}`,
+          `expense_total=${formatMoney(current.gastoTotal)}`,
+          `income_total=${formatMoney(current.ingresoTotal)}`,
+          `expense_movement_count=${current.gastoMovementCount}`,
+          `income_movement_count=${current.ingresoMovementCount}`,
+          ...ranked.top.map(
+            (category) =>
+              `category:${categoryLabel(labelById, category.category_id)}=${formatMoney(category.total)} en ${category.movement_count} movimientos`,
+          ),
+          `previous_period=${window.previous_from}..${window.previous_to}`,
+          `previous_expense_total=${formatMoney(comparison.previousTotal)}`,
+          `expense_difference=${formatMoney(comparison.differenceAbsolute)}`,
+          ...current.exclusions.map(
+            (exclusion) => `excluded:${exclusion.reason}=${exclusion.count}`,
+          ),
+        ],
+        warnings: buildReportWarnings(current, window.label),
+        data: {
+          period: { from: window.from, to: window.to, label: window.label },
+          previous_period: {
+            from: window.previous_from,
+            to: window.previous_to,
+          },
+          expense_total: current.gastoTotal,
+          income_total: current.ingresoTotal,
+          expense_movement_count: current.gastoMovementCount,
+          income_movement_count: current.ingresoMovementCount,
+          by_category: current.byCategory.map((category) => ({
+            category_id: category.category_id,
+            category_label: category.category_id
+              ? labelById.get(category.category_id) ?? null
+              : null,
+            total: category.total,
+            movement_count: category.movement_count,
+          })),
+          others: {
+            total: ranked.othersTotal,
+            movement_count: ranked.othersCount,
+          },
+          exclusions: current.exclusions,
+          comparison,
+          // `RUL-REP-01`: los IDs contados son la trazabilidad de la cifra.
+          counted_movement_ids: current.countedMovementIds.slice(0, 40),
+        },
+      };
+    } catch (error) {
+      logger.error("tool_gateway.report_period_failed", {
+        error,
+        user_id: userId,
+      });
+      return failedTool("get_report_period");
+    }
+  }
+
+  /**
+   * Proyeccion del mes en curso reutilizando `getProjectionSnapshot`, el
+   * mismo calculo que `/proyecciones`. Los supuestos viajan explicitos
+   * porque `22` S2 exige declararlos junto a cualquier proyeccion.
+   */
+  private async getProjectionSnapshot(
+    userId: string,
+  ): Promise<ConversationToolResult> {
+    try {
+      const snapshot = await getProjectionSnapshot(this.client, userId);
+      const { projection, situation } = snapshot;
+
+      return {
+        tool_name: "get_projection_snapshot",
+        status: "called",
+        facts: [
+          `period=${projection.period_start}..${projection.period_end}`,
+          `as_of=${projection.as_of}`,
+          `free_money=${formatMoney(centsToSoles(projection.free_money_cents))}`,
+          `uncovered_commitments=${formatMoney(centsToSoles(projection.uncovered_commitments_cents))}`,
+          `daily_pace=${formatMoney(centsToSoles(projection.daily_pace_cents))}`,
+          `days_remaining=${projection.days_remaining}`,
+          `observed_days=${projection.observed_days}`,
+          projection.projection_cents === null
+            ? `projected_close=no_disponible:${projection.insufficiency_reason ?? "sin_datos"}`
+            : `projected_close=${formatMoney(centsToSoles(projection.projection_cents))}`,
+          ...(projection.range
+            ? [
+                `projected_close_range=${formatMoney(centsToSoles(projection.range.min_cents))}..${formatMoney(centsToSoles(projection.range.max_cents))}`,
+              ]
+            : []),
+          ...projection.assumptions.map(formatProjectionAssumptionFact),
+          `reserve_total=${formatMoney(centsToSoles(situation.reserve.total_cents))}`,
+          `overdue_installments=${situation.debts.overdue_count}`,
+          `installments_due_this_month=${situation.debts.due_this_month_count}`,
+          ...situation.summary_facts,
+        ],
+        warnings: buildProjectionWarnings(snapshot),
+        data: {
+          projection,
+          situation,
+          breakdown: snapshot.breakdown,
+          has_pen_accounts: snapshot.has_pen_accounts,
+        },
+      };
+    } catch (error) {
+      logger.error("tool_gateway.projection_snapshot_failed", {
+        error,
+        user_id: userId,
+      });
+      return failedTool("get_projection_snapshot");
     }
   }
 
@@ -1524,6 +1803,223 @@ function buildBalanceWarnings(
     warnings.push("Hay una cuenta con mas dinero separado que saldo disponible.");
   }
   return warnings;
+}
+
+/** Sin categoria es una categoria real en el reporte: se nombra, no se omite. */
+function categoryLabel(
+  labels: Map<CategoryId, string>,
+  categoryId: CategoryId | null,
+): string {
+  if (!categoryId) return "Sin categoria";
+  return labels.get(categoryId) ?? categoryId;
+}
+
+function centsToSoles(cents: number): number {
+  return roundMoney(cents / 100);
+}
+
+/**
+ * `RUL-PRES-09`: el rango pedido decide el periodo, no una preferencia del
+ * modelo. Sin rango explicito el periodo es el mes en curso, igual que la
+ * pantalla de presupuestos al abrirla.
+ */
+function budgetPeriodKindFromQuery(query: ConversationQuery): BudgetPeriodKind {
+  const days = inclusiveDaysFromRange(query);
+  if (days === null) return "mensual";
+  if (days <= 8) return "semanal";
+  if (days <= 17) return "quincenal";
+  return "mensual";
+}
+
+function referenceDateFromQuery(query: ConversationQuery): string {
+  const start = limaDateFromIso(query.date_range?.start);
+  return start ?? isoDateInLima();
+}
+
+function inclusiveDaysFromRange(query: ConversationQuery): number | null {
+  const start = limaDateFromIso(query.date_range?.start);
+  const end = limaDateFromIso(query.date_range?.end);
+  if (!start || !end) return null;
+  const diff =
+    (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) /
+    86_400_000;
+  return Number.isFinite(diff) ? Math.round(diff) + 1 : null;
+}
+
+function limaDateFromIso(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : isoDateInLima(parsed);
+}
+
+/**
+ * `RUL-REP-03`: los periodos del reporte son los mismos de toda la app. Con
+ * rango explicito se respeta tal cual y el periodo anterior es la ventana
+ * inmediatamente previa del mismo largo; sin rango, el mes en curso contra
+ * el mes anterior.
+ */
+function reportWindowFromQuery(query: ConversationQuery): {
+  from: string;
+  to: string;
+  label: string;
+  previous_from: string;
+  previous_to: string;
+} {
+  const start = limaDateFromIso(query.date_range?.start);
+  const end = limaDateFromIso(query.date_range?.end);
+  if (start && end && start <= end) {
+    const label = query.date_range?.label ?? `${start} a ${end}`;
+    // Un rango que ya es un mes calendario se compara contra el mes anterior
+    // completo; cualquier otro rango, contra la ventana inmediatamente
+    // previa del mismo largo. Restar dias fijos a un mes daria "del 2 de
+    // agosto al 1 de setiembre", que no es lo que el usuario pregunta.
+    const monthly = budgetPeriodContaining(start, "mensual");
+    if (monthly.start === start && monthly.end === end) {
+      const previous = budgetPeriodContaining(
+        addCalendarDays(start, -1),
+        "mensual",
+      );
+      return {
+        from: start,
+        to: end,
+        label,
+        previous_from: previous.start,
+        previous_to: previous.end,
+      };
+    }
+    const spanDays = inclusiveDaysFromRange(query) ?? 1;
+    return {
+      from: start,
+      to: end,
+      label,
+      previous_from: addCalendarDays(start, -spanDays),
+      previous_to: addCalendarDays(end, -spanDays),
+    };
+  }
+
+  const today = isoDateInLima();
+  const current = budgetPeriodContaining(today, "mensual");
+  const previous = budgetPeriodContaining(
+    addCalendarDays(current.start, -1),
+    "mensual",
+  );
+  return {
+    from: current.start,
+    to: current.end,
+    label: "mes en curso",
+    previous_from: previous.start,
+    previous_to: previous.end,
+  };
+}
+
+/** `RUL-REP-02`: lo que quedo fuera del reporte se declara, no se omite. */
+function buildReportWarnings(
+  report: ReportPeriodResult,
+  label: string,
+): string[] {
+  const warnings: string[] = [];
+  if (
+    report.gastoMovementCount === 0 &&
+    report.ingresoMovementCount === 0
+  ) {
+    warnings.push(
+      `No hay movimientos contables en ${label}. No afirmes un gasto de cero sin decir que el periodo esta vacio.`,
+    );
+  }
+  for (const exclusion of report.exclusions) {
+    if (exclusion.reason === "pendiente_sin_confirmar") {
+      warnings.push(
+        `${exclusion.count} movimiento(s) sin confirmar quedaron fuera del total.`,
+      );
+      continue;
+    }
+    warnings.push(
+      `${exclusion.count} movimiento(s) excluido(s) por ${exclusion.reason}: no son gasto del periodo.`,
+    );
+  }
+  return warnings;
+}
+
+function buildProjectionWarnings(snapshot: {
+  projection: { sufficient_data: boolean; insufficiency_reason: string | null };
+  has_pen_accounts: boolean;
+}): string[] {
+  const warnings: string[] = [];
+  if (!snapshot.has_pen_accounts) {
+    warnings.push(
+      "El usuario no tiene cuentas en soles; la proyeccion no aplica.",
+    );
+  }
+  if (!snapshot.projection.sufficient_data) {
+    warnings.push(
+      `No hay datos suficientes para proyectar el cierre (${snapshot.projection.insufficiency_reason ?? "sin_datos"}). No afirmes un cierre de mes.`,
+    );
+  }
+  return warnings;
+}
+
+function formatProjectionAssumptionFact(assumption: {
+  kind: string;
+  amount_cents?: number;
+  value?: number;
+  basis?: string;
+}): string {
+  if (typeof assumption.amount_cents === "number") {
+    return `assumption:${assumption.kind}=${formatMoney(centsToSoles(assumption.amount_cents))}${assumption.basis ? ` (${assumption.basis})` : ""}`;
+  }
+  return `assumption:${assumption.kind}=${assumption.value ?? "n/d"}`;
+}
+
+function formatBudgetFact(budget: BudgetWithProgress): string {
+  return `budget:${budget.category_name ?? "general"}=gastado ${formatMoney(budget.spent)} de ${formatMoney(budget.amount)} (${budget.percentage}%, ${budget.band})`;
+}
+
+function formatBudgetForTool(budget: BudgetWithProgress) {
+  return {
+    id: budget.id,
+    category_id: budget.category_id,
+    category_name: budget.category_name,
+    kind: budget.kind,
+    status: budget.status,
+    period_kind: budget.period_kind,
+    period_start: budget.period_start,
+    period_end: budget.period_end,
+    amount: Number(budget.amount),
+    base_amount: Number(budget.base_amount),
+    rollover_amount: Number(budget.rollover_amount),
+    spent: budget.spent,
+    remaining: budget.remaining,
+    percentage: budget.percentage,
+    band: budget.band,
+    movement_count: budget.movement_ids.length,
+    movement_ids: budget.movement_ids.slice(0, 20),
+  };
+}
+
+function formatGoalFact(goal: GoalWithProgress): string {
+  const balance = goal.current_balance ?? 0;
+  const progress =
+    goal.progress_pct === null ? "sin caja asociada" : `${goal.progress_pct}%`;
+  const pace =
+    goal.monthly_pace === null
+      ? "sin fecha objetivo"
+      : `ritmo ${formatMoney(goal.monthly_pace)}/mes`;
+  return `goal:${goal.name}=${formatMoney(roundMoney(balance))} de ${formatMoney(Number(goal.target_amount))} (${progress}, ${pace}, ${goal.status})`;
+}
+
+function formatGoalForTool(goal: GoalWithProgress) {
+  return {
+    id: goal.id,
+    name: goal.name,
+    status: goal.status,
+    target_amount: Number(goal.target_amount),
+    target_date: goal.target_date,
+    box_id: goal.box_id,
+    box_name: goal.box?.name ?? null,
+    current_balance: goal.current_balance,
+    progress_pct: goal.progress_pct,
+    monthly_pace: goal.monthly_pace,
+  };
 }
 
 function failedTool(toolName: string): ConversationToolResult {

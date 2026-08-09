@@ -69,6 +69,9 @@ export const PlanningCapabilitySchema = z.enum([
   "get_record_provenance",
   "get_user_context_summary",
   "get_spending_summary",
+  "get_budget_summary",
+  "get_report_period",
+  "get_projection_snapshot",
   "policy_gate",
   "command_dispatcher",
 ]);
@@ -366,7 +369,25 @@ export const ORCHESTRATION_CAPABILITY_CATALOG: OrchestrationPlanningContextPack[
     name: "get_spending_summary",
     kind: "tool",
     read_only: true,
-    description: "Agrupa movimientos confirmados por categoria, subcategoria, persona o tag para responder analisis.",
+    description: "Agrupa por categoria los movimientos ya filtrados del turno; para el total oficial de un periodo usa get_report_period.",
+  },
+  {
+    name: "get_budget_summary",
+    kind: "tool",
+    read_only: true,
+    description: "Consulta presupuestos y limites del periodo con lo gastado, lo que queda, el porcentaje y la banda de riesgo.",
+  },
+  {
+    name: "get_report_period",
+    kind: "tool",
+    read_only: true,
+    description: "Consulta el reporte oficial de un periodo: gasto, ingreso, desglose por categoria, comparacion previa y exclusiones declaradas.",
+  },
+  {
+    name: "get_projection_snapshot",
+    kind: "tool",
+    read_only: true,
+    description: "Consulta la proyeccion del mes: dinero libre, compromisos, ritmo diario, dias restantes y cierre proyectado con supuestos.",
   },
   {
     name: "policy_gate",

@@ -32,6 +32,12 @@ export const ConversationToolNameSchema = z.enum([
   "get_record_provenance",
   "get_user_context_summary",
   "get_spending_summary",
+  // `RUL-PRES-09`, `RUL-REP-03` y proyecciones: el asistente consulta los
+  // mismos dominios que la web (`/presupuestos`, `/reportes`,
+  // `/proyecciones`) reutilizando sus motores, no una segunda cuenta.
+  "get_budget_summary",
+  "get_report_period",
+  "get_projection_snapshot",
   // `20b` S5: la consulta abierta — de/donde/agrupar_por/medir/ordenar,
   // compilada contra el modelo del dominio de `src/core/semantics`. Unica
   // entidad compilable hoy: `movimientos` (`WEB-D257`, `WEB-D259`).

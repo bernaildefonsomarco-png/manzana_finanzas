@@ -8,6 +8,7 @@ import type {
   ConversationToolName,
   ConversationWorkingSet,
 } from "@/agents/conversation-agent";
+import { ConversationToolNameSchema } from "@/agents/conversation-agent/types";
 import { CORRECTION_CONFIRMATION_TTL_MS } from "@/core/orchestrator/correction-resolution";
 import type { CompiledOrchestrationPlan } from "@/core/orchestrator/orchestration-plan";
 import {
@@ -703,16 +704,14 @@ function goalForCompiledPlan(
   return "query";
 }
 
+/**
+ * El catalogo de tools vive en `ConversationToolNameSchema`. Esta guarda lo
+ * consulta en vez de repetirlo: la lista escrita a mano se habia quedado en
+ * las siete tools originales y borraba del working set toda consulta hecha
+ * con una tool posterior (estructura, presupuestos, reportes, proyeccion).
+ */
 function isConversationToolName(value: string): value is ConversationToolName {
-  return (
-    value === "get_balance_snapshot" ||
-    value === "query_movements" ||
-    value === "get_pending_summary" ||
-    value === "get_debt_summary" ||
-    value === "get_debt_details" ||
-    value === "get_recurring_summary" ||
-    value === "search_financial_memory"
-  );
+  return ConversationToolNameSchema.safeParse(value).success;
 }
 
 function topicForQuery(
