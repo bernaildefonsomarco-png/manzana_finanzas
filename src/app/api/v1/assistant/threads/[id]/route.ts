@@ -18,6 +18,7 @@ import {
   archiveAssistantThread,
   getAssistantThreadById,
   listAssistantMessages,
+  listRecentAssistantMessages,
 } from "@/data/repositories/assistant.repository";
 
 export const dynamic = "force-dynamic";
@@ -64,11 +65,29 @@ export async function GET(request: Request, context: RouteContext) {
     }
     const limit = clampLimit(query.limit);
 
+    // Abrir la conversacion sin cursor pide la COLA, no la cabeza: paginar
+    // desde el primer mensaje dejaba fuera los turnos recientes en cuanto el
+    // hilo pasaba de `limit`, y la pantalla se veia congelada en un punto del
+    // pasado aunque el servidor siguiera respondiendo cada turno.
+    // `next_cursor` nulo es la verdad aqui: no hay nada despues del ultimo
+    // mensaje. El cursor sigue sirviendo para recorrer el hilo desde el
+    // principio, que es lo que hace el historial completo (`SCR-ASI-03`).
+    if (!cursor) {
+      const recent = await listRecentAssistantMessages(
+        auth.client,
+        auth.userId,
+        params.id,
+        { limit }
+      );
+      return okJson(
+        { thread, messages: recent },
+        { ...meta, page: { next_cursor: null, has_more: false, limit } }
+      );
+    }
+
     const messages = await listAssistantMessages(auth.client, auth.userId, params.id, {
       limit: limit + 1,
-      cursorFilter: cursor
-        ? buildCursorOrFilter("created_at", cursor, "asc")
-        : undefined,
+      cursorFilter: buildCursorOrFilter("created_at", cursor, "asc"),
     });
 
     const { data: pageRows, page } = paginate(messages, limit, (row) => row.created_at);
