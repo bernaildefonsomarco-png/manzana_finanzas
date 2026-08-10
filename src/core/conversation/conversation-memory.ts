@@ -168,6 +168,11 @@ export async function rememberConversationOutcome(input: {
    * confirmacion. Pasar `null` limpia el que hubiera.
    */
   structureProposal?: Record<string, unknown> | null;
+  /**
+   * `RUL-MEM-16`: borrador de la orden de memoria que queda esperando
+   * confirmacion. Pasar `null` limpia el que hubiera.
+   */
+  memoryProposal?: Record<string, unknown> | null;
   previous?: ConversationWorkingSet | null;
   now?: string;
 }) {
@@ -199,6 +204,7 @@ export async function rememberConversationOutcome(input: {
     unresolvedSlots: input.unresolvedSlots ?? [],
     focusSet,
     structureProposal: input.structureProposal ?? null,
+    memoryProposal: input.memoryProposal ?? null,
     now,
   });
 
@@ -310,7 +316,8 @@ export function withExpiredCorrectionProposal(
     !workingSet ||
     !lastAction ||
     (lastAction.kind !== "correction_proposed" &&
-      lastAction.kind !== "structure_proposed") ||
+      lastAction.kind !== "structure_proposed" &&
+      lastAction.kind !== "memory_proposed") ||
     lastAction.status !== "awaiting_confirmation"
   ) {
     return workingSet;
@@ -329,6 +336,9 @@ export function withExpiredCorrectionProposal(
     // Un borrador de estructura caducado tampoco puede quedar accesible: sin
     // el, `resolveAwaitingStructure` ya no tiene payload que ejecutar.
     structure_proposal: null,
+    // Y el borrador de memoria por lo mismo: caducado no puede quedar
+    // ejecutable (`RUL-MEM-16`).
+    memory_proposal: null,
     updated_at: now,
   };
 }
@@ -395,6 +405,8 @@ function buildConversationWorkingSet(input: {
   focusSet?: ConversationFocusSet | null;
   /** Borrador de estructura vivo tras este turno (`RUL-ESTR-03`). */
   structureProposal?: Record<string, unknown> | null;
+  /** Borrador de control de memoria vivo tras este turno (`RUL-MEM-16`). */
+  memoryProposal?: Record<string, unknown> | null;
   now?: string;
 }): ConversationWorkingSet {
   const now = input.now ?? new Date().toISOString();
@@ -440,6 +452,10 @@ function buildConversationWorkingSet(input: {
     // sigue vivo. Asi un turno que ya lo ejecuto o lo cancelo lo deja limpio y
     // un "si" posterior no encuentra nada que disparar (`RUL-ESTR-03`).
     structure_proposal: input.structureProposal ?? null,
+    // Misma regla para el borrador de memoria: no se arrastra solo. Un turno
+    // que ya olvido, corrigio o cancelo lo deja limpio, y un "si" posterior no
+    // encuentra nada que disparar (`RUL-MEM-16`).
+    memory_proposal: input.memoryProposal ?? null,
     conversation_style: input.previous?.conversation_style ?? null,
     updated_at: now,
   };

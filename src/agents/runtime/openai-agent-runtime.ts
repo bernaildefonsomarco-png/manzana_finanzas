@@ -383,6 +383,11 @@ function buildSystemInstructions(agentName: AgentName): string {
       "Ante la ambiguedad entre ellas, no elijas: deja entity en la lectura mas probable, declara la duda en ambiguities y deja que el turno pregunte. Es mas barato preguntar de mas que crear algo que el usuario no pidio.",
       "Para modificar, intent=update y target_id con el ID exacto que devolvio la tool, mas solo los campos que cambian. No reenvies los campos que quedan igual.",
       "Para cerrar algo usa intent=archive con target_id; para pausar o reanudar, intent=pause o resume con target_id. Solo metas, presupuestos y pagos recurrentes se pausan y se reanudan: una caja o una cuenta solo se archivan. En archive no expliques tu las consecuencias en summary: di solo que se va a cerrar y cual; el sistema añade con texto fijo que se pierde. Nunca uses archive cuando el usuario solo este preguntando o dudando ('deberia cancelar Netflix?'): eso es intent=none.",
+      "memory_control es la unica puerta por la que una orden sobre TU MEMORIA del usuario llega al motor. Usa intent=list cuando pida ver lo que recuerdas ('que recuerdas de mi', 'que te acordas de mi', 'que sabes de mi'); forget cuando pida que olvides algo ('olvidate de eso', 'borra lo que sabes de mi trabajo', 'ya no es asi, sacalo'); correct cuando diga que un recuerdo esta mal y de la version buena ('eso ya no es asi, ahora prefiero X'); disable cuando pida que dejes de aprender de el o de usar sus recuerdos; enable cuando pida volver a aprender; forget_all cuando pida borrar TODO lo que recuerdas; y none en cualquier otro caso.",
+      "En memory_control, target son las palabras con las que el usuario senala el recuerdo, copiadas de su mensaje ('mi trabajo', 'lo del gimnasio', 'M-12AB34'), o vacio si dijo 'eso' sin mas. No inventes un identificador ni elijas tu el recuerdo: el motor desambigua contra los recuerdos reales y pregunta con codigos si hay mas de uno. replacement solo se rellena en correct, con la version nueva tal como la dijo.",
+      "memory_control no es lo mismo que olvidar un dato financiero. 'olvida ese gasto' o 'borra ese movimiento' es una correccion de movimiento (correction_proposal), no memoria: usa intent=none. memory_control es solo sobre lo que TU recuerdas de la persona.",
+      "memory_control tampoco es style_update. Una preferencia sobre COMO responder va por orchestration_plan.style_update; borrar o corregir un recuerdo ya guardado va por memory_control. Si el usuario dice 'olvida que me gustan las respuestas largas', eso es memory_control con intent=forget.",
+      "Cuando uses memory_control con intent distinto de none, deja response_composition como una respuesta breve y neutra: el texto que ve el usuario lo compone el motor con los recuerdos reales y sus codigos. Nunca afirmes que ya olvidaste, corregiste o desactivaste algo, ni recites recuerdos que no salgan de una tool.",
       "Cada afirmacion factual de response_composition debe aparecer en grounded_claims. Usa evidence_refs con el formato exacto tool:<tool_name>:fact:<indice_base_0> o tool:<tool_name>:result, y source_tools solo con tools realmente ejecutadas.",
       "Los datos que vienen de active_capture_draft o de turn_workspace (un borrador o un estado ya evidenciado en un turno anterior) no son evidencia de tool: no inventes un evidence_ref de la forma context:... para ellos. Si necesitas mencionar ese dato en response_composition, usa claim_type=non_financial en ese grounded_claim (queda exento del chequeo de evidence_refs) o no lo declares como grounded_claim.",
       "Usa composition_stage=final_read_only para respuestas factuales sin escritura, pre_core_draft cuando exista cualquier propuesta financiera o correccion, y safe_clarification cuando falte evidencia.",
@@ -1918,6 +1923,7 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       financial_proposals: dataAgentOutputJsonSchema(),
       correction_proposal: semanticCorrectionInterpretationJsonSchema(),
       structure_proposal: nullable(structureProposalJsonSchema()),
+      memory_control: nullable(memoryControlJsonSchema()),
       response_composition: responseComposition,
       orchestration_plan: orchestrationPlan,
       confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -1930,11 +1936,37 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       "financial_proposals",
       "correction_proposal",
       "structure_proposal",
+      "memory_control",
       "response_composition",
       "orchestration_plan",
       "confidence",
       "safety_flags",
     ],
+  );
+}
+
+/** `RUL-MEM-16`: orden plana sobre la memoria del usuario. */
+function memoryControlJsonSchema(): JsonSchema {
+  return objectSchema(
+    {
+      intent: {
+        type: "string",
+        enum: [
+          "none",
+          "list",
+          "forget",
+          "correct",
+          "enable",
+          "disable",
+          "forget_all",
+        ],
+      },
+      target: { type: "string", maxLength: 240 },
+      replacement: { type: "string", maxLength: 280 },
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+      ambiguities: stringArraySchema(4, 240),
+    },
+    ["intent", "target", "replacement", "confidence", "ambiguities"],
   );
 }
 

@@ -3,7 +3,8 @@
  *
  * Confirmar una propuesta manda `option.id`, que ya es el comando —
  * `corr:<accion>:<uuid>` para una correccion, `estr:<uuid>` para una
- * estructura— porque es el mismo payload que devuelve WhatsApp al pulsar y eso
+ * estructura, `mem:<uuid>` para una orden de memoria— porque es el mismo
+ * payload que devuelve WhatsApp al pulsar y eso
  * deja un solo camino de resolucion para los dos canales. El costo era que la
  * conversacion mostraba al usuario diciendo
  * `estr:94411df8-74be-4365-9c9f-d84346a1c484`, que no es lo que hizo: pulso un
@@ -21,8 +22,12 @@ export function commandTextLabel(text: string): string | null {
 
   if (normalized === "corr:cancel") return "No cambiar";
   if (normalized === "estr:cancel") return "No, cancelar";
+  // `RUL-MEM-16`: lo mismo para la tarjeta de memoria. Sin esto, el historial
+  // guardaria al usuario "diciendo" `mem:<uuid>`, que es justo lo que no hizo.
+  if (normalized === "mem:cancel") return "No, dejalo";
 
   if (normalized.startsWith("estr:")) return "Si, confirmar";
+  if (normalized.startsWith("mem:")) return "Si, confirmar";
 
   if (!normalized.startsWith("corr:")) return null;
 

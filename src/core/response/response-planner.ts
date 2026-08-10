@@ -21,6 +21,11 @@ import {
   type StructureProposal,
 } from "@/core/structure/structure-proposal";
 import type { StructureResolutionResult } from "@/core/structure/structure-resolution";
+import {
+  buildMemoryCommandText,
+  MEMORY_CANCEL_COMMAND_ID,
+  type MemoryControlProposal,
+} from "@/core/learning/memory-control-proposal";
 import { buildDashboardDeepLink } from "@/shared/app-links";
 import type { PendingItem } from "@/shared/types/domain";
 
@@ -41,6 +46,18 @@ export type TurnResponsePlannerInput = {
   /** Lectura ambigua caja/meta/presupuesto: se pregunta, no se escribe (`RUL-PRES-01`). */
   structureAmbiguityQuestion?: string;
   structureResolution?: StructureResolutionResult;
+  /**
+   * `RUL-MEM-16`: orden de memoria que este turno propone. Sale como tarjeta
+   * con botones porque `olvidar_aprendizaje` y `corregir_aprendizaje` son nivel
+   * `tarjeta` en el catalogo (`40` §7.13).
+   */
+  memoryProposal?: MemoryControlProposal;
+  /**
+   * Texto ya compuesto por el nucleo de memoria: la lista con codigos, la
+   * desambiguacion, el rechazo de `olvidar_todo`, el resultado de aplicar o
+   * cancelar. Va verbatim: lleva codigos `M-XXXXXX` que no se pueden reescribir.
+   */
+  memoryControlText?: string;
   conversationAnswer?: ConversationalAnswer;
   supplementalConversationAnswer?: ConversationalAnswer;
   conversationTurnState?: ConversationTurnState;
@@ -156,6 +173,8 @@ type ProductResponseReason =
   | "structure_applied"
   | "structure_cancelled"
   | "structure_failed"
+  | "memory_needs_confirmation"
+  | "memory_control_answered"
   | "ready_for_core_not_executed";
 
 type ProductResponse = {
@@ -233,6 +252,46 @@ function appendSupplementalAnswer(
   if (!("text" in first) || "options" in first) return blocks;
 
   return [{ ...first, text: `${first.text}\n\n${supplemental.response_text}` }, ...rest];
+}
+
+/**
+ * `RUL-MEM-16`: todo lo que este turno puede decir sobre la memoria del
+ * usuario.
+ *
+ * La tarjeta va primero porque olvidar y corregir exigen nivel `tarjeta`
+ * (`40` §7.13): mostrar lo que va a pasar y que el usuario acepte. El texto
+ * suelto cubre el resto —ver la lista, desambiguar con codigos, rechazar
+ * `olvidar_todo`, y decir que se aplico o se cancelo— y siempre trae algo que
+ * decir, para que este camino no pueda terminar en cero bloques.
+ */
+function buildMemoryControlResponse(
+  input: TurnResponsePlannerInput,
+): ProductResponse | null {
+  const proposal = input.memoryProposal;
+  if (proposal) {
+    const commandId = buildMemoryCommandText(proposal.proposal_id);
+    return {
+      reason: "memory_needs_confirmation",
+      intent: "direct_response",
+      shape: "propuesta",
+      text: proposal.summary,
+      proposalCommandId: commandId,
+      options: [
+        { id: commandId, label: proposal.confirm_label },
+        { id: MEMORY_CANCEL_COMMAND_ID, label: "No, déjalo" },
+      ],
+    };
+  }
+
+  const text = input.memoryControlText?.trim();
+  if (!text) return null;
+
+  return {
+    reason: "memory_control_answered",
+    intent: "direct_response",
+    shape: "texto",
+    text,
+  };
 }
 
 /**
@@ -395,6 +454,12 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
   const execution = input.financialActionExecution;
   const pendingResolution = input.pendingResolution;
   const captureDraftResolution = input.captureDraftResolution;
+  // El control de memoria va primero por la misma razon que iba primero en el
+  // orquestador: es la unica via por la que el usuario ejerce privacidad, y no
+  // puede quedar detras de nada (`RUL-MEM-16`).
+  const memoryResponse = buildMemoryControlResponse(input);
+  if (memoryResponse) return memoryResponse;
+
   const structureResponse = buildStructureResponse(input);
   if (structureResponse) return structureResponse;
 

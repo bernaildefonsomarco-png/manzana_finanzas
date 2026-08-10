@@ -19,6 +19,13 @@ describe("commandTextLabel", () => {
     expect(commandTextLabel("estr:cancel")).toBe("No, cancelar");
   });
 
+  it("traduce las ordenes de memoria, cuyo id tampoco dice nada", () => {
+    expect(commandTextLabel("mem:44444444-4444-4444-8444-444444444444")).toBe(
+      "Si, confirmar"
+    );
+    expect(commandTextLabel("mem:cancel")).toBe("No, dejalo");
+  });
+
   it("una correccion desconocida sigue siendo una confirmacion, no un identificador crudo", () => {
     expect(commandTextLabel("corr:futuro:mov-1")).toBe("Si, confirmar");
   });

@@ -1,7 +1,23 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { CommandDispatcher } from "@/core/finance";
 import { captureExplicitConversationStyle } from "@/core/learning/conversation-style-capture";
-import { handleMemoryControlFromText } from "@/core/learning/memory-control-from-text";
+import {
+  composeMemoryCancelledText,
+  composeMemoryLapsedText,
+  executeMemoryControlProposal,
+  handleMemoryControlFromText,
+  resolveMemoryControl,
+  type MemoryControlResult,
+} from "@/core/learning/memory-control-from-text";
+import { compileMemoryControlRequest } from "@/core/learning/memory-control-request";
+import {
+  buildMemoryCommandText,
+  isMemoryCommandText,
+  parseMemoryCommandText,
+  readStoredMemoryProposal,
+  resolveAwaitingMemoryControl,
+  type MemoryControlProposal,
+} from "@/core/learning/memory-control-proposal";
 import type { Database } from "@/data/supabase/types";
 import {
   ConversationAgent,
@@ -71,6 +87,7 @@ import {
   rememberConversationTurn,
   rememberExpiredCorrectionProposal,
   withExpiredCorrectionProposal,
+  type ConversationOutcomeAction,
 } from "@/core/conversation/conversation-memory";
 import { resolveTurnThreadKey } from "@/core/conversation/thread-scope";
 import { ToolGateway } from "@/core/conversation/tool-gateway";
@@ -203,7 +220,14 @@ export type TurnOrchestrationResult = {
     | "accepted_with_structure_cancelled"
     | "accepted_with_structure_clarification"
     | "accepted_with_structure_lapsed"
+    // `RUL-MEM-16`: ver, olvidar, corregir y encender/apagar el aprendizaje
+    // conversando. `confirmation` es la tarjeta que exige el catalogo antes de
+    // olvidar o corregir; `applied` y `cancelled`, su desenlace.
     | "accepted_with_memory_control"
+    | "accepted_with_memory_confirmation"
+    | "accepted_with_memory_applied"
+    | "accepted_with_memory_cancelled"
+    | "accepted_with_memory_lapsed"
     | "missing_external_event"
     | "missing_user"
     | "non_text_message";
@@ -356,87 +380,24 @@ export class FinancialOrchestrator {
       activeState: activeMemoryState,
     });
 
-    const memoryControl = await handleMemoryControlFromText({
-      client: this.client,
-      userId: externalEvent.user_id,
+    // `RUL-MEM-16`: el control de memoria sigue abriendo el turno, pero ya no
+    // detecta intencion con una lista de frases. Aqui solo quedan las dos cosas
+    // que no necesitan juicio: resolver una orden de memoria que este mismo
+    // hilo dejo esperando confirmacion, y los comandos con codigo que el propio
+    // asistente ensena a escribir. Todo lo demas lo decide el ejecutivo, mas
+    // abajo, en `controlMemoryIfRequested`.
+    const memoryTurn = await this.resolveMemoryControlTurn({
+      externalEvent,
+      turnInput,
       text,
+      channel,
+      threadKey,
       traceId: input.traceId,
+      activeMemoryState,
+      conversationTurnState: conversationTurn.turn_state,
     });
-    if (memoryControl.handled && memoryControl.response_text) {
-      const plan = planTurnBlocks({
-        turnInput,
-        userId: externalEvent.user_id,
-        dataAgentCompleted: true,
-        dataAgentIntent: "conversation",
-        conversationTurnState: conversationTurn.turn_state,
-        conversationAnswer: {
-          response_text: memoryControl.response_text,
-          answer_kind:
-            memoryControl.action === "clarify"
-              ? "clarification"
-              : "memory_summary",
-          confidence: 1,
-          cited_facts: memoryControl.affected_memory_ids,
-          used_tools: [],
-          follow_up_question:
-            memoryControl.action === "clarify"
-              ? "¿Qué recuerdo quieres cambiar?"
-              : null,
-          safety_flags: ["memory_is_context_not_authorization"],
-        },
-      });
-      const presented = await this.presentTurn(plan, {
-        turnInput,
-        externalEventId: externalEvent.id,
-        traceId: input.traceId,
-        conversationTurnState: conversationTurn.turn_state,
-        skipEnhancement: true,
-      });
-      await rememberConversationOutcome({
-        client: this.client,
-        userId: externalEvent.user_id,
-        channel,
-        threadKey,
-        intent: "memory_control",
-        userMessage: text,
-        resultSummary: memoryControl.response_text,
-        sourceRef: externalEvent.id,
-        topic: "memory",
-        goal: "review",
-        actionKind:
-          memoryControl.action === "clarify"
-            ? "clarification_requested"
-            : "query_answered",
-        actionStatus:
-          memoryControl.action === "clarify"
-            ? "awaiting_confirmation"
-            : "completed",
-        unresolvedSlots:
-          memoryControl.action === "clarify"
-            ? ["memory_code"]
-            : [],
-        previous: activeMemoryState?.working_set ?? null,
-        now: externalEvent.received_at,
-      });
-      await updateExternalEventStatus(this.client, {
-        external_event_id: externalEvent.id,
-        status: "accepted",
-        metadata: {
-          orchestrator_status: "accepted",
-          orchestrator_reason: "accepted_with_memory_control",
-          agent_runtime_required: false,
-          memory_control_action: memoryControl.action,
-          memory_control_affected_count:
-            memoryControl.affected_memory_ids.length,
-          ...presentedTurnMetadata(plan, presented),
-        },
-      });
-      return {
-        externalEventId: externalEvent.id,
-        status: "accepted",
-        reason: "accepted_with_memory_control",
-      };
-    }
+    if (memoryTurn.handled) return memoryTurn.result;
+    activeMemoryState = memoryTurn.activeMemoryState;
 
     // `RUL-ESTR-03`: una propuesta de estructura ("¿Creo la caja Viaje?") se
     // resuelve exactamente igual que una correccion — con el boton `estr:...`
@@ -711,6 +672,22 @@ export class FinancialOrchestrator {
     const effectiveConversationTurnState =
       initialOrchestrationPlanning?.compiled.conversationTurnState ??
       conversationTurn.turn_state;
+
+    // `RUL-MEM-16`: el ejecutivo entendio que este turno es una orden sobre la
+    // memoria. Va antes que la estructura por lo mismo que iba primero el
+    // detector viejo: es la via por la que el usuario ejerce privacidad.
+    const memoryControlTurn = await this.controlMemoryIfRequested({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      conversationTurnState: effectiveConversationTurnState,
+      executive: initialOrchestrationPlanning?.executive ?? null,
+      previousWorkingSet: activeMemoryState?.working_set ?? null,
+    });
+    if (memoryControlTurn) return memoryControlTurn;
 
     // `RUL-ESTR-01`: el ejecutivo propuso crear o cambiar una caja, meta o
     // presupuesto. El turno no escribe nada aqui: propone y espera el "si".
@@ -1437,6 +1414,462 @@ export class FinancialOrchestrator {
     });
 
     return { handled: true, result };
+  }
+
+  /**
+   * `RUL-MEM-16`: resuelve el tramo de memoria que **no** necesita juicio del
+   * modelo — confirmar, descartar o caducar una orden ya propuesta, y los
+   * comandos con codigo (`Olvida M-XXXXXX`) que el propio asistente ensena.
+   *
+   * Todo el bloque va dentro de un `try`: la memoria es un lujo del turno, no
+   * su motor. Si la base falla, se registra y el turno sigue su camino normal
+   * en vez de quedarse mudo.
+   */
+  private async resolveMemoryControlTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    activeMemoryState: ConversationMemoryState | null;
+    conversationTurnState: ConversationTurnState;
+  }): Promise<
+    | { handled: true; result: TurnOrchestrationResult }
+    | { handled: false; activeMemoryState: ConversationMemoryState | null }
+  > {
+    const userId = params.externalEvent.user_id;
+    let activeMemoryState = params.activeMemoryState;
+    if (!userId) return { handled: false, activeMemoryState };
+
+    const workingSet = activeMemoryState?.working_set ?? null;
+
+    try {
+      const isCommand = isMemoryCommandText(params.text);
+      const awaiting = resolveAwaitingMemoryControl({
+        text: params.text,
+        workingSet,
+        threadKey: params.threadKey,
+        now: params.externalEvent.received_at,
+      });
+
+      // Un boton pulsado trae su propia intencion: no caduca nada. El borrador
+      // vive en el estado, y caducarlo aqui borraria lo que hay que ejecutar.
+      const storedProposal =
+        awaiting.kind === "other_thread"
+          ? null
+          : readStoredMemoryProposal(workingSet);
+
+      if (
+        !isCommand &&
+        (awaiting.kind === "lapsed_by_topic_change" ||
+          awaiting.kind === "lapsed_confirmation")
+      ) {
+        logger.warn("orchestrator.memory_proposal_lapsed", {
+          trace_id: params.traceId,
+          external_event_id: params.externalEvent.id,
+          lapse_kind: awaiting.kind,
+        });
+        const expiredState = await rememberExpiredCorrectionProposal({
+          client: this.client,
+          userId,
+          channel: params.channel,
+          threadKey: params.threadKey,
+          previousState: activeMemoryState,
+          now: params.externalEvent.received_at,
+        });
+        activeMemoryState = expiredState ?? activeMemoryState;
+      }
+
+      // `AC-RT-13`: una confirmacion tardia se responde, no se ejecuta ni se
+      // descarta en silencio.
+      if (!isCommand && awaiting.kind === "lapsed_confirmation") {
+        const result = await this.presentMemoryControlTurn({
+          externalEvent: params.externalEvent,
+          turnInput: params.turnInput,
+          traceId: params.traceId,
+          conversationTurnState: params.conversationTurnState,
+          text: composeMemoryLapsedText(),
+          proposal: null,
+          memoryControlAction: "lapsed",
+          affectedMemoryIds: [],
+          orchestratorReason: "accepted_with_memory_lapsed",
+          remember: {
+            channel: params.channel,
+            threadKey: params.threadKey,
+            userId,
+            userMessage: params.text,
+            previous: workingSet,
+            now: params.externalEvent.received_at,
+            actionKind: "memory_cancelled",
+            actionStatus: "expired",
+          },
+        });
+        return { handled: true, result };
+      }
+
+      const commandText = isCommand
+        ? params.text
+        : awaiting.kind === "confirmable"
+          ? awaiting.commandText
+          : null;
+      const command = commandText
+        ? parseMemoryCommandText(commandText)
+        : null;
+
+      if (command) {
+        const resolved = await this.applyMemoryCommand({
+          externalEvent: params.externalEvent,
+          turnInput: params.turnInput,
+          text: params.text,
+          channel: params.channel,
+          threadKey: params.threadKey,
+          traceId: params.traceId,
+          conversationTurnState: params.conversationTurnState,
+          userId,
+          command,
+          proposal: storedProposal,
+          previousWorkingSet: workingSet,
+        });
+        return { handled: true, result: resolved };
+      }
+
+      // Comando con codigo escrito a mano. Devuelve `handled: false` para
+      // cualquier otra cosa, y ahi manda el ejecutivo.
+      const fromText = await handleMemoryControlFromText({
+        client: this.client,
+        userId,
+        text: params.text,
+        traceId: params.traceId,
+        now: params.externalEvent.received_at,
+      });
+      if (fromText.handled) {
+        const result = await this.presentMemoryControlResult({
+          externalEvent: params.externalEvent,
+          turnInput: params.turnInput,
+          text: params.text,
+          channel: params.channel,
+          threadKey: params.threadKey,
+          traceId: params.traceId,
+          conversationTurnState: params.conversationTurnState,
+          result: fromText,
+          previousWorkingSet: workingSet,
+        });
+        return { handled: true, result };
+      }
+    } catch (error) {
+      // `WEB-D296`: un fallo de memoria no puede dejar el turno mudo ni
+      // romperlo. Se registra y el turno sigue por su camino normal.
+      logger.warn("orchestrator.memory_control_failed", {
+        trace_id: params.traceId,
+        external_event_id: params.externalEvent.id,
+        error,
+      });
+    }
+
+    return { handled: false, activeMemoryState };
+  }
+
+  /**
+   * `RUL-MEM-16`: el ejecutivo dijo que este turno es una orden de memoria.
+   * Aqui se compila, se resuelve contra los recuerdos reales y se responde.
+   *
+   * Devuelve `null` cuando este turno no habla de memoria, para que siga su
+   * camino normal.
+   */
+  private async controlMemoryIfRequested(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    executive: OrchestrationPlanningTrace["executive"];
+    previousWorkingSet: ConversationWorkingSet | null;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    const command = compileMemoryControlRequest(
+      params.executive?.result.output.memory_control ?? null,
+    );
+    if (!command) return null;
+
+    try {
+      const result = await resolveMemoryControl({
+        client: this.client,
+        userId,
+        command,
+        traceId: params.traceId,
+        now: params.externalEvent.received_at,
+      });
+      if (!result.handled) return null;
+
+      return await this.presentMemoryControlResult({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        text: params.text,
+        channel: params.channel,
+        threadKey: params.threadKey,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        result,
+        previousWorkingSet: params.previousWorkingSet,
+        skipEnhancement: params.executive != null,
+      });
+    } catch (error) {
+      // El turno no se queda mudo: cae al camino normal, donde el ejecutivo ya
+      // compuso una respuesta.
+      logger.warn("orchestrator.memory_control_failed", {
+        trace_id: params.traceId,
+        external_event_id: params.externalEvent.id,
+        error,
+      });
+      return null;
+    }
+  }
+
+  /** Ejecuta o cancela la orden de memoria que el usuario acaba de confirmar. */
+  private async applyMemoryCommand(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    userId: string;
+    command: NonNullable<ReturnType<typeof parseMemoryCommandText>>;
+    proposal: MemoryControlProposal | null;
+    previousWorkingSet: ConversationWorkingSet | null;
+  }): Promise<TurnOrchestrationResult> {
+    const remember = {
+      channel: params.channel,
+      threadKey: params.threadKey,
+      userId: params.userId,
+      userMessage: params.text,
+      previous: params.previousWorkingSet,
+      now: params.externalEvent.received_at,
+    };
+
+    if (params.command.kind === "cancel") {
+      return this.presentMemoryControlTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        text: composeMemoryCancelledText(params.proposal),
+        proposal: null,
+        memoryControlAction: "cancelled",
+        affectedMemoryIds: [],
+        orchestratorReason: "accepted_with_memory_cancelled",
+        remember: {
+          ...remember,
+          actionKind: "memory_cancelled",
+          actionStatus: "cancelled",
+        },
+      });
+    }
+
+    // Un `mem:<uuid>` inventado no encuentra borrador y no toca nada.
+    const proposal = params.proposal;
+    if (!proposal || proposal.proposal_id !== params.command.proposal_id) {
+      return this.presentMemoryControlTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        text:
+          "No encontré esa confirmación, así que no toqué ningún recuerdo. Escribe “qué recuerdas de mí” para verlos con su código.",
+        proposal: null,
+        memoryControlAction: "unknown_proposal",
+        affectedMemoryIds: [],
+        orchestratorReason: "accepted_with_memory_lapsed",
+        remember: {
+          ...remember,
+          actionKind: "memory_cancelled",
+          actionStatus: "failed",
+        },
+      });
+    }
+
+    const execution = await executeMemoryControlProposal({
+      client: this.client,
+      userId: params.userId,
+      proposal,
+      traceId: params.traceId,
+    });
+
+    return this.presentMemoryControlTurn({
+      externalEvent: params.externalEvent,
+      turnInput: params.turnInput,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      text: execution.response_text,
+      proposal: null,
+      memoryControlAction:
+        execution.kind === "applied" ? execution.action : execution.kind,
+      affectedMemoryIds:
+        execution.kind === "applied" ? [execution.memory_id] : [],
+      orchestratorReason:
+        execution.kind === "applied"
+          ? "accepted_with_memory_applied"
+          : "accepted_with_memory_control",
+      remember: {
+        ...remember,
+        actionKind:
+          execution.kind === "applied" ? "memory_applied" : "memory_cancelled",
+        actionStatus: execution.kind === "applied" ? "completed" : "failed",
+      },
+    });
+  }
+
+  /** Presenta un `MemoryControlResult` ya resuelto: propuesta, lista o rechazo. */
+  private async presentMemoryControlResult(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    result: MemoryControlResult;
+    previousWorkingSet: ConversationWorkingSet | null;
+    skipEnhancement?: boolean;
+  }): Promise<TurnOrchestrationResult> {
+    const result = params.result;
+    const isProposal = result.proposal != null;
+
+    return this.presentMemoryControlTurn({
+      externalEvent: params.externalEvent,
+      turnInput: params.turnInput,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      text: result.response_text,
+      proposal: result.proposal,
+      memoryControlAction: result.action,
+      affectedMemoryIds: result.affected_memory_ids,
+      orchestratorReason: isProposal
+        ? "accepted_with_memory_confirmation"
+        : "accepted_with_memory_control",
+      skipEnhancement: params.skipEnhancement,
+      remember: {
+        channel: params.channel,
+        threadKey: params.threadKey,
+        userId: params.externalEvent.user_id!,
+        userMessage: params.text,
+        previous: params.previousWorkingSet,
+        now: params.externalEvent.received_at,
+        actionKind: isProposal
+          ? "memory_proposed"
+          : result.action === "clarify"
+            ? "clarification_requested"
+            : "query_answered",
+        // `awaiting_confirmation` es lo que sella hilo y vigencia: sin ese
+        // estado, el "si" del turno siguiente no encuentra nada que ejecutar.
+        actionStatus: isProposal ? "awaiting_confirmation" : "completed",
+        unresolvedSlots: result.action === "clarify" ? ["memory_code"] : [],
+      },
+    });
+  }
+
+  /**
+   * Compone, presenta y registra un turno resuelto por la via de memoria.
+   *
+   * `text` puede llegar vacio si algo aguas arriba degrado: se sustituye por
+   * una frase honesta antes de planificar, porque un turno de memoria sin
+   * bloques dejaria al usuario sin saber si se toco su privacidad o no.
+   */
+  private async presentMemoryControlTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    text: string | null;
+    proposal: MemoryControlProposal | null;
+    memoryControlAction: string;
+    affectedMemoryIds: string[];
+    orchestratorReason: TurnOrchestrationResult["reason"];
+    skipEnhancement?: boolean;
+    remember: {
+      channel: Channel;
+      threadKey: string;
+      userId: string;
+      userMessage: string;
+      previous: ConversationWorkingSet | null;
+      now: string;
+      actionKind: ConversationOutcomeAction;
+      actionStatus: NonNullable<
+        ConversationWorkingSet["last_action"]
+      >["status"];
+      unresolvedSlots?: string[];
+    };
+  }): Promise<TurnOrchestrationResult> {
+    const proposal = params.proposal;
+    const text =
+      params.text?.trim() ||
+      "No pude leer tu memoria ahora mismo, así que no cambié nada. Vuelve a pedírmelo en un momento.";
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId: params.externalEvent.user_id,
+      dataAgentCompleted: true,
+      dataAgentIntent: "conversation",
+      conversationTurnState: params.conversationTurnState,
+      ...(proposal ? { memoryProposal: proposal } : { memoryControlText: text }),
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      // El texto lleva codigos `M-XXXXXX` y frases fijas que exige el catalogo:
+      // reescribirlo arriesgaria perder justo lo que el usuario tiene que leer.
+      skipEnhancement: params.skipEnhancement ?? true,
+    });
+
+    const remember = params.remember;
+    await rememberConversationOutcome({
+      client: this.client,
+      userId: remember.userId,
+      channel: remember.channel,
+      threadKey: remember.threadKey,
+      intent: "memory_control",
+      userMessage: remember.userMessage,
+      resultSummary: presented.text ?? text,
+      sourceRef: params.externalEvent.id,
+      topic: "memory",
+      goal: proposal ? "confirm" : "review",
+      actionKind: remember.actionKind,
+      actionStatus: remember.actionStatus,
+      commandIds: proposal
+        ? [buildMemoryCommandText(proposal.proposal_id)]
+        : [],
+      unresolvedSlots: remember.unresolvedSlots ?? [],
+      memoryProposal: proposal,
+      previous: remember.previous,
+      now: remember.now,
+    });
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: params.orchestratorReason,
+        agent_runtime_required: false,
+        memory_control_action: params.memoryControlAction,
+        memory_control_affected_count: params.affectedMemoryIds.length,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: params.orchestratorReason,
+    };
   }
 
   /**

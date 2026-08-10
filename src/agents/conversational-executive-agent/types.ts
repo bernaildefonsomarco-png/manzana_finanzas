@@ -145,6 +145,54 @@ export type StructureProposalRequest = z.infer<
   typeof StructureProposalRequestSchema
 >;
 
+/**
+ * `RUL-MEM-16`: modulo por el que el ejecutivo dice que este turno es una orden
+ * sobre la **memoria** del usuario —verla, olvidar algo, corregir algo, o
+ * encender y apagar el aprendizaje.
+ *
+ * Existe por la misma razon que `structure_proposal`: hasta ahora la intencion
+ * se detectaba con expresiones regulares ancladas a frases literales, y "che,
+ * olvidate de eso" o "¿que te acordas de mi?" no matcheaban ninguna. El fallo
+ * era ademas asimetrico —`list` degradaba con gracia al modelo, pero `forget`,
+ * `correct`, `enable` y `disable` caian a una ruta sin ejecutor y el asistente
+ * respondia amablemente **sin olvidar nada**.
+ *
+ * Es deliberadamente plano y no un comando, igual que `structure_proposal`: el
+ * modelo describe lo que entendio y `compileMemoryControlRequest` lo convierte
+ * en una orden tipada. El modelo no elige IDs de recuerdo, no decide el nivel
+ * de confirmacion y no ejecuta nada.
+ */
+export const MemoryControlRequestSchema = z.object({
+  /**
+   * `forget_all` esta aqui **para poder rechazarlo con nombre propio**
+   * (`WEB-D065`, `40` §8.2): sin ese valor, "borra todo lo que sabes de mi" se
+   * leeria como un `forget` con target "todo" y podria terminar borrando un
+   * recuerdo cualquiera. Declararlo permite responder que el motor no puede y
+   * dar la via de pantalla.
+   */
+  intent: z.enum([
+    "none",
+    "list",
+    "forget",
+    "correct",
+    "enable",
+    "disable",
+    "forget_all",
+  ]),
+  /**
+   * A que recuerdo se refiere, con las palabras del usuario o con su codigo
+   * `M-XXXXXX` si lo dijo. Vacio cuando el usuario no lo acoto ("olvidate de
+   * eso"): el nucleo desambigua contra los recuerdos reales, nunca el modelo.
+   */
+  target: z.string().trim().max(240),
+  /** Solo en `correct`: la version nueva que el usuario acaba de dictar. */
+  replacement: z.string().trim().max(280),
+  confidence: z.number().min(0).max(1),
+  /** Dudas que impiden actuar. Con una sola, el turno pregunta. */
+  ambiguities: z.array(z.string().trim().min(1).max(240)).max(4),
+});
+export type MemoryControlRequest = z.infer<typeof MemoryControlRequestSchema>;
+
 export const GroundedClaimSchema = z.object({
   claim_id: z.string().trim().min(1).max(80),
   text: z.string().trim().min(1).max(320),
@@ -200,6 +248,10 @@ export const ConversationalExecutiveOutputSchema = z.object({
   // Nullable con default para que un estado o fixture anterior a `RUL-ESTR-01`
   // siga validando: la ausencia de propuesta de estructura es "no hay".
   structure_proposal: StructureProposalRequestSchema.nullable().default(null),
+  // `RUL-MEM-16`: mismo contrato que `structure_proposal` — nullable con default
+  // para que un estado o fixture anterior siga validando. Ausencia es "este
+  // turno no habla de memoria".
+  memory_control: MemoryControlRequestSchema.nullable().default(null),
   response_composition: ResponseCompositionSchema,
   orchestration_plan: OrchestrationPlanSchema,
   findings: z.array(FindingSchema).max(1).default([]),

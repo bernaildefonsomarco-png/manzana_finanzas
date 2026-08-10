@@ -311,6 +311,12 @@ export const ConversationWorkingSetSchema = z.object({
         "structure_proposed",
         "structure_applied",
         "structure_cancelled",
+        // `RUL-MEM-16`: olvidar o corregir un recuerdo es nivel `tarjeta` en el
+        // catalogo (`40` §7.13), asi que pasa por el mismo ciclo propuesta ->
+        // confirmacion que una correccion o una estructura.
+        "memory_proposed",
+        "memory_applied",
+        "memory_cancelled",
         "query_answered",
         "clarification_requested",
       ]),
@@ -357,6 +363,22 @@ export const ConversationWorkingSetSchema = z.object({
    * del propio usuario y no de lo que devuelva el canal.
    */
   structure_proposal: z
+    .record(z.string(), z.unknown())
+    .nullable()
+    .default(null)
+    .optional(),
+  /**
+   * `RUL-MEM-16`: borrador de la orden de memoria que espera confirmacion —
+   * olvidar o corregir un recuerdo concreto—. Mismo contrato que
+   * `structure_proposal`: se guarda sin forma fuerte para que un estado escrito
+   * por una version anterior no rompa la lectura del hilo, y lo valida
+   * `MemoryControlProposalSchema` al usarlo.
+   *
+   * Vive aqui y no en el `id` del boton porque el resumen de un recuerdo puede
+   * ser sensible y no debe viajar por el canal, y porque asi lo que se ejecuta
+   * sale del estado del propio usuario y no de lo que devuelva el canal.
+   */
+  memory_proposal: z
     .record(z.string(), z.unknown())
     .nullable()
     .default(null)
