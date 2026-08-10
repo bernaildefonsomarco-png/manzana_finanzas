@@ -101,6 +101,20 @@ function buildInteractivePayload(blocks: Block[], bodyText: string): WhatsAppInt
   };
 }
 
+/**
+ * El proveedor corta el titulo de un boton en 20 caracteres, asi que se trunca
+ * aqui: es una restriccion de este canal y no de la respuesta. Cuando lo hacia
+ * quien componia la opcion, la pantalla web —que no tiene ese limite— heredaba
+ * el recorte y mostraba botones como "Si, actualizar la...", perdiendo justo
+ * la parte que dice que hace.
+ */
+const MAXIMO_TITULO_DE_BOTON = 20;
+
 function toWhatsAppButton(option: BlockOption) {
-  return { id: option.id, title: option.label };
+  return { id: option.id, title: truncarTitulo(option.label) };
+}
+
+function truncarTitulo(value: string): string {
+  if (value.length <= MAXIMO_TITULO_DE_BOTON) return value;
+  return `${value.slice(0, MAXIMO_TITULO_DE_BOTON - 3).trimEnd()}...`;
 }

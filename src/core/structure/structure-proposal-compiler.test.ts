@@ -57,7 +57,12 @@ describe("compilar una propuesta de estructura", () => {
     });
   });
 
-  it("el texto del botón se corta al límite del proveedor de mensajería", () => {
+  it("el texto del botón llega entero: el límite de un canal no es de la respuesta", () => {
+    // Antes se cortaba aquí por el límite de 20 caracteres de los botones del
+    // proveedor de mensajería, y la pantalla web —que no tiene ese límite—
+    // heredaba el recorte: mostraba "Sí, actualizar la..." perdiendo justo la
+    // parte que dice qué hace. El recorte vive ahora en el adaptador que lo
+    // necesita (`response-shaper`).
     const compiled = compileStructureProposal({
       request: request({
         confirm_label: "Sí, crea la caja del viaje a Cusco de una vez",
@@ -68,8 +73,9 @@ describe("compilar una propuesta de estructura", () => {
 
     expect(compiled.kind).toBe("proposal");
     if (compiled.kind !== "proposal") return;
-    expect(compiled.proposal.confirm_label.length).toBeLessThanOrEqual(20);
-    expect(compiled.proposal.confirm_label).toBe("Sí, crea la caja...");
+    expect(compiled.proposal.confirm_label).toBe(
+      "Sí, crea la caja del viaje a Cusco de una vez",
+    );
   });
 
   it("cada borrador nace con su propio identificador", () => {

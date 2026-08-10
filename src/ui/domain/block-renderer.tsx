@@ -6,6 +6,7 @@ import { MoneyText } from "@/ui/primitivas/money";
 import { cn } from "@/ui/primitivas/cn";
 import { EvidenceLink } from "./evidence-link";
 import { AccionBlockView } from "./blocks/accion-block-view";
+import { conEnfasis } from "./blocks/enfasis";
 import { HallazgoBlockView } from "./blocks/hallazgo-block-view";
 import { LimiteBlockView } from "./blocks/limite-block-view";
 import { ListaBlockView } from "./blocks/lista-block-view";
@@ -61,7 +62,7 @@ export function BlockRenderer({
 }: BlockRendererProps) {
   switch (block.kind) {
     case "texto":
-      return <p className={cn("text-sm text-text", className)}>{block.text}</p>;
+      return <p className={cn("text-sm text-text", className)}>{conEnfasis(block.text)}</p>;
 
     case "cifra":
       return (

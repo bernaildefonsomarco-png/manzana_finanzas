@@ -118,9 +118,7 @@ export function compileStructureProposal(input: {
       command_type: built.commandType,
       payload: built.payload,
       summary: request.summary.trim() || defaultSummary(request.entity, operation),
-      confirm_label: truncateButtonTitle(
-        request.confirm_label.trim() || "Sí, hazlo",
-      ),
+      confirm_label: request.confirm_label.trim() || "Sí, hazlo",
       proposed_at: input.now,
     },
   };
@@ -254,17 +252,6 @@ function defaultSummary(
   if (entity === "caja") return `¿${capitalize(verbo)} esa caja?`;
   if (entity === "meta") return `¿${capitalize(verbo)} esa meta?`;
   return `¿${capitalize(verbo)} ese presupuesto?`;
-}
-
-/**
- * El proveedor de mensajeria corta el titulo de un boton en 20 caracteres, y
- * el adaptador no trunca: lo hace quien compone la opcion, igual que
- * `truncateButtonTitle` del agente de correccion. Un boton cortado por el
- * proveedor perderia justo el verbo que dice que hace.
- */
-function truncateButtonTitle(value: string): string {
-  if (value.length <= 20) return value;
-  return `${value.slice(0, 17).trimEnd()}...`;
 }
 
 function dropUndefined(
