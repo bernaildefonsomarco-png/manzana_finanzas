@@ -7,10 +7,8 @@ import {
   isConfirmationText,
   isDiscardText,
 } from "@/core/orchestrator/pending-resolution-from-text";
-import {
-  executeStructureCommand,
-  type StructureExecutionResult,
-} from "./structure-executor";
+import { executeStructureCommand } from "./structure-executor";
+import type { StructureExecutionResult } from "./structure-execution-result";
 import {
   buildStructureCommandFromProposal,
   parseStructureCommandText,

@@ -1,14 +1,28 @@
 export {
   STRUCTURE_ENTITIES,
   STRUCTURE_OPERATIONS,
+  STRUCTURE_COMMAND_TYPES,
+  DESTRUCTIVE_STRUCTURE_OPERATIONS,
   StructureCommandSchema,
+  StructureCommandTypeSchema,
   CreateBoxPayloadSchema,
   UpdateBoxPayloadSchema,
+  ArchiveBoxPayloadSchema,
   CreateGoalPayloadSchema,
   UpdateGoalPayloadSchema,
+  GoalLifecyclePayloadSchema,
   CreateBudgetPayloadSchema,
   UpdateBudgetPayloadSchema,
+  BudgetLifecyclePayloadSchema,
+  CreateRecurringPayloadSchema,
+  UpdateRecurringPayloadSchema,
+  RecurringLifecyclePayloadSchema,
+  CreateAccountPayloadSchema,
+  UpdateAccountPayloadSchema,
+  AccountLifecyclePayloadSchema,
+  commandTypeFor,
   entityForCommandType,
+  isDestructiveStructureOperation,
   operationForCommandType,
   type StructureCommand,
   type StructureCommandType,
@@ -21,12 +35,15 @@ export {
   StructureProposalSchema,
   buildStructureCommandFromProposal,
   buildStructureCommandText,
+  entityArticle,
   entityLabel,
   isStructureCommandText,
   parseStructureCommandText,
   type ParsedStructureCommand,
   type StructureProposal,
 } from "./structure-proposal";
+
+export { describeStructureLoss } from "./structure-consequences";
 
 export {
   composeStructureAmbiguityQuestion,
@@ -40,10 +57,8 @@ export {
   type CompiledStructureProposal,
 } from "./structure-proposal-compiler";
 
-export {
-  executeStructureCommand,
-  type StructureExecutionResult,
-} from "./structure-executor";
+export { executeStructureCommand } from "./structure-executor";
+export type { StructureExecutionResult } from "./structure-execution-result";
 
 export {
   STRUCTURE_CONFIRMATION_TTL_MS,

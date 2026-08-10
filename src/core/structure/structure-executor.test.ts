@@ -446,6 +446,238 @@ describe("presupuestos y metas van por su propio ejecutor transaccional", () => 
   });
 });
 
+describe("RUL-ESTR-05: cerrar una caja devuelve su dinero antes de cerrarla", () => {
+  it("libera el saldo por el motor y después archiva, en ese orden", async () => {
+    mocks.getBoxById.mockResolvedValue(box({ current_balance: 500 }));
+    mocks.softDeleteBox.mockResolvedValue(undefined);
+
+    const result = await executeStructureCommand({
+      client,
+      command: {
+        ...envelope(),
+        type: "ArchiveBoxCommand",
+        payload: { box_id: BOX_ID },
+      },
+      movementSource: "dashboard_manual",
+    });
+
+    expect(result).toMatchObject({
+      kind: "applied",
+      entity: "caja",
+      operation: "archive",
+      entity_id: BOX_ID,
+    });
+    if (result.kind !== "applied") return;
+    // El usuario tiene que ver a dónde fue su dinero, no solo que se cerró.
+    expect(result.summary).toContain("S/500.00");
+    expect(result.summary).toContain("BCP");
+
+    const [movementCommand] = mocks.dispatch.mock.calls[0];
+    expect(movementCommand).toMatchObject({
+      type: "CreateMovementCommand",
+      payload: {
+        // Misma clave que la pantalla: liberar una caja solo se registra una vez.
+        idempotency_key: `box-delete-release:${BOX_ID}`,
+        movement: {
+          type: "asignacion_interna",
+          amount: 500,
+          box_origin_id: BOX_ID,
+          box_destination_id: null,
+        },
+      },
+    });
+    expect(mocks.softDeleteBox).toHaveBeenCalledWith(client, USER_ID, BOX_ID);
+    expect(mocks.appendStructureAudit).toHaveBeenCalledWith(
+      client,
+      expect.objectContaining({ entityType: "box", action: "deleted" }),
+    );
+  });
+
+  it("una caja vacía se cierra sin mover nada", async () => {
+    mocks.getBoxById.mockResolvedValue(box({ current_balance: 0 }));
+    mocks.softDeleteBox.mockResolvedValue(undefined);
+
+    const result = await executeStructureCommand({
+      client,
+      command: {
+        ...envelope(),
+        type: "ArchiveBoxCommand",
+        payload: { box_id: BOX_ID },
+      },
+      movementSource: "dashboard_manual",
+    });
+
+    expect(result.kind).toBe("applied");
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.softDeleteBox).toHaveBeenCalled();
+  });
+
+  it("si el dinero no se puede devolver, la caja no se cierra", async () => {
+    mocks.getBoxById.mockResolvedValue(box({ current_balance: 500 }));
+    mocks.dispatch.mockRejectedValue(new Error("core caido"));
+
+    const result = await executeStructureCommand({
+      client,
+      command: {
+        ...envelope(),
+        type: "ArchiveBoxCommand",
+        payload: { box_id: BOX_ID },
+      },
+      movementSource: "dashboard_manual",
+    });
+
+    expect(result.kind).toBe("failed");
+    expect(mocks.softDeleteBox).not.toHaveBeenCalled();
+    expect(mocks.appendStructureAudit).not.toHaveBeenCalled();
+  });
+
+  it("una caja que no es del usuario no se cierra", async () => {
+    mocks.getBoxById.mockResolvedValue(null);
+
+    const result = await executeStructureCommand({
+      client,
+      command: {
+        ...envelope(),
+        type: "ArchiveBoxCommand",
+        payload: { box_id: BOX_ID },
+      },
+      movementSource: "dashboard_manual",
+    });
+
+    expect(result).toMatchObject({
+      kind: "failed",
+      error_code: "BOX_NOT_FOUND",
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(mocks.softDeleteBox).not.toHaveBeenCalled();
+  });
+});
+
+describe("ciclo de vida de metas y presupuestos por su propio RPC", () => {
+  const GOAL_ID = "00000000-0000-4000-8000-000000000020";
+  const BUDGET_ID = "00000000-0000-4000-8000-000000000010";
+
+  beforeEach(() => {
+    mocks.commitGoalOperationForUser.mockResolvedValue({
+      goal: { id: GOAL_ID, name: "Viaje", target_amount: 3000 },
+      idempotent: false,
+    });
+    mocks.commitBudgetOperationForUser.mockResolvedValue({
+      budget: { id: BUDGET_ID, amount: 500, period_kind: "mensual" },
+      idempotent: false,
+    });
+  });
+
+  // Verificado contra `061_w12_budgets_goals.sql`: `commit_goal_operation`
+  // admite create, update, archive, pause, resume, restore, link_box y
+  // unlink_box; `commit_budget_operation` admite create, update, archive,
+  // pause, resume, restore y copy_previous. Archivar, pausar y reanudar son
+  // casos nuevos del compilador, no arquitectura nueva.
+  it.each([
+    ["ArchiveGoalCommand", "archive", "deleted"],
+    ["PauseGoalCommand", "pause", "updated"],
+    ["ResumeGoalCommand", "resume", "updated"],
+  ])("%s llega al RPC como %s", async (type, operation, auditAction) => {
+    await executeStructureCommand({
+      client,
+      command: {
+        ...envelope(),
+        type,
+        payload: { goal_id: GOAL_ID },
+      } as unknown as StructureCommand,
+      movementSource: "dashboard_manual",
+    });
+
+    expect(mocks.commitGoalOperationForUser).toHaveBeenCalledWith(client, {
+      userId: USER_ID,
+      operation,
+      goalId: GOAL_ID,
+      // Un cambio de estado no lleva campos de paso: el payload va vacío.
+      payload: {},
+      idempotencyKey: IDEMPOTENCY_KEY,
+      traceId: "trace-1",
+    });
+    expect(mocks.appendStructureAudit).toHaveBeenCalledWith(
+      client,
+      expect.objectContaining({ entityType: "goal", action: auditAction }),
+    );
+  });
+
+  it.each([
+    ["ArchiveBudgetCommand", "archive", "deleted"],
+    ["PauseBudgetCommand", "pause", "updated"],
+    ["ResumeBudgetCommand", "resume", "updated"],
+  ])("%s llega al RPC como %s", async (type, operation, auditAction) => {
+    await executeStructureCommand({
+      client,
+      command: {
+        ...envelope(),
+        type,
+        payload: { budget_id: BUDGET_ID },
+      } as unknown as StructureCommand,
+      movementSource: "dashboard_manual",
+    });
+
+    expect(mocks.commitBudgetOperationForUser).toHaveBeenCalledWith(client, {
+      userId: USER_ID,
+      operation,
+      budgetId: BUDGET_ID,
+      payload: {},
+      idempotencyKey: IDEMPOTENCY_KEY,
+      traceId: "trace-1",
+    });
+    expect(mocks.appendStructureAudit).toHaveBeenCalledWith(
+      client,
+      expect.objectContaining({ entityType: "budget", action: auditAction }),
+    );
+  });
+
+  it("un doble envío de un archivado lo resuelve el recibo del RPC", async () => {
+    mocks.commitGoalOperationForUser.mockResolvedValue({
+      goal: { id: GOAL_ID, name: "Viaje", target_amount: 3000 },
+      idempotent: true,
+    });
+
+    const result = await executeStructureCommand({
+      client,
+      command: {
+        ...envelope(),
+        type: "ArchiveGoalCommand",
+        payload: { goal_id: GOAL_ID },
+      },
+      movementSource: "dashboard_manual",
+    });
+
+    expect(result).toMatchObject({ kind: "applied", idempotent: true });
+    expect(mocks.appendStructureAudit).not.toHaveBeenCalled();
+  });
+
+  it("archivar algo ya archivado se responde, no explota", async () => {
+    const { BudgetOperationError } = await import(
+      "@/data/repositories/budgets.repository"
+    );
+    mocks.commitGoalOperationForUser.mockRejectedValue(
+      new BudgetOperationError("GOAL_CONFLICT", "Esa meta ya estaba cerrada."),
+    );
+
+    const result = await executeStructureCommand({
+      client,
+      command: {
+        ...envelope(),
+        type: "ArchiveGoalCommand",
+        payload: { goal_id: GOAL_ID },
+      },
+      movementSource: "dashboard_manual",
+    });
+
+    expect(result).toMatchObject({
+      kind: "failed",
+      reason: "conflict",
+      detail: "Esa meta ya estaba cerrada.",
+    });
+  });
+});
+
 describe("aislamiento por usuario", () => {
   it("toda escritura lleva el user_id del comando, nunca uno inferido", async () => {
     mocks.commitGoalOperationForUser.mockResolvedValue({

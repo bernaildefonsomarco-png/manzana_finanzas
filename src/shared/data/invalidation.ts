@@ -20,7 +20,8 @@ export type MutationType =
   | "goal.edit"
   | "import.confirm"
   | "preferences.change"
-  | "assistant.thread_updated";
+  | "assistant.thread_updated"
+  | "assistant.structure_written";
 
 function keysFor(
   mutation: MutationType,
@@ -94,6 +95,28 @@ function keysFor(
       return [
         queryKeys.assistant.threads,
         ...(params?.threadId ? [queryKeys.assistant.thread(params.threadId)] : []),
+      ];
+    // `RUL-ESTR-06`: confirmar una propuesta del asistente escribe estructura
+    // de verdad —una cuenta, una caja, una meta, un presupuesto o un pago que
+    // viene— pero el turno solo devuelve mensajes, no dice cual de las cinco
+    // toco. Sin esta fila, la pantalla que el usuario tenia abierta seguia
+    // mostrando lo de antes: creaba la caja conversando, volvia a Mi dinero y
+    // no estaba.
+    //
+    // Es la unica fila que abarca varias familias, y lo hace porque la
+    // mutacion que representa es exactamente eso: "el asistente escribio
+    // estructura". No invalida la cache entera (`AC-ARQ-06`): movimientos,
+    // pendientes, deudas, categorias y preferencias se quedan como estan,
+    // porque una escritura de estructura no los toca.
+    case "assistant.structure_written":
+      return [
+        queryKeys.accounts,
+        queryKeys.boxes,
+        queryKeys.goals.all,
+        queryKeys.budgets.all,
+        queryKeys.recurringRules.all,
+        queryKeys.summary,
+        queryKeys.projections.all,
       ];
   }
 }

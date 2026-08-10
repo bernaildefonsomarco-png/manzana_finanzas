@@ -369,3 +369,76 @@ describe("aislamiento por usuario", () => {
     expect(call[0].command.idempotency_key).toBe(`structure:${PROPOSAL_ID}`);
   });
 });
+
+describe("RUL-ESTR-05: un cierre no ocurre sin que el usuario lo diga", () => {
+  const CIERRE_ID = "00000000-0000-4000-8000-0000000000c9";
+
+  function cierre(): StructureProposal {
+    return proposal({
+      proposal_id: CIERRE_ID,
+      operation: "archive",
+      command_type: "ArchiveBoxCommand",
+      payload: { box_id: "00000000-0000-4000-8000-000000000002" },
+      summary:
+        "Ojo con esto: al cerrar la caja, el dinero vuelve a tu saldo libre. ¿Cierro la caja Viaje?",
+      confirm_label: "Sí, archívalo",
+    });
+  }
+
+  it("cambiar de tema con un cierre pendiente lo caduca, no lo ejecuta", () => {
+    const awaiting = resolve("cuanto gaste ayer", {
+      workingSet: workingSet({
+        structureProposal: cierre() as unknown as Record<string, unknown>,
+      }),
+    });
+
+    expect(awaiting.kind).toBe("lapsed_by_topic_change");
+    expect(executeStructureCommand).not.toHaveBeenCalled();
+  });
+
+  it("un 'no' descarta el cierre sin tocar nada", async () => {
+    const resultado = await maybeResolveStructure({
+      client,
+      userId: USER_ID,
+      text: "estr:cancel",
+      proposal: cierre(),
+      traceId: "trace-1",
+      source: "orchestrator.structure_confirm",
+      movementSource: "dashboard_manual",
+    });
+
+    expect(resultado).toMatchObject({
+      kind: "cancelled",
+      entity: "caja",
+      operation: "archive",
+    });
+    expect(executeStructureCommand).not.toHaveBeenCalled();
+  });
+
+  it("pulsar dos veces el botón de cerrar repite la misma clave", async () => {
+    const enviar = () =>
+      maybeResolveStructure({
+        client,
+        userId: USER_ID,
+        text: `estr:${CIERRE_ID}`,
+        proposal: cierre(),
+        traceId: "trace-1",
+        source: "orchestrator.structure_confirm",
+        movementSource: "dashboard_manual",
+      });
+
+    await enviar();
+    await enviar();
+
+    const claves = executeStructureCommand.mock.calls.map(
+      ([params]) => params.command.idempotency_key,
+    );
+    expect(claves).toEqual([
+      `structure:${CIERRE_ID}`,
+      `structure:${CIERRE_ID}`,
+    ]);
+    expect(executeStructureCommand.mock.calls[0][0].command.type).toBe(
+      "ArchiveBoxCommand",
+    );
+  });
+});

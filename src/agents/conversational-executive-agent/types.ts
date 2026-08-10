@@ -76,30 +76,44 @@ export const CorrectionProposalSchema =
 export type CorrectionProposal = z.infer<typeof CorrectionProposalSchema>;
 
 /**
- * `RUL-ESTR-01`: modulo por el que el ejecutivo propone crear o modificar una
- * caja, una meta o un presupuesto.
+ * `RUL-ESTR-01`: modulo por el que el ejecutivo propone crear, modificar,
+ * cerrar, pausar o reanudar una caja, una meta, un presupuesto, un pago
+ * recurrente o una cuenta.
  *
  * Es deliberadamente plano y no un comando: el modelo describe lo que entendio
  * y `compileStructureProposal` lo convierte en un borrador tipado, aplicando
  * `RUL-PRES-01` y los campos obligatorios de cada entidad. El modelo no emite
  * comandos, IDs de idempotencia ni confirmaciones, igual que en
  * `correction_proposal`.
+ *
+ * `RUL-ESTR-05`: en `archive` el modelo tampoco redacta la consecuencia. Dice
+ * que entiende que hay que cerrar; lo que se pierde lo pone el nucleo con un
+ * texto fijo.
  */
 export const StructureProposalRequestSchema = z.object({
-  intent: z.enum(["none", "create", "update"]),
-  entity: z.enum(["caja", "meta", "presupuesto"]).nullable(),
+  intent: z.enum(["none", "create", "update", "archive", "pause", "resume"]),
+  entity: z
+    .enum(["caja", "meta", "presupuesto", "recurrente", "cuenta"])
+    .nullable(),
   /** Lo que se le va a preguntar al usuario, en su idioma y con sus datos. */
   summary: z.string().trim().max(280),
-  confirm_label: z.string().trim().max(40),
+  /**
+   * Texto del boton. El limite es 60 y no 40 porque un `max` de Zod sobre la
+   * salida del modelo **rechaza**, no recorta: una etiqueta natural en espanol
+   * —"Si, cierra la caja del viaje a Cusco"— tumbaria el turno entero. El
+   * recorte por canal vive en el adaptador que lo necesita, no aqui.
+   */
+  confirm_label: z.string().trim().max(60),
   confidence: z.number().min(0).max(1),
   /** Dudas que impiden proponer. Con una sola, el turno pregunta. */
   ambiguities: z.array(z.string().trim().min(1).max(240)).max(4),
-  /** ID de la caja, meta o presupuesto a modificar. Nulo al crear. */
+  /** ID de la estructura sobre la que se actua. Nulo al crear. */
   target_id: z.string().nullable(),
   name: z.string().trim().max(80).nullable(),
   /**
-   * Monto principal: lo que se aparta en una caja, el objetivo de una meta o
-   * el limite de un presupuesto.
+   * Monto principal: lo que se aparta en una caja, el objetivo de una meta,
+   * el limite de un presupuesto, lo que se espera pagar en un recurrente o el
+   * saldo declarado de una cuenta nueva.
    */
   amount: z.number().nullable(),
   target_amount: z.number().nullable(),
@@ -112,6 +126,20 @@ export const StructureProposalRequestSchema = z.object({
   budget_kind: z
     .enum(["presupuesto", "limite_blando", "limite_duro"])
     .nullable(),
+  /** Solo pagos recurrentes: cada cuanto se espera el cobro. */
+  frequency: z
+    .enum(["weekly", "biweekly", "monthly", "yearly", "custom_window"])
+    .nullable(),
+  /** Solo pagos recurrentes: la proxima fecha esperada, en `YYYY-MM-DD`. */
+  next_expected_date: z.string().nullable(),
+  /** Solo pagos recurrentes: si el monto es siempre el mismo o no. */
+  amount_variability: z.enum(["fixed", "variable", "estimated"]).nullable(),
+  /** Moneda de un pago recurrente o de una cuenta nueva. */
+  currency: z.enum(["PEN", "USD"]).nullable(),
+  /** Solo cuentas: de que tipo es. */
+  account_type: z.enum(["digital", "banco", "fisico", "tarjeta"]).nullable(),
+  /** Solo cuentas: el banco o la app donde vive. */
+  institution: z.string().trim().max(80).nullable(),
 });
 export type StructureProposalRequest = z.infer<
   typeof StructureProposalRequestSchema

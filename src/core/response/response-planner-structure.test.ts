@@ -173,3 +173,97 @@ describe("el resultado de la escritura se cuenta sin ambigüedad", () => {
     expect(block.text).toBe("Solo tienes S/120.00 libres en BCP.");
   });
 });
+
+describe("RUL-ESTR-05: cerrar algo se cuenta diciendo qué pasó con lo que había", () => {
+  it("una caja cerrada dice a dónde volvió el dinero", () => {
+    const resolution: StructureResolutionResult = {
+      kind: "applied",
+      reason: "structure_applied",
+      entity: "caja",
+      operation: "archive",
+      entity_id: "b1",
+      summary:
+        "la caja Viaje, y te devolví S/500.00 a lo libre de BCP",
+      idempotent: false,
+    };
+    const [block] = plan({ structureResolution: resolution }).blocks;
+    if (!("text" in block)) throw new Error("se esperaba un bloque con texto");
+    expect(block.text).toContain("te devolví S/500.00 a lo libre de BCP");
+  });
+
+  it("una cuenta archivada aclara que no se borró nada y que se restaura", () => {
+    const resolution: StructureResolutionResult = {
+      kind: "applied",
+      reason: "structure_applied",
+      entity: "cuenta",
+      operation: "archive",
+      entity_id: "a1",
+      summary: "la cuenta BCP Ahorros y sus 2 cajas",
+      idempotent: false,
+    };
+    const [block] = plan({ structureResolution: resolution }).blocks;
+    if (!("text" in block)) throw new Error("se esperaba un bloque con texto");
+    expect(block.text).toContain("No borré nada");
+    expect(block.text).toContain("restaurar");
+  });
+
+  it("un recurrente cancelado dice que se deja de esperar el cobro", () => {
+    const resolution: StructureResolutionResult = {
+      kind: "applied",
+      reason: "structure_applied",
+      entity: "recurrente",
+      operation: "archive",
+      entity_id: "r1",
+      summary: "el pago Netflix de S/44.90",
+      idempotent: false,
+    };
+    const [block] = plan({ structureResolution: resolution }).blocks;
+    if (!("text" in block)) throw new Error("se esperaba un bloque con texto");
+    expect(block.text).toContain("Dejo de esperarlo");
+  });
+
+  it("descartar un cierre niega el cierre, no una creación", () => {
+    // "No creé nada" tras proponer un cierre dejaría al usuario sin saber si
+    // su caja sigue ahí.
+    const resolution: StructureResolutionResult = {
+      kind: "cancelled",
+      reason: "user_cancelled_structure",
+      entity: "caja",
+      operation: "archive",
+      summary: "la caja Viaje",
+    };
+    expect(plan({ structureResolution: resolution }).blocks).toEqual([
+      { kind: "texto", text: "Listo, no cerré nada. Todo sigue como estaba." },
+    ]);
+  });
+
+  it("pausar dice que se puede reanudar", () => {
+    const resolution: StructureResolutionResult = {
+      kind: "applied",
+      reason: "structure_applied",
+      entity: "meta",
+      operation: "pause",
+      entity_id: "g1",
+      summary: "la meta Carro de S/30000.00",
+      idempotent: false,
+    };
+    const [block] = plan({ structureResolution: resolution }).blocks;
+    if (!("text" in block)) throw new Error("se esperaba un bloque con texto");
+    expect(block.text).toContain("Puedes reanudarlo");
+  });
+
+  it("un pago recurrente anotado aclara que no descuenta nada", () => {
+    const resolution: StructureResolutionResult = {
+      kind: "applied",
+      reason: "structure_applied",
+      entity: "recurrente",
+      operation: "create",
+      entity_id: "r1",
+      summary: "el pago Netflix de S/44.90",
+      idempotent: false,
+    };
+    const [block] = plan({ structureResolution: resolution }).blocks;
+    if (!("text" in block)) throw new Error("se esperaba un bloque con texto");
+    expect(block.text).toContain("No aparta ni descuenta nada");
+  });
+});

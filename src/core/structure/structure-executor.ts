@@ -8,6 +8,7 @@ import {
   assertSystemActionAllowed,
   SystemActionRiskDeniedError,
 } from "@/core/risk/system-action-gate";
+import type { SystemActionKind } from "@/core/risk/risk-policy";
 import {
   createBox,
   getAccountById,
@@ -31,52 +32,43 @@ import {
 } from "@/data/repositories/structure.repository";
 import { logger } from "@/shared/telemetry/logger";
 import {
+  archiveAccountFromCommand,
+  createAccountFromCommand,
+  updateAccountFromCommand,
+} from "./account-executor";
+import {
+  changeRecurringStatusFromCommand,
+  createRecurringFromCommand,
+  updateRecurringFromCommand,
+} from "./recurring-executor";
+import {
   entityForCommandType,
+  isDestructiveStructureOperation,
   operationForCommandType,
   StructureCommandSchema,
   type StructureCommand,
   type StructureEntity,
   type StructureOperation,
 } from "./structure-commands";
+import {
+  formatMoney,
+  type StructureExecutionResult,
+} from "./structure-execution-result";
 
 type Client = SupabaseClient<Database>;
 
-export type StructureExecutionResult =
-  | {
-      kind: "applied";
-      entity: StructureEntity;
-      operation: StructureOperation;
-      entity_id: string;
-      /** Frase corta y concreta de lo que quedo escrito. */
-      summary: string;
-      /** `true` cuando el comando ya se habia ejecutado con esta misma clave. */
-      idempotent: boolean;
-    }
-  | {
-      kind: "failed";
-      entity: StructureEntity;
-      operation: StructureOperation;
-      reason:
-        | "invalid_command"
-        | "reference_not_found"
-        | "conflict"
-        | "insufficient_free_balance"
-        | "risk_policy"
-        | "core_error";
-      error_code: string;
-      /** Detalle listo para mostrar cuando el motivo es del usuario, no del sistema. */
-      detail: string | null;
-    };
+export type { StructureExecutionResult };
 
 /**
  * Ejecuta un comando de estructura ya confirmado por el usuario
  * (`RUL-ESTR-01`).
  *
  * Es el hermano de `CommandDispatcher` para el dominio de estructura, no una
- * extension suya: cada entidad se escribe con el ejecutor transaccional que ya
- * tiene (los RPC `commit_*_operation` para metas y presupuestos, la tabla
- * `boxes` con su unicidad para cajas), y lo unico que vuelve al motor de
- * movimientos es el dinero que una caja aparta.
+ * extension suya: cada entidad se escribe con el ejecutor que ya tiene —los
+ * RPC `commit_*_operation` para metas y presupuestos; las tablas `boxes`,
+ * `recurring_rules` y `accounts`, cada una con su propia red dura de unicidad e
+ * idempotencia— y lo unico que vuelve al motor de movimientos es el dinero que
+ * una caja aparta o devuelve.
  *
  * Nunca se llama sin confirmacion explicita: quien lo invoca ya resolvio el
  * boton `estr:<uuid>` o el "si" equivalente del mismo hilo.
@@ -85,9 +77,9 @@ export async function executeStructureCommand(params: {
   client: Client;
   command: StructureCommand;
   /**
-   * Origen que llevara el movimiento de asignacion interna si la caja aparta
-   * dinero. Viene del llamador porque el nucleo no sabe por que canal entro el
-   * turno (`AC-INV-04`).
+   * Origen que llevara el movimiento de asignacion interna si la caja aparta o
+   * devuelve dinero. Viene del llamador porque el nucleo no sabe por que canal
+   * entro el turno (`AC-INV-04`).
    */
   movementSource: MovementSource;
 }): Promise<StructureExecutionResult> {
@@ -109,13 +101,17 @@ export async function executeStructureCommand(params: {
 
   try {
     // La confirmacion ya ocurrio antes de llegar aqui; el gate deja constancia
-    // de que esta escritura es reversible y explicita, igual que una
-    // correccion.
+    // del tipo de accion y de que fue explicita.
     assertSystemActionAllowed({
-      actionKind: "financial_write",
-      baseRiskLevel: "medium",
+      actionKind: actionKindFor(entity, operation),
+      baseRiskLevel: isDestructiveStructureOperation(operation)
+        ? "high"
+        : "medium",
       explicitUserConfirmation: true,
       authenticatedSession: true,
+      // Archivar es un borrado logico: la fila sigue ahi y hay camino de
+      // vuelta. Declararlo irreversible obligaria a una segunda confirmacion
+      // que el usuario ya dio.
       reversible: true,
     });
 
@@ -128,18 +124,70 @@ export async function executeStructureCommand(params: {
         );
       case "UpdateBoxCommand":
         return await updateBoxFromCommand(params.client, command);
+      case "ArchiveBoxCommand":
+        return await archiveBoxFromCommand(
+          params.client,
+          command,
+          params.movementSource,
+        );
       case "CreateGoalCommand":
         return await commitGoal(params.client, command, "create");
       case "UpdateGoalCommand":
         return await commitGoal(params.client, command, "update");
+      case "ArchiveGoalCommand":
+        return await commitGoal(params.client, command, "archive");
+      case "PauseGoalCommand":
+        return await commitGoal(params.client, command, "pause");
+      case "ResumeGoalCommand":
+        return await commitGoal(params.client, command, "resume");
       case "CreateBudgetCommand":
         return await commitBudget(params.client, command, "create");
       case "UpdateBudgetCommand":
         return await commitBudget(params.client, command, "update");
+      case "ArchiveBudgetCommand":
+        return await commitBudget(params.client, command, "archive");
+      case "PauseBudgetCommand":
+        return await commitBudget(params.client, command, "pause");
+      case "ResumeBudgetCommand":
+        return await commitBudget(params.client, command, "resume");
+      case "CreateRecurringCommand":
+        return await createRecurringFromCommand(params.client, command);
+      case "UpdateRecurringCommand":
+        return await updateRecurringFromCommand(params.client, command);
+      case "ArchiveRecurringCommand":
+      case "PauseRecurringCommand":
+      case "ResumeRecurringCommand":
+        return await changeRecurringStatusFromCommand(params.client, command);
+      case "CreateAccountCommand":
+        return await createAccountFromCommand(params.client, command);
+      case "UpdateAccountCommand":
+        return await updateAccountFromCommand(params.client, command);
+      case "ArchiveAccountCommand":
+        return await archiveAccountFromCommand(params.client, command);
     }
   } catch (error) {
     return failureFromError({ error, entity, operation, command });
   }
+}
+
+/**
+ * El gate distingue tres clases de escritura de estructura, y la distincion no
+ * es cosmetica: decide el nivel de riesgo con el que queda anotada.
+ *
+ *  - archivar es `destructive_financial_write`;
+ *  - cualquier cambio sobre una regla recurrente es `recurring_activation`,
+ *    porque cambia el comportamiento futuro del sistema;
+ *  - el resto es una escritura financiera normal.
+ */
+function actionKindFor(
+  entity: StructureEntity,
+  operation: StructureOperation,
+): SystemActionKind {
+  if (isDestructiveStructureOperation(operation)) {
+    return "destructive_financial_write";
+  }
+  if (entity === "recurrente") return "recurring_activation";
+  return "financial_write";
 }
 
 // --- Caja -----------------------------------------------------------------
@@ -234,48 +282,26 @@ async function createBoxFromCommand(
 
   if (payload.initial_balance > 0) {
     try {
-      const dispatcher = new CommandDispatcher(
-        new SupabaseFinancialCoreRepository(client),
-      );
-      await dispatcher.dispatch({
-        type: "CreateMovementCommand",
-        command_id: randomUUID(),
-        user_id: command.user_id,
+      await moveBoxMoney(client, {
+        userId: command.user_id,
         actor: command.actor,
         source: command.source,
-        trace_id: command.trace_id,
-        payload: {
-          // Misma clave que usa la pantalla: el dinero apartado de una caja
-          // concreta solo puede registrarse una vez.
-          idempotency_key: `box-initial-allocation:${box.id}`,
-          movement: {
-            type: "asignacion_interna",
-            amount: payload.initial_balance,
-            currency: account.currency === "USD" ? "USD" : "PEN",
-            occurred_at: new Date().toISOString(),
-            description: `Separado en caja ${box.name}`,
-            merchant: null,
-            category_id: null,
-            subcategory_id: null,
-            account_origin_id: null,
-            account_destination_id: null,
-            box_origin_id: null,
-            box_destination_id: box.id,
-            related_person_id: null,
-            debt_id: null,
-            recurring_rule_id: null,
-            recurring_occurrence_id: null,
-            source: movementSource,
-            source_ref: `box:${box.id}:initial-allocation`,
-            confidence: 1,
-            requires_review: false,
-            metadata: {
-              reason: "box_initial_allocation",
-              box_id: box.id,
-              account_id: account.id,
-              trace_id: command.trace_id,
-            },
-          },
+        traceId: command.trace_id,
+        amount: payload.initial_balance,
+        currency: account.currency === "USD" ? "USD" : "PEN",
+        // Misma clave que usa la pantalla: el dinero apartado de una caja
+        // concreta solo puede registrarse una vez.
+        idempotencyKey: `box-initial-allocation:${box.id}`,
+        description: `Separado en caja ${box.name}`,
+        sourceRef: `box:${box.id}:initial-allocation`,
+        boxOriginId: null,
+        boxDestinationId: box.id,
+        movementSource,
+        metadata: {
+          reason: "box_initial_allocation",
+          box_id: box.id,
+          account_id: account.id,
+          trace_id: command.trace_id,
         },
       });
     } catch (error) {
@@ -387,13 +413,179 @@ async function updateBoxFromCommand(
   };
 }
 
+/**
+ * Archiva una caja con la misma semantica que `DELETE /api/v1/boxes/[id]`: el
+ * dinero apartado **vuelve a lo libre de su cuenta** por un movimiento de
+ * `asignacion_interna` —el motor de saldos sigue siendo el unico que mueve
+ * plata— y despues la caja se marca como borrada.
+ *
+ * El orden importa y no es simetrico al de crear: primero se devuelve el
+ * dinero y luego se archiva. Si el archivado fallara despues de devolver, el
+ * usuario ve una caja vacia, que es raro pero honesto; al reves veria dinero
+ * desaparecido.
+ */
+async function archiveBoxFromCommand(
+  client: Client,
+  command: Extract<StructureCommand, { type: "ArchiveBoxCommand" }>,
+  movementSource: MovementSource,
+): Promise<StructureExecutionResult> {
+  const boxId = command.payload.box_id;
+  const previous = await getBoxById(client, command.user_id, boxId);
+  if (!previous) {
+    return {
+      kind: "failed",
+      entity: "caja",
+      operation: "archive",
+      reason: "reference_not_found",
+      error_code: "BOX_NOT_FOUND",
+      detail: "No encontré esa caja.",
+    };
+  }
+
+  const account = await getAccountById(
+    client,
+    command.user_id,
+    previous.account_id,
+  );
+  if (!account) {
+    return {
+      kind: "failed",
+      entity: "caja",
+      operation: "archive",
+      reason: "conflict",
+      error_code: "BOX_ACCOUNT_UNAVAILABLE",
+      detail:
+        "No pude liberar esa caja porque su cuenta ya no está disponible.",
+    };
+  }
+
+  if (previous.current_balance > 0) {
+    await moveBoxMoney(client, {
+      userId: command.user_id,
+      actor: command.actor,
+      source: command.source,
+      traceId: command.trace_id,
+      amount: previous.current_balance,
+      currency: account.currency === "USD" ? "USD" : "PEN",
+      // Misma clave que usa la pantalla: liberar una caja concreta solo puede
+      // registrarse una vez, aunque el boton se pulse dos veces.
+      idempotencyKey: `box-delete-release:${previous.id}`,
+      description: `Liberado desde caja ${previous.name}`,
+      sourceRef: `box:${previous.id}:delete-release`,
+      boxOriginId: previous.id,
+      boxDestinationId: null,
+      movementSource,
+      metadata: {
+        reason: "box_delete_release",
+        box_id: previous.id,
+        account_id: account.id,
+        trace_id: command.trace_id,
+      },
+    });
+  }
+
+  await softDeleteBox(client, command.user_id, boxId);
+
+  await appendStructureAudit(client, {
+    userId: command.user_id,
+    entityType: "box",
+    entityId: boxId,
+    action: "deleted",
+    actorType: command.actor.type,
+    actorId: command.actor.id,
+    source: command.source,
+    traceId: command.trace_id,
+    commandId: command.command_id,
+    idempotencyKey: command.idempotency_key,
+    oldValue: previous,
+    newValue: { ...previous, deleted_at: new Date().toISOString() },
+  });
+
+  return {
+    kind: "applied",
+    entity: "caja",
+    operation: "archive",
+    entity_id: boxId,
+    summary:
+      previous.current_balance > 0
+        ? `la caja ${previous.name}, y te devolví ${formatMoney(previous.current_balance)} a lo libre de ${account.name}`
+        : `la caja ${previous.name}`,
+    idempotent: false,
+  };
+}
+
+/** Unico punto por el que la estructura le pide dinero al motor de saldos. */
+async function moveBoxMoney(
+  client: Client,
+  input: {
+    userId: string;
+    actor: StructureCommand["actor"];
+    source: string;
+    traceId: string;
+    amount: number;
+    currency: "PEN" | "USD";
+    idempotencyKey: string;
+    description: string;
+    sourceRef: string;
+    boxOriginId: string | null;
+    boxDestinationId: string | null;
+    movementSource: MovementSource;
+    metadata: Record<string, unknown>;
+  },
+): Promise<void> {
+  const dispatcher = new CommandDispatcher(
+    new SupabaseFinancialCoreRepository(client),
+  );
+  await dispatcher.dispatch({
+    type: "CreateMovementCommand",
+    command_id: randomUUID(),
+    user_id: input.userId,
+    actor: input.actor,
+    source: input.source,
+    trace_id: input.traceId,
+    payload: {
+      idempotency_key: input.idempotencyKey,
+      movement: {
+        type: "asignacion_interna",
+        amount: input.amount,
+        currency: input.currency,
+        occurred_at: new Date().toISOString(),
+        description: input.description,
+        merchant: null,
+        category_id: null,
+        subcategory_id: null,
+        account_origin_id: null,
+        account_destination_id: null,
+        box_origin_id: input.boxOriginId,
+        box_destination_id: input.boxDestinationId,
+        related_person_id: null,
+        debt_id: null,
+        recurring_rule_id: null,
+        recurring_occurrence_id: null,
+        source: input.movementSource,
+        source_ref: input.sourceRef,
+        confidence: 1,
+        requires_review: false,
+        metadata: input.metadata,
+      },
+    },
+  });
+}
+
 // --- Meta -----------------------------------------------------------------
 
 async function commitGoal(
   client: Client,
   command: Extract<
     StructureCommand,
-    { type: "CreateGoalCommand" | "UpdateGoalCommand" }
+    {
+      type:
+        | "CreateGoalCommand"
+        | "UpdateGoalCommand"
+        | "ArchiveGoalCommand"
+        | "PauseGoalCommand"
+        | "ResumeGoalCommand";
+    }
   >,
   operation: StructureOperation,
 ): Promise<StructureExecutionResult> {
@@ -412,7 +604,7 @@ async function commitGoal(
       userId: command.user_id,
       entityType: "goal",
       entityId: result.goal.id,
-      action: operation === "create" ? "created" : "updated",
+      action: auditActionFor(operation),
       actorType: command.actor.type,
       actorId: command.actor.id,
       source: command.source,
@@ -440,7 +632,14 @@ async function commitBudget(
   client: Client,
   command: Extract<
     StructureCommand,
-    { type: "CreateBudgetCommand" | "UpdateBudgetCommand" }
+    {
+      type:
+        | "CreateBudgetCommand"
+        | "UpdateBudgetCommand"
+        | "ArchiveBudgetCommand"
+        | "PauseBudgetCommand"
+        | "ResumeBudgetCommand";
+    }
   >,
   operation: StructureOperation,
 ): Promise<StructureExecutionResult> {
@@ -471,7 +670,7 @@ async function commitBudget(
       userId: command.user_id,
       entityType: "budget",
       entityId: budget.id,
-      action: operation === "create" ? "created" : "updated",
+      action: auditActionFor(operation),
       actorType: command.actor.type,
       actorId: command.actor.id,
       source: command.source,
@@ -496,10 +695,30 @@ async function commitBudget(
 
 // --- Helpers --------------------------------------------------------------
 
+/**
+ * `movement_audit_action_known` (`006`, ampliada en `046`) solo admite
+ * `created`, `updated`, `corrected`, `deleted`, `reversed` y `restored`.
+ * Archivar es un borrado logico; pausar y reanudar son cambios de estado.
+ */
+function auditActionFor(
+  operation: StructureOperation,
+): "created" | "updated" | "deleted" {
+  if (operation === "create") return "created";
+  if (operation === "archive") return "deleted";
+  return "updated";
+}
+
 function splitGoalPayload(
   command: Extract<
     StructureCommand,
-    { type: "CreateGoalCommand" | "UpdateGoalCommand" }
+    {
+      type:
+        | "CreateGoalCommand"
+        | "UpdateGoalCommand"
+        | "ArchiveGoalCommand"
+        | "PauseGoalCommand"
+        | "ResumeGoalCommand";
+    }
   >,
 ): { goalId: string | null; payload: Record<string, unknown> } {
   if (command.type === "CreateGoalCommand") {
@@ -512,7 +731,14 @@ function splitGoalPayload(
 function splitBudgetPayload(
   command: Extract<
     StructureCommand,
-    { type: "CreateBudgetCommand" | "UpdateBudgetCommand" }
+    {
+      type:
+        | "CreateBudgetCommand"
+        | "UpdateBudgetCommand"
+        | "ArchiveBudgetCommand"
+        | "PauseBudgetCommand"
+        | "ResumeBudgetCommand";
+    }
   >,
 ): { budgetId: string | null; payload: Record<string, unknown> } {
   if (command.type === "CreateBudgetCommand") {
@@ -593,10 +819,6 @@ function periodLabel(periodKind: string): string {
   if (periodKind === "semanal") return "por semana";
   if (periodKind === "quincenal") return "por quincena";
   return "al mes";
-}
-
-function formatMoney(amount: number): string {
-  return `S/${amount.toFixed(2)}`;
 }
 
 function roundMoney(value: number): number {

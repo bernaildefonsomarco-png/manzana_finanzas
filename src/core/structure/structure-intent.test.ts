@@ -139,3 +139,96 @@ describe("nombrar una entidad no es pedirla", () => {
     ).toMatchObject({ kind: "ambiguous" });
   });
 });
+
+describe("cuentas y pagos recurrentes entran sin volver ambiguo lo que ya funcionaba", () => {
+  it("crear una cuenta se lee como cuenta", () => {
+    expect(readStructureIntent("crea una cuenta nueva en BCP")).toMatchObject({
+      kind: "unambiguous",
+      entity: "cuenta",
+    });
+  });
+
+  // El caso caro de meter `cuenta` en el vocabulario: es la palabra con la que
+  // se nombra DE DONDE sale el dinero de una caja. Si contara como candidata,
+  // la frase mas natural para crear una caja pasaria a preguntar.
+  it.each([
+    "crea una caja Viaje en mi cuenta BCP",
+    "aparta 500 en la caja del carro desde mi cuenta de ahorros",
+    "abre una caja para el viaje con el dinero de esa cuenta",
+  ])("«%s» pide una caja: la cuenta solo dice de donde sale", (frase) => {
+    expect(readStructureIntent(frase)).toMatchObject({
+      kind: "unambiguous",
+      entity: "caja",
+    });
+  });
+
+  it("una suscripcion es un pago recurrente", () => {
+    expect(
+      readStructureIntent("agrega la suscripcion de Netflix, me cobran el 5"),
+    ).toMatchObject({ kind: "unambiguous", entity: "recurrente" });
+  });
+
+  // La periodicidad a secas NO es senal de recurrente a proposito: un
+  // presupuesto tambien es mensual, y contarla volveria ambigua —y por tanto
+  // repreguntable— la frase mas normal para crear un presupuesto.
+  it("un presupuesto mensual no se vuelve ambiguo con el recurrente", () => {
+    expect(
+      readStructureIntent("ponme un presupuesto de 500 cada mes en comida"),
+    ).toMatchObject({ kind: "unambiguous", entity: "presupuesto" });
+  });
+
+  it("nombrar la cuenta al cancelar un recurrente no lo vuelve ambiguo", () => {
+    expect(
+      readStructureIntent("cancela la mensualidad del gimnasio de esa cuenta"),
+    ).toMatchObject({ kind: "unambiguous", entity: "recurrente" });
+  });
+
+  it("pedir una cuenta y una caja de verdad sigue siendo ambiguo", () => {
+    expect(
+      readStructureIntent("crea una cuenta y una caja"),
+    ).toMatchObject({ kind: "ambiguous" });
+  });
+
+  it("preguntar por las cuentas no es pedir crear una", () => {
+    expect(readStructureIntent("cuanto tengo en mi cuenta de BCP")).toEqual({
+      kind: "none",
+    });
+  });
+});
+
+describe("el ciclo de vida tambien es una escritura", () => {
+  it.each([
+    ["archiva esa caja", "caja"],
+    ["cierra el presupuesto de comida", "presupuesto"],
+    ["cancela la suscripcion de Spotify", "recurrente"],
+    ["pausa esa meta un tiempo", "meta"],
+    ["reanuda la meta del carro", "meta"],
+  ])("«%s» se lee como %s", (frase, entity) => {
+    expect(readStructureIntent(frase)).toMatchObject({
+      kind: "unambiguous",
+      entity,
+    });
+  });
+
+  it("dudar en voz alta no es pedir cerrar nada", () => {
+    // Sin verbo de escritura no hay lectura de estructura: el modelo tiene que
+    // resolverlo con contexto, y el guardarrail no le impone una entidad.
+    expect(readStructureIntent("me sirve todavia esa caja?")).toEqual({
+      kind: "none",
+    });
+  });
+});
+
+describe("la pregunta enumera cuando hay mas de dos lecturas", () => {
+  it("nombra las tres y explica cada una", () => {
+    const pregunta = composeStructureAmbiguityQuestion([
+      "caja",
+      "cuenta",
+      "recurrente",
+    ]);
+    expect(pregunta).toContain("una caja");
+    expect(pregunta).toContain("una cuenta");
+    expect(pregunta).toContain("un pago recurrente");
+    expect(pregunta).toContain("tampoco aparta");
+  });
+});

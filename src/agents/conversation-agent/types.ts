@@ -345,8 +345,10 @@ export const ConversationWorkingSetSchema = z.object({
   ),
   focus_set: ConversationFocusSetSchema.nullable().optional(),
   /**
-   * `RUL-ESTR-03`: borrador tipado de la caja, meta o presupuesto que espera
-   * confirmacion. Se guarda sin forma fuerte a proposito —lo valida
+   * `RUL-ESTR-03`: borrador tipado de la caja, meta, presupuesto, pago
+   * recurrente o cuenta que espera confirmacion —para crearse, cambiarse,
+   * cerrarse, pausarse o reanudarse—. Se guarda sin forma fuerte a
+   * proposito —lo valida
    * `StructureProposalSchema` al usarlo— para que un estado escrito por una
    * version anterior no rompa la lectura del hilo entero.
    *

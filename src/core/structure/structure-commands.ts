@@ -1,23 +1,30 @@
 import { z } from "zod";
-import { BOX_TYPES, CATEGORY_IDS } from "@/shared/types/domain";
+import {
+  ACCOUNT_TYPES,
+  BOX_TYPES,
+  CATEGORY_IDS,
+  RECURRING_AMOUNT_VARIABILITIES,
+  RECURRING_FREQUENCIES,
+} from "@/shared/types/domain";
 import { BUDGET_KINDS, BUDGET_PERIOD_KINDS } from "@/core/budgets";
 
 /**
- * `RUL-ESTR-01`: la estructura financiera —cajas, metas y presupuestos— se
- * puede crear y modificar conversando, con el mismo rigor con el que hoy se
- * crea un movimiento: comando tipado, confirmacion explicita, idempotencia y
- * rastro de auditoria.
+ * `RUL-ESTR-01`: la estructura financiera —cajas, metas, presupuestos, pagos
+ * recurrentes y cuentas— se puede crear, modificar y cerrar conversando, con el
+ * mismo rigor con el que hoy se crea un movimiento: comando tipado,
+ * confirmacion explicita, idempotencia y rastro de auditoria.
  *
  * Estos comandos **no** viven en `CommandDispatcher` a proposito. Ese
  * despachador es el motor de movimientos y saldos: sus payloads son
  * `MovementInput`, su idempotencia es `movements.idempotency_key`, su
  * auditoria cuelga de `movement_id` y su puerto es `FinancialCoreRepository`
- * (movimientos + deltas de cuenta y caja). Cajas, metas y presupuestos no son
- * movimientos y ya tienen ejecutores transaccionales propios
+ * (movimientos + deltas de cuenta y caja). Cajas, metas, presupuestos, reglas
+ * recurrentes y cuentas no son movimientos y ya tienen ejecutores propios
  * (`commit_budget_operation`, `commit_goal_operation`, la tabla `boxes` con su
- * unicidad por cuenta). Meterlos dentro del despachador financiero crearia una
- * segunda fuente de verdad sobre operaciones que la base ya sabe ejecutar de
- * forma atomica e idempotente.
+ * unicidad por cuenta, `recurring_rules` con su contrato de creacion
+ * idempotente de `058`, y `accounts` con su cascada de archivado). Meterlos
+ * dentro del despachador financiero crearia una segunda fuente de verdad sobre
+ * operaciones que la base ya sabe ejecutar de forma atomica.
  *
  * El precedente esta dentro del propio despachador: los pagos y las altas de
  * deuda **se delegan** a `DebtPaymentCommandHandler` y
@@ -25,21 +32,51 @@ import { BUDGET_KINDS, BUDGET_PERIOD_KINDS } from "@/core/budgets";
  * misma regla, un nivel mas afuera.
  *
  * Lo unico que si vuelve al motor de movimientos es el dinero: apartar saldo al
- * crear una caja es una `CreateMovementCommand` de tipo `asignacion_interna`,
- * igual que en `POST /api/v1/boxes`. El motor de saldos sigue siendo el unico
- * que mueve plata.
+ * crear una caja, y devolverlo al archivarla, son `CreateMovementCommand` de
+ * tipo `asignacion_interna`, igual que en `POST /api/v1/boxes` y
+ * `DELETE /api/v1/boxes/[id]`. El motor de saldos sigue siendo el unico que
+ * mueve plata.
  */
 
-/** Las tres entidades de estructura que el asistente puede escribir. */
-export const STRUCTURE_ENTITIES = ["caja", "meta", "presupuesto"] as const;
+/** Las entidades de estructura que el asistente puede escribir. */
+export const STRUCTURE_ENTITIES = [
+  "caja",
+  "meta",
+  "presupuesto",
+  "recurrente",
+  "cuenta",
+] as const;
 export type StructureEntity = (typeof STRUCTURE_ENTITIES)[number];
 
-export const STRUCTURE_OPERATIONS = ["create", "update"] as const;
+/**
+ * Ciclo de vida completo. `archive` es destructivo —cierra la estructura y, en
+ * el caso de una caja o una cuenta, mueve o libera dinero— y por eso se trata
+ * aparte en el gate de riesgo y en el texto de confirmacion (`RUL-ESTR-05`).
+ */
+export const STRUCTURE_OPERATIONS = [
+  "create",
+  "update",
+  "archive",
+  "pause",
+  "resume",
+] as const;
 export type StructureOperation = (typeof STRUCTURE_OPERATIONS)[number];
+
+/** Operaciones que cierran o dan de baja algo. Nunca son silenciosas. */
+export const DESTRUCTIVE_STRUCTURE_OPERATIONS = ["archive"] as const;
+
+export function isDestructiveStructureOperation(
+  operation: StructureOperation,
+): boolean {
+  return (DESTRUCTIVE_STRUCTURE_OPERATIONS as readonly string[]).includes(
+    operation,
+  );
+}
 
 const IsoDateSchema = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "La fecha debe usar YYYY-MM-DD.");
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "La fecha debe usar YYYY-MM-DD.")
+  .refine(isRealIsoDate, "Esa fecha no existe.");
 
 const MoneySchema = z
   .number()
@@ -54,6 +91,16 @@ const NonNegativeMoneySchema = z
   .min(0)
   .max(99_999_999_999.99)
   .refine(hasAtMostTwoDecimals, "El monto admite como maximo dos decimales.");
+
+/** El saldo declarado de una cuenta si admite negativo (una tarjeta lo esta). */
+const AccountBalanceSchema = z
+  .number()
+  .finite()
+  .min(-999_999_999.99)
+  .max(999_999_999.99)
+  .refine(hasAtMostTwoDecimals, "El saldo admite como maximo dos decimales.");
+
+const CurrencySchema = z.enum(["PEN", "USD"]);
 
 const ActorSchema = z.object({
   type: z.enum(["user", "agent", "system", "worker"]),
@@ -96,6 +143,11 @@ export const UpdateBoxPayloadSchema = z
   });
 export type UpdateBoxPayload = z.infer<typeof UpdateBoxPayloadSchema>;
 
+export const ArchiveBoxPayloadSchema = z.object({
+  box_id: z.string().uuid(),
+});
+export type ArchiveBoxPayload = z.infer<typeof ArchiveBoxPayloadSchema>;
+
 // --- Meta -----------------------------------------------------------------
 
 export const CreateGoalPayloadSchema = z.object({
@@ -118,6 +170,12 @@ export const UpdateGoalPayloadSchema = z
     message: "Indica al menos un cambio para la meta.",
   });
 export type UpdateGoalPayload = z.infer<typeof UpdateGoalPayloadSchema>;
+
+/** Archivar, pausar y reanudar una meta solo necesitan saber cual. */
+export const GoalLifecyclePayloadSchema = z.object({
+  goal_id: z.string().uuid(),
+});
+export type GoalLifecyclePayload = z.infer<typeof GoalLifecyclePayloadSchema>;
 
 // --- Presupuesto ----------------------------------------------------------
 
@@ -145,6 +203,110 @@ export const UpdateBudgetPayloadSchema = z
   });
 export type UpdateBudgetPayload = z.infer<typeof UpdateBudgetPayloadSchema>;
 
+export const BudgetLifecyclePayloadSchema = z.object({
+  budget_id: z.string().uuid(),
+});
+export type BudgetLifecyclePayload = z.infer<
+  typeof BudgetLifecyclePayloadSchema
+>;
+
+// --- Recurrente -----------------------------------------------------------
+
+/**
+ * `RUL-REC-01`: una regla recurrente **no mueve dinero**. Describe lo que se
+ * espera pagar y cuando; el saldo solo cambia cuando la ocurrencia se marca
+ * pagada por el motor (`commit_recurring_payment`). Por eso el monto aqui es
+ * `expected_amount` y no un importe: es una expectativa, no un cargo.
+ */
+export const CreateRecurringPayloadSchema = z
+  .object({
+    name: z.string().trim().min(1).max(60),
+    expected_amount: MoneySchema.nullable().default(null),
+    amount_variability: z
+      .enum(RECURRING_AMOUNT_VARIABILITIES)
+      .default("fixed"),
+    currency: CurrencySchema.default("PEN"),
+    frequency: z.enum(RECURRING_FREQUENCIES).default("monthly"),
+    next_expected_date: IsoDateSchema,
+    category_id: z.enum(CATEGORY_IDS).nullable().default(null),
+    /** Cuenta sugerida al pagar. No aparta ni bloquea nada de ella. */
+    default_account_id: z.string().uuid().nullable().default(null),
+  })
+  // Misma regla dura que `recurring_rules_fixed_amount_required` en la base:
+  // un pago fijo sin monto no es una expectativa, es un hueco.
+  .refine(
+    (value) =>
+      value.amount_variability !== "fixed" || value.expected_amount != null,
+    {
+      path: ["expected_amount"],
+      message: "Un pago fijo necesita su monto.",
+    },
+  );
+export type CreateRecurringPayload = z.infer<
+  typeof CreateRecurringPayloadSchema
+>;
+
+export const UpdateRecurringPayloadSchema = z
+  .object({
+    recurring_rule_id: z.string().uuid(),
+    name: z.string().trim().min(1).max(60).optional(),
+    expected_amount: MoneySchema.nullable().optional(),
+    amount_variability: z.enum(RECURRING_AMOUNT_VARIABILITIES).optional(),
+    frequency: z.enum(RECURRING_FREQUENCIES).optional(),
+    next_expected_date: IsoDateSchema.optional(),
+    category_id: z.enum(CATEGORY_IDS).nullable().optional(),
+    default_account_id: z.string().uuid().nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 1, {
+    message: "Indica al menos un cambio para el pago recurrente.",
+  });
+export type UpdateRecurringPayload = z.infer<
+  typeof UpdateRecurringPayloadSchema
+>;
+
+export const RecurringLifecyclePayloadSchema = z.object({
+  recurring_rule_id: z.string().uuid(),
+});
+export type RecurringLifecyclePayload = z.infer<
+  typeof RecurringLifecyclePayloadSchema
+>;
+
+// --- Cuenta ---------------------------------------------------------------
+
+/**
+ * `RUL-CUENTAS-01`: el saldo inicial de una cuenta es una **declaracion** del
+ * usuario, no un movimiento. Se escribe en `initial_balance`/`current_balance`
+ * igual que en `POST /api/v1/accounts`, sin pasar por el motor de saldos, que
+ * solo registra dinero que se movio de verdad.
+ */
+export const CreateAccountPayloadSchema = z.object({
+  name: z.string().trim().min(1).max(80),
+  type: z.enum(ACCOUNT_TYPES).default("digital"),
+  institution: z.string().trim().min(1).max(80).nullable().default(null),
+  currency: CurrencySchema.default("PEN"),
+  initial_balance: AccountBalanceSchema.default(0),
+});
+export type CreateAccountPayload = z.infer<typeof CreateAccountPayloadSchema>;
+
+export const UpdateAccountPayloadSchema = z
+  .object({
+    account_id: z.string().uuid(),
+    name: z.string().trim().min(1).max(80).optional(),
+    type: z.enum(ACCOUNT_TYPES).optional(),
+    institution: z.string().trim().min(1).max(80).nullable().optional(),
+  })
+  .refine((value) => Object.keys(value).length > 1, {
+    message: "Indica al menos un cambio para la cuenta.",
+  });
+export type UpdateAccountPayload = z.infer<typeof UpdateAccountPayloadSchema>;
+
+export const AccountLifecyclePayloadSchema = z.object({
+  account_id: z.string().uuid(),
+});
+export type AccountLifecyclePayload = z.infer<
+  typeof AccountLifecyclePayloadSchema
+>;
+
 // --- Comando --------------------------------------------------------------
 
 const CommandEnvelopeShape = {
@@ -161,71 +323,208 @@ const CommandEnvelopeShape = {
   idempotency_key: z.string().trim().min(8).max(180),
 } as const;
 
-export const CreateBoxCommandSchema = z.object({
-  ...CommandEnvelopeShape,
-  type: z.literal("CreateBoxCommand"),
-  payload: CreateBoxPayloadSchema,
-});
+function structureCommand<
+  const Type extends string,
+  Payload extends z.ZodType,
+>(type: Type, payload: Payload) {
+  return z.object({
+    ...CommandEnvelopeShape,
+    type: z.literal(type),
+    payload,
+  });
+}
 
-export const UpdateBoxCommandSchema = z.object({
-  ...CommandEnvelopeShape,
-  type: z.literal("UpdateBoxCommand"),
-  payload: UpdateBoxPayloadSchema,
-});
+export const CreateBoxCommandSchema = structureCommand(
+  "CreateBoxCommand",
+  CreateBoxPayloadSchema,
+);
+export const UpdateBoxCommandSchema = structureCommand(
+  "UpdateBoxCommand",
+  UpdateBoxPayloadSchema,
+);
+export const ArchiveBoxCommandSchema = structureCommand(
+  "ArchiveBoxCommand",
+  ArchiveBoxPayloadSchema,
+);
 
-export const CreateGoalCommandSchema = z.object({
-  ...CommandEnvelopeShape,
-  type: z.literal("CreateGoalCommand"),
-  payload: CreateGoalPayloadSchema,
-});
+export const CreateGoalCommandSchema = structureCommand(
+  "CreateGoalCommand",
+  CreateGoalPayloadSchema,
+);
+export const UpdateGoalCommandSchema = structureCommand(
+  "UpdateGoalCommand",
+  UpdateGoalPayloadSchema,
+);
+export const ArchiveGoalCommandSchema = structureCommand(
+  "ArchiveGoalCommand",
+  GoalLifecyclePayloadSchema,
+);
+export const PauseGoalCommandSchema = structureCommand(
+  "PauseGoalCommand",
+  GoalLifecyclePayloadSchema,
+);
+export const ResumeGoalCommandSchema = structureCommand(
+  "ResumeGoalCommand",
+  GoalLifecyclePayloadSchema,
+);
 
-export const UpdateGoalCommandSchema = z.object({
-  ...CommandEnvelopeShape,
-  type: z.literal("UpdateGoalCommand"),
-  payload: UpdateGoalPayloadSchema,
-});
+export const CreateBudgetCommandSchema = structureCommand(
+  "CreateBudgetCommand",
+  CreateBudgetPayloadSchema,
+);
+export const UpdateBudgetCommandSchema = structureCommand(
+  "UpdateBudgetCommand",
+  UpdateBudgetPayloadSchema,
+);
+export const ArchiveBudgetCommandSchema = structureCommand(
+  "ArchiveBudgetCommand",
+  BudgetLifecyclePayloadSchema,
+);
+export const PauseBudgetCommandSchema = structureCommand(
+  "PauseBudgetCommand",
+  BudgetLifecyclePayloadSchema,
+);
+export const ResumeBudgetCommandSchema = structureCommand(
+  "ResumeBudgetCommand",
+  BudgetLifecyclePayloadSchema,
+);
 
-export const CreateBudgetCommandSchema = z.object({
-  ...CommandEnvelopeShape,
-  type: z.literal("CreateBudgetCommand"),
-  payload: CreateBudgetPayloadSchema,
-});
+export const CreateRecurringCommandSchema = structureCommand(
+  "CreateRecurringCommand",
+  CreateRecurringPayloadSchema,
+);
+export const UpdateRecurringCommandSchema = structureCommand(
+  "UpdateRecurringCommand",
+  UpdateRecurringPayloadSchema,
+);
+export const ArchiveRecurringCommandSchema = structureCommand(
+  "ArchiveRecurringCommand",
+  RecurringLifecyclePayloadSchema,
+);
+export const PauseRecurringCommandSchema = structureCommand(
+  "PauseRecurringCommand",
+  RecurringLifecyclePayloadSchema,
+);
+export const ResumeRecurringCommandSchema = structureCommand(
+  "ResumeRecurringCommand",
+  RecurringLifecyclePayloadSchema,
+);
 
-export const UpdateBudgetCommandSchema = z.object({
-  ...CommandEnvelopeShape,
-  type: z.literal("UpdateBudgetCommand"),
-  payload: UpdateBudgetPayloadSchema,
-});
+export const CreateAccountCommandSchema = structureCommand(
+  "CreateAccountCommand",
+  CreateAccountPayloadSchema,
+);
+export const UpdateAccountCommandSchema = structureCommand(
+  "UpdateAccountCommand",
+  UpdateAccountPayloadSchema,
+);
+export const ArchiveAccountCommandSchema = structureCommand(
+  "ArchiveAccountCommand",
+  AccountLifecyclePayloadSchema,
+);
 
 export const StructureCommandSchema = z.discriminatedUnion("type", [
   CreateBoxCommandSchema,
   UpdateBoxCommandSchema,
+  ArchiveBoxCommandSchema,
   CreateGoalCommandSchema,
   UpdateGoalCommandSchema,
+  ArchiveGoalCommandSchema,
+  PauseGoalCommandSchema,
+  ResumeGoalCommandSchema,
   CreateBudgetCommandSchema,
   UpdateBudgetCommandSchema,
+  ArchiveBudgetCommandSchema,
+  PauseBudgetCommandSchema,
+  ResumeBudgetCommandSchema,
+  CreateRecurringCommandSchema,
+  UpdateRecurringCommandSchema,
+  ArchiveRecurringCommandSchema,
+  PauseRecurringCommandSchema,
+  ResumeRecurringCommandSchema,
+  CreateAccountCommandSchema,
+  UpdateAccountCommandSchema,
+  ArchiveAccountCommandSchema,
 ]);
 export type StructureCommand = z.infer<typeof StructureCommandSchema>;
 
 export type StructureCommandType = StructureCommand["type"];
 
+/**
+ * Un solo mapa manda: entidad y operacion de cada comando. Derivarlas de
+ * prefijos y sufijos del nombre parecia barato con seis comandos; con
+ * veintiuno, un nombre que no encaje volveria a la entidad equivocada en
+ * silencio, y la entidad equivocada elige el ejecutor equivocado.
+ */
+const COMMAND_SHAPE: Record<
+  StructureCommandType,
+  { entity: StructureEntity; operation: StructureOperation }
+> = {
+  CreateBoxCommand: { entity: "caja", operation: "create" },
+  UpdateBoxCommand: { entity: "caja", operation: "update" },
+  ArchiveBoxCommand: { entity: "caja", operation: "archive" },
+  CreateGoalCommand: { entity: "meta", operation: "create" },
+  UpdateGoalCommand: { entity: "meta", operation: "update" },
+  ArchiveGoalCommand: { entity: "meta", operation: "archive" },
+  PauseGoalCommand: { entity: "meta", operation: "pause" },
+  ResumeGoalCommand: { entity: "meta", operation: "resume" },
+  CreateBudgetCommand: { entity: "presupuesto", operation: "create" },
+  UpdateBudgetCommand: { entity: "presupuesto", operation: "update" },
+  ArchiveBudgetCommand: { entity: "presupuesto", operation: "archive" },
+  PauseBudgetCommand: { entity: "presupuesto", operation: "pause" },
+  ResumeBudgetCommand: { entity: "presupuesto", operation: "resume" },
+  CreateRecurringCommand: { entity: "recurrente", operation: "create" },
+  UpdateRecurringCommand: { entity: "recurrente", operation: "update" },
+  ArchiveRecurringCommand: { entity: "recurrente", operation: "archive" },
+  PauseRecurringCommand: { entity: "recurrente", operation: "pause" },
+  ResumeRecurringCommand: { entity: "recurrente", operation: "resume" },
+  CreateAccountCommand: { entity: "cuenta", operation: "create" },
+  UpdateAccountCommand: { entity: "cuenta", operation: "update" },
+  ArchiveAccountCommand: { entity: "cuenta", operation: "archive" },
+};
+
+export const STRUCTURE_COMMAND_TYPES = Object.keys(COMMAND_SHAPE) as [
+  StructureCommandType,
+  ...StructureCommandType[],
+];
+
+/** Enum reutilizable: el borrador guardado valida contra la misma lista. */
+export const StructureCommandTypeSchema = z.enum(STRUCTURE_COMMAND_TYPES);
+
 /** Entidad de dominio a la que pertenece cada comando. */
 export function entityForCommandType(
   type: StructureCommandType,
 ): StructureEntity {
-  if (type === "CreateBoxCommand" || type === "UpdateBoxCommand") return "caja";
-  if (type === "CreateGoalCommand" || type === "UpdateGoalCommand") {
-    return "meta";
-  }
-  return "presupuesto";
+  return COMMAND_SHAPE[type].entity;
 }
 
 export function operationForCommandType(
   type: StructureCommandType,
 ): StructureOperation {
-  return type.startsWith("Create") ? "create" : "update";
+  return COMMAND_SHAPE[type].operation;
+}
+
+/** El comando que escribe esta entidad con esta operacion, si existe. */
+export function commandTypeFor(
+  entity: StructureEntity,
+  operation: StructureOperation,
+): StructureCommandType | null {
+  const match = STRUCTURE_COMMAND_TYPES.find(
+    (type) =>
+      COMMAND_SHAPE[type].entity === entity &&
+      COMMAND_SHAPE[type].operation === operation,
+  );
+  return match ?? null;
 }
 
 function hasAtMostTwoDecimals(value: number): boolean {
   return Math.abs(value * 100 - Math.round(value * 100)) < 1e-8;
+}
+
+function isRealIsoDate(value: string): boolean {
+  const instant = new Date(`${value}T00:00:00.000Z`);
+  return (
+    Number.isFinite(instant.getTime()) &&
+    instant.toISOString().slice(0, 10) === value
+  );
 }

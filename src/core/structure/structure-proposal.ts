@@ -3,6 +3,7 @@ import {
   STRUCTURE_ENTITIES,
   STRUCTURE_OPERATIONS,
   StructureCommandSchema,
+  StructureCommandTypeSchema,
   type StructureCommand,
   type StructureEntity,
 } from "./structure-commands";
@@ -36,23 +37,25 @@ export const StructureProposalSchema = z.object({
   proposal_id: z.string().uuid(),
   entity: z.enum(STRUCTURE_ENTITIES),
   operation: z.enum(STRUCTURE_OPERATIONS),
-  command_type: z.enum([
-    "CreateBoxCommand",
-    "UpdateBoxCommand",
-    "CreateGoalCommand",
-    "UpdateGoalCommand",
-    "CreateBudgetCommand",
-    "UpdateBudgetCommand",
-  ]),
+  command_type: StructureCommandTypeSchema,
   /**
    * Payload sin envolver. Se revalida contra `StructureCommandSchema` en el
    * momento de ejecutar: el estado conversacional es un transporte, no una
    * autoridad de tipos.
    */
   payload: z.record(z.string(), z.unknown()),
-  /** Frase que se le mostro al usuario. Es lo que confirma, textualmente. */
-  summary: z.string().trim().min(1).max(320),
-  confirm_label: z.string().trim().min(1).max(40),
+  /**
+   * Frase que se le mostro al usuario. Es lo que confirma, textualmente.
+   *
+   * El limite subio de 320 a 560 al entrar el ciclo de vida: en un cierre el
+   * nucleo antepone la consecuencia deterministica (`RUL-ESTR-05`, hasta ~215
+   * caracteres) a la frase del modelo (hasta 280). Con 320 el borrador se
+   * guardaba pero **no volvia a validar al leerlo**, y la confirmacion del
+   * turno siguiente moria como `unknown_proposal` sin que nada lo dijera.
+   */
+  summary: z.string().trim().min(1).max(560),
+  /** Mismo techo que `StructureProposalRequestSchema`: los dos tienen que caber. */
+  confirm_label: z.string().trim().min(1).max(60),
   proposed_at: z.string(),
 });
 export type StructureProposal = z.infer<typeof StructureProposalSchema>;
@@ -118,5 +121,12 @@ export function buildStructureCommandFromProposal(params: {
 export function entityLabel(entity: StructureEntity): string {
   if (entity === "caja") return "caja";
   if (entity === "meta") return "meta";
-  return "presupuesto";
+  if (entity === "presupuesto") return "presupuesto";
+  if (entity === "cuenta") return "cuenta";
+  return "pago recurrente";
+}
+
+/** Articulo que acompaña a la etiqueta, para no escribir "esa pago recurrente". */
+export function entityArticle(entity: StructureEntity): "esa" | "ese" {
+  return entity === "recurrente" || entity === "presupuesto" ? "ese" : "esa";
 }

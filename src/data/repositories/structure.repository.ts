@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/data/supabase/types";
-import type { Box } from "@/shared/types/domain";
+import type { Account, Box, RecurringRule } from "@/shared/types/domain";
 import { logger } from "@/shared/telemetry/logger";
 
 type Client = SupabaseClient<Database>;
@@ -32,6 +32,26 @@ export class StructureRepositoryError extends Error {
     this.name = "StructureRepositoryError";
   }
 }
+
+/**
+ * Entidades cuyo rastro conversacional cuelga de `movement_audit_log`. La
+ * tabla ya es generica (`entity_type` es texto libre y `movement_id` es
+ * anulable), asi que sumar `recurring_rule` y `account` no toca el esquema.
+ */
+export type StructureAuditEntityType =
+  | "box"
+  | "goal"
+  | "budget"
+  | "recurring_rule"
+  | "account";
+
+/**
+ * Acciones que admite `movement_audit_action_known` (`006`, ampliada en
+ * `046`). Archivar es un borrado logico y por eso se anota como `deleted`;
+ * pausar y reanudar son cambios de estado y se anotan como `updated`. Ninguna
+ * necesita ampliar el check de la base.
+ */
+export type StructureAuditAction = "created" | "updated" | "deleted";
 
 /** Clave de idempotencia con la que se sella una caja creada por conversacion. */
 export const BOX_STRUCTURE_IDEMPOTENCY_METADATA_KEY =
@@ -72,6 +92,81 @@ export async function findBoxByStructureIdempotencyKey(
 }
 
 /**
+ * Hermana de `findBoxByStructureIdempotencyKey` para cuentas.
+ *
+ * Una cuenta, como una caja, no tiene RPC transaccional propio ni almacen de
+ * recibos: se escribe sobre `public.accounts`. Por eso la idempotencia se sella
+ * igual, en `metadata->>'structure_idempotency_key'`, con el indice parcial que
+ * crea la migracion `074`.
+ *
+ * Se buscan tambien las archivadas a proposito: si el usuario creo la cuenta y
+ * la cerro, un reenvio del mismo boton no debe resucitarla ni crear una nueva.
+ */
+export async function findAccountByStructureIdempotencyKey(
+  client: Client,
+  userId: string,
+  idempotencyKey: string
+): Promise<Account | null> {
+  const { data, error } = await client
+    .from("accounts")
+    .select("*")
+    .eq("user_id", userId)
+    .contains("metadata", {
+      [BOX_STRUCTURE_IDEMPOTENCY_METADATA_KEY]: idempotencyKey,
+    })
+    .limit(1);
+
+  if (error) {
+    logger.error("structure.find_account_by_idempotency_failed", {
+      error,
+      user_id: userId,
+    });
+    throw new StructureRepositoryError(
+      "STRUCTURE_WRITE_FAILED",
+      "No pude comprobar si esa cuenta ya existia."
+    );
+  }
+
+  const rows = (data ?? []) as Account[];
+  return rows[0] ?? null;
+}
+
+/**
+ * Hermana de las dos anteriores para reglas recurrentes.
+ *
+ * Aqui la idempotencia **ya existe en la base** desde `058`:
+ * `recurring_rules.creation_idempotency_key` con indice unico por usuario y
+ * `creation_request_hash` para detectar la misma clave con otros datos. Esta
+ * lectura no la reinventa; solo permite saber, antes de escribir, que el doble
+ * envio ya se resolvio, para no anotar dos veces la auditoria.
+ */
+export async function findRecurringRuleByStructureIdempotencyKey(
+  client: Client,
+  userId: string,
+  idempotencyKey: string
+): Promise<RecurringRule | null> {
+  const { data, error } = await client
+    .from("recurring_rules")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("creation_idempotency_key", idempotencyKey)
+    .maybeSingle();
+
+  if (error) {
+    logger.error("structure.find_recurring_by_idempotency_failed", {
+      error,
+      user_id: userId,
+    });
+    throw new StructureRepositoryError(
+      "STRUCTURE_WRITE_FAILED",
+      "No pude comprobar si ese pago recurrente ya existia."
+    );
+  }
+
+  return (data as RecurringRule | null) ?? null;
+}
+
+/**
  * Rastro de auditoria de una escritura de estructura.
  *
  * Reusa `movement_audit_log`, que ya es generico (`entity_type` libre,
@@ -83,9 +178,9 @@ export async function appendStructureAudit(
   client: Client,
   input: {
     userId: string;
-    entityType: "box" | "goal" | "budget";
+    entityType: StructureAuditEntityType;
     entityId: string;
-    action: "created" | "updated";
+    action: StructureAuditAction;
     actorType: "user" | "agent" | "system" | "worker";
     actorId: string | null;
     source: string;

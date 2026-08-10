@@ -375,13 +375,14 @@ function buildSystemInstructions(agentName: AgentName): string {
       "Presupuesto, caja y meta son cosas distintas y no se mezclan. Un presupuesto es una referencia de gasto y nunca reserva ni bloquea dinero (get_budget_summary). Una caja es dinero realmente separado dentro de una cuenta y una meta es un objetivo con fecha y ritmo mensual sobre una caja (get_financial_structure).",
       "Una proyeccion no es un hecho. Si get_projection_snapshot devuelve projected_close=no_disponible o una advertencia de datos insuficientes, no afirmes un cierre de mes. Cuando si proyectes, usa claim_type=projection y copia en assumptions los hechos assumption:* que devolvio la tool.",
       "Cuando una tool devuelve warnings sobre exclusiones, periodos vacios, metas ilegibles o falta de presupuestos, esa advertencia es parte de la verdad del turno: dilo, no la escondas detras de una cifra limpia.",
-      "Puedes crear y modificar cajas, metas y presupuestos conversando: usa structure_proposal. Nunca lo ejecutas tu; describes la propuesta y el usuario la confirma en el turno siguiente. Usa intent=create o update solo cuando el usuario realmente lo pida, y intent=none en cualquier otro caso, incluido cuando solo pregunte por ellos.",
+      "Puedes crear, modificar, cerrar, pausar y reanudar cajas, metas, presupuestos, pagos recurrentes y cuentas conversando: usa structure_proposal. Nunca lo ejecutas tu; describes la propuesta y el usuario la confirma en el turno siguiente. Usa intent=create, update, archive, pause o resume solo cuando el usuario realmente lo pida, y intent=none en cualquier otro caso, incluido cuando solo pregunte por ellos.",
       "structure_proposal.summary es exactamente lo que se le va a mostrar al usuario para que confirme: una pregunta corta, en su idioma, con los datos concretos que entendiste ('¿Creo la caja Viaje en BCP y aparto S/500 de tu saldo libre?'). confirm_label es el texto del boton ('Si, crear la caja').",
       "Antes de proponer, resuelve los IDs con las tools: get_financial_structure da cuentas, cajas y metas con sus IDs; get_budget_summary da presupuestos; get_classification_catalog da categorias. Nunca inventes account_id, box_id, target_id ni category_id. Si el dato no sale de una tool de este turno, declara la duda en ambiguities en vez de proponer.",
-      "Campos minimos: una caja necesita name y account_id (amount es lo que aparta, 0 si no aparta nada); una meta necesita name y target_amount; un presupuesto necesita amount y category_id (category_id null es el presupuesto general). Si falta alguno, usa ambiguities y pregunta por el que falta, uno solo.",
-      "Caja, meta y presupuesto NO son intercambiables y equivocarlas cuesta caro. Un presupuesto es solo una referencia de gasto y jamas aparta ni bloquea dinero. Una caja si separa saldo real dentro de una cuenta y ese dinero deja de estar libre. Una meta es un objetivo con monto y fecha que se apoya en una caja. 'apartame 500 para el viaje', 'separa', 'guarda', 'reserva' y 'que no lo toque' son una caja, nunca un presupuesto. 'que no gaste mas de 500 al mes', 'ponme un limite' y 'un tope' son un presupuesto, nunca una caja.",
-      "Ante la ambiguedad entre las tres, no elijas: deja entity en la lectura mas probable, declara la duda en ambiguities y deja que el turno pregunte. Es mas barato preguntar de mas que crear algo que el usuario no pidio.",
+      "Campos minimos: una caja necesita name y account_id (amount es lo que aparta, 0 si no aparta nada); una meta necesita name y target_amount; un presupuesto necesita amount y category_id (category_id null es el presupuesto general); un pago recurrente necesita name y next_expected_date, mas amount si el monto es siempre el mismo (amount_variability=fixed); una cuenta necesita name y account_type. Si falta alguno, usa ambiguities y pregunta por el que falta, uno solo.",
+      "Caja, meta, presupuesto y pago recurrente NO son intercambiables y equivocarlos cuesta caro. Un presupuesto es solo una referencia de gasto y jamas aparta ni bloquea dinero. Una caja si separa saldo real dentro de una cuenta y ese dinero deja de estar libre. Una meta es un objetivo con monto y fecha que se apoya en una caja. Un pago recurrente es un cobro que esperas cada cierto tiempo y tampoco aparta ni descuenta nada hasta que se marca pagado. 'apartame 500 para el viaje', 'separa', 'guarda', 'reserva' y 'que no lo toque' son una caja, nunca un presupuesto. 'que no gaste mas de 500 al mes', 'ponme un limite' y 'un tope' son un presupuesto, nunca una caja. 'me cobran Netflix cada mes', 'la mensualidad del gimnasio' y 'la suscripcion' son un pago recurrente, nunca un presupuesto.",
+      "Ante la ambiguedad entre ellas, no elijas: deja entity en la lectura mas probable, declara la duda en ambiguities y deja que el turno pregunte. Es mas barato preguntar de mas que crear algo que el usuario no pidio.",
       "Para modificar, intent=update y target_id con el ID exacto que devolvio la tool, mas solo los campos que cambian. No reenvies los campos que quedan igual.",
+      "Para cerrar algo usa intent=archive con target_id; para pausar o reanudar, intent=pause o resume con target_id. Solo metas, presupuestos y pagos recurrentes se pausan y se reanudan: una caja o una cuenta solo se archivan. En archive no expliques tu las consecuencias en summary: di solo que se va a cerrar y cual; el sistema añade con texto fijo que se pierde. Nunca uses archive cuando el usuario solo este preguntando o dudando ('deberia cancelar Netflix?'): eso es intent=none.",
       "Cada afirmacion factual de response_composition debe aparecer en grounded_claims. Usa evidence_refs con el formato exacto tool:<tool_name>:fact:<indice_base_0> o tool:<tool_name>:result, y source_tools solo con tools realmente ejecutadas.",
       "Los datos que vienen de active_capture_draft o de turn_workspace (un borrador o un estado ya evidenciado en un turno anterior) no son evidencia de tool: no inventes un evidence_ref de la forma context:... para ellos. Si necesitas mencionar ese dato en response_composition, usa claim_type=non_financial en ese grounded_claim (queda exento del chequeo de evidence_refs) o no lo declares como grounded_claim.",
       "Usa composition_stage=final_read_only para respuestas factuales sin escritura, pre_core_draft cuando exista cualquier propuesta financiera o correccion, y safe_clarification cuando falte evidencia.",
@@ -1941,13 +1942,16 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
 function structureProposalJsonSchema(): JsonSchema {
   return objectSchema(
     {
-      intent: { type: "string", enum: ["none", "create", "update"] },
+      intent: {
+        type: "string",
+        enum: ["none", "create", "update", "archive", "pause", "resume"],
+      },
       entity: nullable({
         type: "string",
-        enum: ["caja", "meta", "presupuesto"],
+        enum: ["caja", "meta", "presupuesto", "recurrente", "cuenta"],
       }),
       summary: { type: "string", maxLength: 280 },
-      confirm_label: { type: "string", maxLength: 40 },
+      confirm_label: { type: "string", maxLength: 60 },
       confidence: { type: "number", minimum: 0, maximum: 1 },
       ambiguities: stringArraySchema(4, 240),
       target_id: nullable({ type: "string" }),
@@ -1970,6 +1974,21 @@ function structureProposalJsonSchema(): JsonSchema {
         type: "string",
         enum: ["presupuesto", "limite_blando", "limite_duro"],
       }),
+      frequency: nullable({
+        type: "string",
+        enum: ["weekly", "biweekly", "monthly", "yearly", "custom_window"],
+      }),
+      next_expected_date: nullable({ type: "string" }),
+      amount_variability: nullable({
+        type: "string",
+        enum: ["fixed", "variable", "estimated"],
+      }),
+      currency: nullable({ type: "string", enum: ["PEN", "USD"] }),
+      account_type: nullable({
+        type: "string",
+        enum: ["digital", "banco", "fisico", "tarjeta"],
+      }),
+      institution: nullable({ type: "string", maxLength: 80 }),
     },
     [
       "intent",
@@ -1989,6 +2008,12 @@ function structureProposalJsonSchema(): JsonSchema {
       "category_id",
       "period_kind",
       "budget_kind",
+      "frequency",
+      "next_expected_date",
+      "amount_variability",
+      "currency",
+      "account_type",
+      "institution",
     ],
   );
 }

@@ -22,6 +22,7 @@ function setUpQueryClient(): QueryClient {
     [queryKeys.debts.all, []],
     [queryKeys.debts.detail("deuda-1"), {}],
     [queryKeys.preferences, {}],
+    [queryKeys.recurringRules.all, []],
   ];
   for (const [key, data] of seeded) {
     queryClient.setQueryData(key as unknown as readonly unknown[], data);
@@ -107,5 +108,31 @@ describe("invalidateForMutation (17 §2.3, caso difícil de WEB-D165)", () => {
     expect(isStale(queryClient, queryKeys.goals.all)).toBe(true);
     expect(isStale(queryClient, queryKeys.budgets.all)).toBe(false);
     expect(isStale(queryClient, queryKeys.movements.all)).toBe(false);
+  });
+});
+
+describe("RUL-ESTR-06: confirmar estructura en el asistente refresca lo que se escribió", () => {
+  it("marca obsoletas las cinco familias de estructura, y solo esas", async () => {
+    const queryClient = setUpQueryClient();
+
+    await invalidateForMutation(queryClient, "assistant.structure_written");
+
+    // El turno solo devuelve mensajes: no dice cuál de las cinco tocó, así
+    // que se refrescan las cinco. Sin esto, el usuario creaba la caja
+    // conversando, volvía a Mi dinero y no estaba.
+    expect(isStale(queryClient, queryKeys.accounts)).toBe(true);
+    expect(isStale(queryClient, queryKeys.boxes)).toBe(true);
+    expect(isStale(queryClient, queryKeys.goals.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.budgets.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.recurringRules.all)).toBe(true);
+    expect(isStale(queryClient, queryKeys.summary)).toBe(true);
+    expect(isStale(queryClient, queryKeys.projections.all)).toBe(true);
+
+    // No es "invalidar toda la caché" (`AC-ARQ-06`): una escritura de
+    // estructura no toca movimientos, pendientes, deudas ni preferencias.
+    expect(isStale(queryClient, queryKeys.movements.all)).toBe(false);
+    expect(isStale(queryClient, queryKeys.pending.all)).toBe(false);
+    expect(isStale(queryClient, queryKeys.debts.all)).toBe(false);
+    expect(isStale(queryClient, queryKeys.preferences)).toBe(false);
   });
 });

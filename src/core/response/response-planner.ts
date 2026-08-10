@@ -15,6 +15,7 @@ import type { CaptureDraftResolutionResult } from "@/core/orchestrator/capture-d
 import type { PendingResolutionResult } from "@/core/orchestrator/pending-resolution-from-text";
 import {
   buildStructureCommandText,
+  entityArticle,
   entityLabel,
   STRUCTURE_CANCEL_COMMAND_ID,
   type StructureProposal,
@@ -262,7 +263,14 @@ function buildStructureResponse(
       reason: "structure_cancelled",
       intent: "direct_response",
       shape: "texto",
-      text: "Listo, no creé nada.",
+      // Un descarte tiene que negar lo que se iba a hacer. "No creé nada" tras
+      // proponer un cierre dejaria al usuario sin saber si la caja sigue ahi.
+      text:
+        resolution.operation === "archive"
+          ? "Listo, no cerré nada. Todo sigue como estaba."
+          : resolution.operation === "create"
+            ? "Listo, no creé nada."
+            : "Listo, no cambié nada.",
     };
   }
 
@@ -312,6 +320,18 @@ function composeStructureAppliedText(
     return `Eso ya estaba hecho: ${resolution.summary} sigue como estaba. No lo dupliqué.`;
   }
 
+  if (resolution.operation === "archive") {
+    return composeStructureArchivedText(resolution);
+  }
+
+  if (resolution.operation === "pause") {
+    return `Listo. Pausé ${resolution.summary}. Puedes reanudarlo cuando quieras.`;
+  }
+
+  if (resolution.operation === "resume") {
+    return `Listo. Reanudé ${resolution.summary}.`;
+  }
+
   if (resolution.operation === "update") {
     return `Listo. Actualicé ${resolution.summary}.`;
   }
@@ -326,7 +346,35 @@ function composeStructureAppliedText(
     return `Listo. Creé ${resolution.summary}. Ese dinero deja de contar como libre.`;
   }
 
+  // `RUL-REC-01`: un pago que viene tampoco aparta nada; solo se espera.
+  if (resolution.entity === "recurrente") {
+    return `Listo. Anoté ${resolution.summary}. No aparta ni descuenta nada: te aviso cuando toque.`;
+  }
+
   return `Listo. Creé ${resolution.summary}.`;
+}
+
+/**
+ * `RUL-ESTR-05`: al cerrar algo, el turno confirma **que paso con lo que
+ * habia**, no solo que se hizo. El resumen del ejecutor ya trae el dinero
+ * devuelto o las cajas arrastradas cuando los hay.
+ */
+function composeStructureArchivedText(
+  resolution: Extract<StructureResolutionResult, { kind: "applied" }>,
+): string {
+  if (resolution.entity === "cuenta") {
+    return `Listo. Archivé ${resolution.summary}. No borré nada: los movimientos siguen ahí y la puedes restaurar desde la pantalla de cuentas.`;
+  }
+
+  if (resolution.entity === "caja") {
+    return `Listo. Cerré ${resolution.summary}.`;
+  }
+
+  if (resolution.entity === "recurrente") {
+    return `Listo. Cancelé ${resolution.summary}. Dejo de esperarlo y de avisarte.`;
+  }
+
+  return `Listo. Cerré ${resolution.summary}. El historial se conserva.`;
 }
 
 function composeStructureFailedText(
@@ -339,7 +387,8 @@ function composeStructureFailedText(
   if (resolution.detail) return resolution.detail;
 
   const que = resolution.entity ? entityLabel(resolution.entity) : "eso";
-  return `No pude crear esa ${que} y no cambié nada. Puedes intentarlo otra vez o hacerlo desde la pantalla.`;
+  const verbo = resolution.operation === "create" ? "crear" : "cambiar";
+  return `No pude ${verbo} ${resolution.entity ? `${entityArticle(resolution.entity)} ${que}` : "eso"} y no cambié nada. Puedes intentarlo otra vez o hacerlo desde la pantalla.`;
 }
 
 function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse | null {

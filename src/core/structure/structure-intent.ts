@@ -77,6 +77,42 @@ const SENALES_DE_META = [
   "ahorro para",
 ];
 
+/**
+ * Senales de compromiso que se repite en el tiempo: eso es un pago recurrente,
+ * y como un presupuesto, tampoco aparta dinero (`RUL-REC-01`).
+ *
+ * Se dejan fuera a proposito las expresiones de periodicidad a secas ("cada
+ * mes", "todos los meses"): un presupuesto tambien es mensual, asi que
+ * contarlas como senal volveria ambigua —y por tanto repreguntable— la frase
+ * mas normal para crear un presupuesto.
+ */
+const SENALES_DE_RECURRENTE = [
+  "recurrente",
+  "suscripcion",
+  "mensualidad",
+  "pago fijo",
+  "pago que viene",
+  "pagos que vienen",
+  "me cobran",
+  "se cobra",
+  "cobro automatico",
+  "debito automatico",
+  "domiciliado",
+];
+
+/**
+ * Senales de cuenta: donde vive el dinero. Es la palabra mas ambigua de las
+ * cinco —"de que cuenta sale", "en mi cuenta BCP"— y por eso depende por
+ * completo de `esObjetivo`: solo cuenta cuando no viene detras de una
+ * preposicion de referencia.
+ */
+const SENALES_DE_CUENTA = [
+  "cuenta",
+  "cuenta bancaria",
+  "billetera",
+  "banco nuevo",
+];
+
 /** Verbos de escritura: sin uno de estos, el turno no pide crear nada. */
 const SENALES_DE_ESCRITURA = [
   "crea",
@@ -119,6 +155,33 @@ const SENALES_DE_ESCRITURA = [
   "guarda",
   "guardar",
   "presupuestar",
+  // Ciclo de vida: cerrar, pausar y reanudar tambien son escrituras, y las
+  // primeras son destructivas (`RUL-ESTR-05`).
+  "archiva",
+  "archivar",
+  "cierra",
+  "cerrar",
+  "elimina",
+  "eliminar",
+  "borra",
+  "borrar",
+  "cancela",
+  "cancelar",
+  "da de baja",
+  "dar de baja",
+  "quita",
+  "quitar",
+  "pausa",
+  "pausar",
+  "congela",
+  "congelar",
+  "detener",
+  "reanuda",
+  "reanudar",
+  "retoma",
+  "retomar",
+  "activa",
+  "activar",
 ];
 
 /**
@@ -134,24 +197,37 @@ export function readStructureIntent(text: string): StructureIntentReading {
     contiene(normalizado, senal),
   );
 
-  const evidenciaCaja = coincidencias(normalizado, SENALES_DE_CAJA);
-  const evidenciaPresupuesto = coincidencias(
-    normalizado,
-    SENALES_DE_PRESUPUESTO,
-  );
-  const evidenciaMeta = coincidencias(normalizado, SENALES_DE_META);
+  const evidenciaPorEntidad: Array<{
+    entity: StructureEntity;
+    evidencia: string[];
+  }> = [
+    { entity: "caja", evidencia: coincidencias(normalizado, SENALES_DE_CAJA) },
+    { entity: "meta", evidencia: coincidencias(normalizado, SENALES_DE_META) },
+    {
+      entity: "presupuesto",
+      evidencia: coincidencias(normalizado, SENALES_DE_PRESUPUESTO),
+    },
+    {
+      entity: "recurrente",
+      evidencia: coincidencias(normalizado, SENALES_DE_RECURRENTE),
+    },
+    {
+      entity: "cuenta",
+      evidencia: coincidencias(normalizado, SENALES_DE_CUENTA),
+    },
+  ];
 
   // Nombrar una entidad no es pedirla: en "crea una caja para esa meta" la
   // caja es lo que se crea y la meta es a lo que apunta. Antes bastaba con
   // que las dos palabras aparecieran para declarar ambigüedad, asi que la
   // frase mas natural para vincular una caja a una meta preguntaba en vez de
   // hacer, y repreguntaba igual porque la respuesta volvia a nombrar las dos.
-  const candidatos: StructureEntity[] = [];
-  if (esObjetivo(normalizado, evidenciaCaja)) candidatos.push("caja");
-  if (esObjetivo(normalizado, evidenciaMeta)) candidatos.push("meta");
-  if (esObjetivo(normalizado, evidenciaPresupuesto)) {
-    candidatos.push("presupuesto");
-  }
+  //
+  // La misma regla es la que sostiene a "cuenta": "crea una caja en mi cuenta
+  // BCP" habla de una caja, y la cuenta solo dice donde.
+  const candidatos = evidenciaPorEntidad
+    .filter((item) => esObjetivo(normalizado, item.evidencia))
+    .map((item) => item.entity);
 
   if (candidatos.length === 0) {
     // Sin ninguna senal de dominio no hay nada que clasificar aqui, aunque el
@@ -159,11 +235,7 @@ export function readStructureIntent(text: string): StructureIntentReading {
     return { kind: "none" };
   }
 
-  const evidencia = [
-    ...evidenciaCaja,
-    ...evidenciaMeta,
-    ...evidenciaPresupuesto,
-  ];
+  const evidencia = evidenciaPorEntidad.flatMap((item) => item.evidencia);
 
   if (!pideEscribir) {
     // Nombra la entidad pero no pide escribir: probablemente esta preguntando.
@@ -200,27 +272,61 @@ export function structureProposalConflictsWithIntent(params: {
   return reading.entity !== proposedEntity;
 }
 
+/**
+ * Que hace cada entidad, en una linea. Es lo que separa las dos confusiones
+ * caras: creer que se aparto dinero cuando no, y creer que no cuando si.
+ */
+const QUE_ES_CADA_UNA: Record<StructureEntity, string> = {
+  caja: "una caja aparta dinero de verdad y deja de estar disponible",
+  meta: "una meta es un objetivo con monto y fecha para ir siguiéndolo",
+  presupuesto: "un presupuesto solo es una referencia de gasto y no toca tu saldo",
+  recurrente: "un pago recurrente es algo que esperas pagar cada cierto tiempo, y tampoco aparta nada",
+  cuenta: "una cuenta es dónde vive tu dinero",
+};
+
 /** Pregunta que se le hace al usuario cuando la lectura no es unica. */
 export function composeStructureAmbiguityQuestion(
   candidates: StructureEntity[],
 ): string {
-  const tieneCaja = candidates.includes("caja");
-  const tienePresupuesto = candidates.includes("presupuesto");
-  const tieneMeta = candidates.includes("meta");
+  const unicos = [...new Set(candidates)];
+  const tieneCaja = unicos.includes("caja");
+  const tienePresupuesto = unicos.includes("presupuesto");
+  const tieneMeta = unicos.includes("meta");
 
-  if (tieneCaja && tienePresupuesto) {
-    return "Antes de crear nada: ¿quieres apartar ese dinero de verdad (una caja, deja de estar disponible) o solo ponerte una referencia de cuánto gastar (un presupuesto, no toca tu saldo)?";
+  if (unicos.length === 2) {
+    if (tieneCaja && tienePresupuesto) {
+      return "Antes de crear nada: ¿quieres apartar ese dinero de verdad (una caja, deja de estar disponible) o solo ponerte una referencia de cuánto gastar (un presupuesto, no toca tu saldo)?";
+    }
+
+    if (tieneCaja && tieneMeta) {
+      return "¿Quieres apartar el dinero ya (una caja) o registrar el objetivo con su fecha para ir siguiéndolo (una meta)?";
+    }
+
+    if (tienePresupuesto && tieneMeta) {
+      return "¿Es un límite de gasto para el periodo (un presupuesto) o un objetivo de ahorro con fecha (una meta)?";
+    }
   }
 
-  if (tieneCaja && tieneMeta) {
-    return "¿Quieres apartar el dinero ya (una caja) o registrar el objetivo con su fecha para ir siguiéndolo (una meta)?";
+  if (unicos.length === 0) {
+    return "¿Te refieres a una caja, a una meta o a un presupuesto? Una caja aparta dinero, un presupuesto solo es una referencia y una meta es un objetivo con fecha.";
   }
 
-  if (tienePresupuesto && tieneMeta) {
-    return "¿Es un límite de gasto para el periodo (un presupuesto) o un objetivo de ahorro con fecha (una meta)?";
-  }
+  // Cualquier otra combinacion se explica enumerando: preguntar de mas es mas
+  // barato que escribir la entidad equivocada (`RUL-PRES-01`).
+  const explicaciones = unicos.map((entity) => QUE_ES_CADA_UNA[entity]);
+  return `¿Te refieres a ${enumerar(unicos.map((entity) => articuloIndefinido(entity)))}? Recuerda que ${enumerar(explicaciones)}.`;
+}
 
-  return "¿Te refieres a una caja, a una meta o a un presupuesto? Una caja aparta dinero, un presupuesto solo es una referencia y una meta es un objetivo con fecha.";
+function articuloIndefinido(entity: StructureEntity): string {
+  if (entity === "presupuesto") return "un presupuesto";
+  if (entity === "recurrente") return "un pago recurrente";
+  if (entity === "cuenta") return "una cuenta";
+  return entity === "caja" ? "una caja" : "una meta";
+}
+
+function enumerar(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} o ${items[items.length - 1]}`;
 }
 
 function normalizar(value: string): string {
@@ -265,6 +371,14 @@ const PREPOSICIONES_DE_REFERENCIA = new Set([
   "vinculada",
   "vinculado",
   "junto",
+  // `en` y `con` entran con las cuentas: "crea una caja en mi cuenta BCP"
+  // habla de una caja, y sin ellas la palabra `cuenta` —la mas comun de las
+  // cinco— volveria ambigua la frase mas natural para crear una caja.
+  // `a` queda fuera a proposito: "voy a crear una caja" la dejaria sin
+  // candidato ninguno.
+  "en",
+  "con",
+  "desde",
 ]);
 
 /**

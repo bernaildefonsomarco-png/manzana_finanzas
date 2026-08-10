@@ -39,4 +39,29 @@ describe("AC-ASI-17: en solo_lectura no se emite la tarjeta, pero tampoco se cal
 
     expect(resultado.blocks).toEqual([TEXTO]);
   });
+
+  // El ciclo de vida trae un camino nuevo con el mismo riesgo: una propuesta de
+  // cierre tambien es un bloque `propuesta`, tambien es lo unico que trae el
+  // plan, y en solo_lectura tambien se filtra. La garantia es la misma y aqui
+  // queda fijada para que no se pierda al crecer el dominio.
+  it("una propuesta de cierre tampoco puede dejar el turno mudo", () => {
+    const cierre: Block = {
+      kind: "propuesta",
+      text: "Ojo con esto: al cerrar la caja, el dinero vuelve a tu saldo libre. ¿Cierro la caja Viaje?",
+      commandId: "estr:def",
+      options: [
+        { id: "estr:def", label: "Sí, archívalo" },
+        { id: "estr:cancel", label: "No, cancelar" },
+      ],
+    };
+
+    const resultado = withoutActionBlocksForTests(plan([cierre]));
+
+    expect(resultado.blocks).toHaveLength(1);
+    expect(resultado.blocks[0]).toMatchObject({ kind: "limite" });
+    // Y no se cuela media consecuencia sin la accion que la acompaña.
+    const [bloque] = resultado.blocks;
+    if (!("text" in bloque)) throw new Error("se esperaba un bloque con texto");
+    expect(bloque.text).not.toContain("Cierro la caja");
+  });
 });

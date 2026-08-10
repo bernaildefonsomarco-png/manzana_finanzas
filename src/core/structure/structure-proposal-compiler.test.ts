@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { StructureProposalRequest } from "@/agents/conversational-executive-agent/types";
 import { compileStructureProposal } from "./structure-proposal-compiler";
+import { StructureProposalSchema } from "./structure-proposal";
 
 const NOW = "2026-08-09T10:00:00.000-05:00";
 const ACCOUNT_ID = "00000000-0000-4000-8000-000000000001";
@@ -27,6 +28,12 @@ function request(
     category_id: null,
     period_kind: null,
     budget_kind: null,
+    frequency: null,
+    next_expected_date: null,
+    amount_variability: null,
+    currency: null,
+    account_type: null,
+    institution: null,
     ...overrides,
   };
 }
@@ -233,5 +240,263 @@ describe("modificar estructura existente", () => {
       box_id: BOX_ID,
       name: "Viaje a Cusco",
     });
+  });
+});
+
+describe("pagos recurrentes", () => {
+  it("un pago fijo se compila con su monto, frecuencia y próxima fecha", () => {
+    const compiled = compileStructureProposal({
+      request: request({
+        entity: "recurrente",
+        name: "Netflix",
+        amount: 44.9,
+        account_id: null,
+        box_type: null,
+        frequency: "monthly",
+        next_expected_date: "2026-09-05",
+        amount_variability: "fixed",
+        summary: "¿Anoto Netflix de S/44.90 cada mes, el 5?",
+      }),
+      userText: "agrega la suscripcion de Netflix, me cobran 44.90 el 5",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("proposal");
+    if (compiled.kind !== "proposal") return;
+    expect(compiled.proposal.command_type).toBe("CreateRecurringCommand");
+    expect(compiled.proposal.payload).toMatchObject({
+      name: "Netflix",
+      expected_amount: 44.9,
+      amount_variability: "fixed",
+      frequency: "monthly",
+      next_expected_date: "2026-09-05",
+    });
+  });
+
+  it("sin monto se anota como variable, no se inventa un importe", () => {
+    const compiled = compileStructureProposal({
+      request: request({
+        entity: "recurrente",
+        name: "Luz",
+        amount: null,
+        account_id: null,
+        box_type: null,
+        next_expected_date: "2026-09-10",
+        summary: "¿Anoto el recibo de luz para el 10?",
+      }),
+      userText: "agrega el recibo de luz, me cobran cada mes",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("proposal");
+    if (compiled.kind !== "proposal") return;
+    expect(compiled.proposal.payload).toMatchObject({
+      expected_amount: null,
+      amount_variability: "variable",
+    });
+  });
+
+  it("sin próxima fecha pregunta en vez de proponer", () => {
+    const compiled = compileStructureProposal({
+      request: request({
+        entity: "recurrente",
+        name: "Gimnasio",
+        amount: 120,
+        account_id: null,
+        box_type: null,
+        next_expected_date: null,
+        summary: "¿Anoto la mensualidad del gimnasio?",
+      }),
+      userText: "agrega la mensualidad del gimnasio, son 120",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("needs_clarification");
+    if (compiled.kind !== "needs_clarification") return;
+    expect(compiled.question).toContain("cuándo");
+  });
+});
+
+describe("cuentas", () => {
+  it("una cuenta se compila con su tipo, moneda y saldo declarado", () => {
+    const compiled = compileStructureProposal({
+      request: request({
+        entity: "cuenta",
+        name: "BCP Ahorros",
+        amount: 1200,
+        account_id: null,
+        box_type: null,
+        account_type: "banco",
+        institution: "BCP",
+        currency: "PEN",
+        summary: "¿Creo la cuenta BCP Ahorros con S/1200?",
+      }),
+      userText: "crea una cuenta nueva de BCP con 1200",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("proposal");
+    if (compiled.kind !== "proposal") return;
+    expect(compiled.proposal.command_type).toBe("CreateAccountCommand");
+    expect(compiled.proposal.payload).toMatchObject({
+      name: "BCP Ahorros",
+      type: "banco",
+      institution: "BCP",
+      currency: "PEN",
+      initial_balance: 1200,
+    });
+  });
+});
+
+describe("RUL-ESTR-05: cerrar algo se confirma diciendo qué se pierde", () => {
+  const CAJA_ID = "00000000-0000-4000-8000-000000000009";
+
+  function archiveRequest(entity: "caja" | "cuenta" | "recurrente") {
+    return request({
+      intent: "archive",
+      entity,
+      target_id: CAJA_ID,
+      name: null,
+      amount: null,
+      account_id: null,
+      box_type: null,
+      confidence: 0.95,
+      summary: "¿Cierro la caja Viaje?",
+    });
+  }
+
+  it("el resumen lleva la consecuencia aunque el modelo no la escriba", () => {
+    const compiled = compileStructureProposal({
+      request: archiveRequest("caja"),
+      userText: "archiva la caja del viaje",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("proposal");
+    if (compiled.kind !== "proposal") return;
+    // Lo que se pierde no lo redacta el modelo: lo pone el núcleo, siempre.
+    expect(compiled.proposal.summary).toContain("vuelve a tu saldo libre");
+    expect(compiled.proposal.summary).toContain("¿Cierro la caja Viaje?");
+    expect(compiled.proposal.operation).toBe("archive");
+    expect(compiled.proposal.command_type).toBe("ArchiveBoxCommand");
+  });
+
+  it("el botón nombra que se está cerrando, no un «sí» genérico", () => {
+    const compiled = compileStructureProposal({
+      request: archiveRequest("cuenta"),
+      userText: "archiva esa cuenta",
+      now: NOW,
+    });
+
+    if (compiled.kind !== "proposal") throw new Error("se esperaba borrador");
+    expect(compiled.proposal.confirm_label).toBe("Sí, archívalo");
+    expect(compiled.proposal.summary).toContain("sus cajas se archivan también");
+  });
+
+  it("cancelar un recurrente avisa de que se deja de esperar el cobro", () => {
+    const compiled = compileStructureProposal({
+      request: archiveRequest("recurrente"),
+      userText: "cancela la suscripcion de Netflix",
+      now: NOW,
+    });
+
+    if (compiled.kind !== "proposal") throw new Error("se esperaba borrador");
+    expect(compiled.proposal.summary).toContain("dejo de avisarte");
+  });
+
+  it.each(["caja", "cuenta", "recurrente"] as const)(
+    "el borrador de cierre de %s sigue validando al leerlo del hilo",
+    (entity) => {
+      // El borrador se guarda en el working set y se vuelve a validar con
+      // `StructureProposalSchema` al confirmarlo. Con el límite de 320 que
+      // tenía `summary`, la consecuencia determinística más la frase del
+      // modelo lo pasaban: el borrador se guardaba, y el "sí" del turno
+      // siguiente moría como `unknown_proposal` sin decir nada.
+      const compiled = compileStructureProposal({
+        request: {
+          ...archiveRequest(entity),
+          summary: "A".repeat(280),
+        },
+        userText: "archiva eso",
+        now: NOW,
+      });
+
+      if (compiled.kind !== "proposal") throw new Error("se esperaba borrador");
+      expect(
+        StructureProposalSchema.safeParse(compiled.proposal).success,
+      ).toBe(true);
+    },
+  );
+
+  it("cerrar exige más confianza que crear", () => {
+    // 0.7 alcanzaba para crear; para cerrar, no. Crear de más se deshace
+    // cerrando; cerrar de más puede costar dinero movido.
+    const compiled = compileStructureProposal({
+      request: { ...archiveRequest("caja"), confidence: 0.7 },
+      userText: "archiva la caja del viaje",
+      now: NOW,
+    });
+    expect(compiled.kind).toBe("needs_clarification");
+  });
+
+  it("sin saber qué se cierra, se pregunta antes de tocar nada", () => {
+    const compiled = compileStructureProposal({
+      request: { ...archiveRequest("caja"), target_id: null },
+      userText: "archiva esa caja",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("needs_clarification");
+    if (compiled.kind !== "needs_clarification") return;
+    expect(compiled.question).toContain("qué pasa con lo que tiene");
+  });
+});
+
+describe("pausar y reanudar", () => {
+  const META_ID = "00000000-0000-4000-8000-00000000000a";
+
+  it("una meta se pausa con su id y nada más", () => {
+    const compiled = compileStructureProposal({
+      request: request({
+        intent: "pause",
+        entity: "meta",
+        target_id: META_ID,
+        name: "Carro",
+        amount: 9999,
+        account_id: null,
+        box_type: null,
+        summary: "¿Pauso la meta del carro?",
+      }),
+      userText: "pausa la meta del carro",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("proposal");
+    if (compiled.kind !== "proposal") return;
+    expect(compiled.proposal.command_type).toBe("PauseGoalCommand");
+    // Un pausado no cambia campos de paso: el resto de lo que el modelo
+    // rellenó se descarta.
+    expect(compiled.proposal.payload).toEqual({ goal_id: META_ID });
+  });
+
+  it("una caja no se pausa: se dice, no se traduce a otra cosa", () => {
+    const compiled = compileStructureProposal({
+      request: request({
+        intent: "pause",
+        entity: "caja",
+        target_id: BOX_ID,
+        name: null,
+        amount: null,
+        account_id: null,
+        box_type: null,
+        summary: "¿Pauso esa caja?",
+      }),
+      userText: "pausa esa caja",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("needs_clarification");
+    if (compiled.kind !== "needs_clarification") return;
+    expect(compiled.question).toContain("no se puede pausar");
   });
 });
