@@ -4233,6 +4233,26 @@ export type Database = {
         }
         Returns: Json
       }
+      commit_budget_operation_for_user: {
+        Args: {
+          p_budget_id: string
+          p_idempotency_key: string
+          p_operation: string
+          p_payload: Json
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      commit_goal_operation_for_user: {
+        Args: {
+          p_goal_id: string
+          p_idempotency_key: string
+          p_operation: string
+          p_payload: Json
+          p_user_id: string
+        }
+        Returns: Json
+      }
       commit_classification_bulk: {
         Args: {
           p_category_id: string

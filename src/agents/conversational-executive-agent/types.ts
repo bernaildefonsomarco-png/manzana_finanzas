@@ -75,6 +75,48 @@ export const CorrectionProposalSchema =
   SemanticCorrectionInterpretationSchema;
 export type CorrectionProposal = z.infer<typeof CorrectionProposalSchema>;
 
+/**
+ * `RUL-ESTR-01`: modulo por el que el ejecutivo propone crear o modificar una
+ * caja, una meta o un presupuesto.
+ *
+ * Es deliberadamente plano y no un comando: el modelo describe lo que entendio
+ * y `compileStructureProposal` lo convierte en un borrador tipado, aplicando
+ * `RUL-PRES-01` y los campos obligatorios de cada entidad. El modelo no emite
+ * comandos, IDs de idempotencia ni confirmaciones, igual que en
+ * `correction_proposal`.
+ */
+export const StructureProposalRequestSchema = z.object({
+  intent: z.enum(["none", "create", "update"]),
+  entity: z.enum(["caja", "meta", "presupuesto"]).nullable(),
+  /** Lo que se le va a preguntar al usuario, en su idioma y con sus datos. */
+  summary: z.string().trim().max(280),
+  confirm_label: z.string().trim().max(40),
+  confidence: z.number().min(0).max(1),
+  /** Dudas que impiden proponer. Con una sola, el turno pregunta. */
+  ambiguities: z.array(z.string().trim().min(1).max(240)).max(4),
+  /** ID de la caja, meta o presupuesto a modificar. Nulo al crear. */
+  target_id: z.string().nullable(),
+  name: z.string().trim().max(80).nullable(),
+  /**
+   * Monto principal: lo que se aparta en una caja, el objetivo de una meta o
+   * el limite de un presupuesto.
+   */
+  amount: z.number().nullable(),
+  target_amount: z.number().nullable(),
+  target_date: z.string().nullable(),
+  account_id: z.string().nullable(),
+  box_id: z.string().nullable(),
+  box_type: z.enum(["compromiso", "objetivo", "emergencia"]).nullable(),
+  category_id: z.string().nullable(),
+  period_kind: z.enum(["semanal", "quincenal", "mensual"]).nullable(),
+  budget_kind: z
+    .enum(["presupuesto", "limite_blando", "limite_duro"])
+    .nullable(),
+});
+export type StructureProposalRequest = z.infer<
+  typeof StructureProposalRequestSchema
+>;
+
 export const GroundedClaimSchema = z.object({
   claim_id: z.string().trim().min(1).max(80),
   text: z.string().trim().min(1).max(320),
@@ -127,6 +169,9 @@ export const ConversationalExecutiveOutputSchema = z.object({
   tool_requests: z.array(ToolRequestSchema).max(8),
   financial_proposals: FinancialProposalSchema,
   correction_proposal: CorrectionProposalSchema,
+  // Nullable con default para que un estado o fixture anterior a `RUL-ESTR-01`
+  // siga validando: la ausencia de propuesta de estructura es "no hay".
+  structure_proposal: StructureProposalRequestSchema.nullable().default(null),
   response_composition: ResponseCompositionSchema,
   orchestration_plan: OrchestrationPlanSchema,
   findings: z.array(FindingSchema).max(1).default([]),

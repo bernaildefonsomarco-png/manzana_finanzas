@@ -423,6 +423,75 @@ export async function commitGoalOperation(
   };
 }
 
+/**
+ * Variante para el motor conversacional (`RUL-ESTR-04`).
+ *
+ * `commit_budget_operation` resuelve el dueno con `auth.uid()`, asi que solo
+ * sirve cuando la peticion trae la sesion del usuario. El orquestador —los dos
+ * canales— corre con el cliente de servicio y no tiene JWT: para el, la
+ * migracion `071` expone `commit_budget_operation_for_user`, que recibe el
+ * `user_id` explicito, esta concedida solo a `service_role` y delega en la
+ * misma funcion de siempre. El aislamiento por usuario no se debilita: pasa de
+ * venir del token a venir de un parametro obligatorio que el motor toma del
+ * evento externo ya autenticado, igual que hace `core_commit_movement_create`.
+ */
+export async function commitBudgetOperationForUser(
+  client: Client,
+  input: {
+    userId: string;
+    operation: "create" | "update" | "archive" | "pause" | "resume" | "restore";
+    budgetId: string | null;
+    payload: Record<string, unknown>;
+    idempotencyKey: string;
+    traceId: string;
+  }
+): Promise<BudgetOperationResult> {
+  const { data, error } = await client.rpc("commit_budget_operation_for_user", {
+    p_user_id: input.userId,
+    p_operation: input.operation,
+    p_budget_id: input.budgetId as string,
+    p_payload: toJson({ ...input.payload, trace_id: input.traceId }),
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) throwBudgetRpcError(error);
+  return normalizeBudgetOperationResult(data);
+}
+
+/** Hermana de `commitBudgetOperationForUser` para metas (`RUL-ESTR-04`). */
+export async function commitGoalOperationForUser(
+  client: Client,
+  input: {
+    userId: string;
+    operation:
+      | "create"
+      | "update"
+      | "archive"
+      | "pause"
+      | "resume"
+      | "restore"
+      | "link_box"
+      | "unlink_box";
+    goalId: string | null;
+    payload: Record<string, unknown>;
+    idempotencyKey: string;
+    traceId: string;
+  }
+): Promise<GoalOperationResult> {
+  const { data, error } = await client.rpc("commit_goal_operation_for_user", {
+    p_user_id: input.userId,
+    p_operation: input.operation,
+    p_goal_id: input.goalId as string,
+    p_payload: toJson({ ...input.payload, trace_id: input.traceId }),
+    p_idempotency_key: input.idempotencyKey,
+  });
+  if (error) throwBudgetRpcError(error);
+  const record = asRecord(data);
+  return {
+    goal: (record.goal ?? record) as GoalRecord,
+    idempotent: record.idempotent === true,
+  };
+}
+
 export async function resolveBudgetSuggestion(
   client: Client,
   _userId: string,

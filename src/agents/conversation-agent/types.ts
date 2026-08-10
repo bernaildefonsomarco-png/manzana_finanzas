@@ -305,6 +305,12 @@ export const ConversationWorkingSetSchema = z.object({
         "correction_proposed",
         "correction_applied",
         "correction_cancelled",
+        // `RUL-ESTR-03`: crear o modificar una caja, una meta o un presupuesto
+        // conversando pasa por el mismo ciclo propuesta -> confirmacion que una
+        // correccion, con su sello de hilo y su vigencia.
+        "structure_proposed",
+        "structure_applied",
+        "structure_cancelled",
         "query_answered",
         "clarification_requested",
       ]),
@@ -338,6 +344,21 @@ export const ConversationWorkingSetSchema = z.object({
     null,
   ),
   focus_set: ConversationFocusSetSchema.nullable().optional(),
+  /**
+   * `RUL-ESTR-03`: borrador tipado de la caja, meta o presupuesto que espera
+   * confirmacion. Se guarda sin forma fuerte a proposito —lo valida
+   * `StructureProposalSchema` al usarlo— para que un estado escrito por una
+   * version anterior no rompa la lectura del hilo entero.
+   *
+   * Vive aqui y no en el `id` del boton porque una creacion no cabe en un
+   * payload de boton, y porque asi el payload que se ejecuta sale del estado
+   * del propio usuario y no de lo que devuelva el canal.
+   */
+  structure_proposal: z
+    .record(z.string(), z.unknown())
+    .nullable()
+    .default(null)
+    .optional(),
   conversation_style: ConversationStyleProfileSchema.nullable().default(null),
   updated_at: z.string(),
 });

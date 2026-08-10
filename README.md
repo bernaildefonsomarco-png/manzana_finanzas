@@ -47,6 +47,7 @@ src/
     debts/          # Debt Engine: creación, pagos, cuotas
     recurring/       # Recurring Engine: detección y ocurrencias
     budgets/        # Presupuestos/metas: periodos, avance, umbrales, rollover y ritmo
+    structure/      # Escritura conversacional de cajas, metas y presupuestos (RUL-ESTR-01): comandos tipados, propuesta confirmable y ejecutor propio
     projections/    # Proyección y simulación deterministas, mediana/IQR en Lima
     insights/       # Insight Engine
     memory/         # Operaciones y resolución gobernable de Memoria

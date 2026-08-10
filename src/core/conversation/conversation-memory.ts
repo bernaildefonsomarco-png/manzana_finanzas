@@ -163,6 +163,11 @@ export async function rememberConversationOutcome(input: {
   commandIds?: string[];
   unresolvedSlots?: string[];
   continuityHint?: string | null;
+  /**
+   * `RUL-ESTR-03`: borrador de caja, meta o presupuesto que queda esperando
+   * confirmacion. Pasar `null` limpia el que hubiera.
+   */
+  structureProposal?: Record<string, unknown> | null;
   previous?: ConversationWorkingSet | null;
   now?: string;
 }) {
@@ -193,6 +198,7 @@ export async function rememberConversationOutcome(input: {
     actionStatus: input.actionStatus,
     unresolvedSlots: input.unresolvedSlots ?? [],
     focusSet,
+    structureProposal: input.structureProposal ?? null,
     now,
   });
 
@@ -303,7 +309,8 @@ export function withExpiredCorrectionProposal(
   if (
     !workingSet ||
     !lastAction ||
-    lastAction.kind !== "correction_proposed" ||
+    (lastAction.kind !== "correction_proposed" &&
+      lastAction.kind !== "structure_proposed") ||
     lastAction.status !== "awaiting_confirmation"
   ) {
     return workingSet;
@@ -319,6 +326,9 @@ export function withExpiredCorrectionProposal(
       command_ids: [],
       confirmation_expires_at: null,
     },
+    // Un borrador de estructura caducado tampoco puede quedar accesible: sin
+    // el, `resolveAwaitingStructure` ya no tiene payload que ejecutar.
+    structure_proposal: null,
     updated_at: now,
   };
 }
@@ -383,6 +393,8 @@ function buildConversationWorkingSet(input: {
   unresolvedSlots: string[];
   activeReadOperation?: ConversationWorkingSet["active_read_operation"];
   focusSet?: ConversationFocusSet | null;
+  /** Borrador de estructura vivo tras este turno (`RUL-ESTR-03`). */
+  structureProposal?: Record<string, unknown> | null;
   now?: string;
 }): ConversationWorkingSet {
   const now = input.now ?? new Date().toISOString();
@@ -424,6 +436,10 @@ function buildConversationWorkingSet(input: {
       input.previous?.active_read_operation ??
       null,
     focus_set: input.focusSet ?? input.previous?.focus_set ?? null,
+    // El borrador de estructura no se arrastra solo: cada turno declara si
+    // sigue vivo. Asi un turno que ya lo ejecuto o lo cancelo lo deja limpio y
+    // un "si" posterior no encuentra nada que disparar (`RUL-ESTR-03`).
+    structure_proposal: input.structureProposal ?? null,
     conversation_style: input.previous?.conversation_style ?? null,
     updated_at: now,
   };

@@ -13,6 +13,13 @@ import type {
 import type { CorrectionResolutionResult } from "@/core/orchestrator/correction-resolution";
 import type { CaptureDraftResolutionResult } from "@/core/orchestrator/capture-draft-memory";
 import type { PendingResolutionResult } from "@/core/orchestrator/pending-resolution-from-text";
+import {
+  buildStructureCommandText,
+  entityLabel,
+  STRUCTURE_CANCEL_COMMAND_ID,
+  type StructureProposal,
+} from "@/core/structure/structure-proposal";
+import type { StructureResolutionResult } from "@/core/structure/structure-resolution";
 import { buildDashboardDeepLink } from "@/shared/app-links";
 import type { PendingItem } from "@/shared/types/domain";
 
@@ -28,6 +35,11 @@ export type TurnResponsePlannerInput = {
   captureDraftResolution?: CaptureDraftResolutionResult;
   correctionProposal?: CorrectionAgentOutput;
   correctionResolution?: CorrectionResolutionResult;
+  /** Borrador de caja, meta o presupuesto que este turno propone (`RUL-ESTR-03`). */
+  structureProposal?: StructureProposal;
+  /** Lectura ambigua caja/meta/presupuesto: se pregunta, no se escribe (`RUL-PRES-01`). */
+  structureAmbiguityQuestion?: string;
+  structureResolution?: StructureResolutionResult;
   conversationAnswer?: ConversationalAnswer;
   supplementalConversationAnswer?: ConversationalAnswer;
   conversationTurnState?: ConversationTurnState;
@@ -138,6 +150,11 @@ type ProductResponseReason =
   | "correction_needs_clarification"
   | "blocked_financial_action"
   | "capture_needs_clarification"
+  | "structure_needs_confirmation"
+  | "structure_needs_clarification"
+  | "structure_applied"
+  | "structure_cancelled"
+  | "structure_failed"
   | "ready_for_core_not_executed";
 
 type ProductResponse = {
@@ -217,10 +234,121 @@ function appendSupplementalAnswer(
   return [{ ...first, text: `${first.text}\n\n${supplemental.response_text}` }, ...rest];
 }
 
+/**
+ * `RUL-ESTR-03` / `RUL-PRES-01`: todo lo que este turno puede decir sobre
+ * crear o cambiar una caja, una meta o un presupuesto.
+ *
+ * El orden importa: primero lo que ya paso (aplicado, cancelado, fallido),
+ * luego la ambiguedad —que pregunta en vez de escribir— y por ultimo la
+ * propuesta que espera confirmacion. Nunca se propone y se ejecuta en el mismo
+ * turno.
+ */
+function buildStructureResponse(
+  input: TurnResponsePlannerInput,
+): ProductResponse | null {
+  const resolution = input.structureResolution;
+
+  if (resolution?.kind === "applied") {
+    return {
+      reason: "structure_applied",
+      intent: "direct_response",
+      shape: "texto",
+      text: composeStructureAppliedText(resolution),
+    };
+  }
+
+  if (resolution?.kind === "cancelled") {
+    return {
+      reason: "structure_cancelled",
+      intent: "direct_response",
+      shape: "texto",
+      text: "Listo, no creé nada.",
+    };
+  }
+
+  if (resolution?.kind === "failed") {
+    return {
+      reason: "structure_failed",
+      intent: "direct_response",
+      shape: "texto",
+      text: composeStructureFailedText(resolution),
+    };
+  }
+
+  // Ambiguo entre caja, meta y presupuesto: preguntar de mas es mas barato que
+  // crear algo que el usuario no pidio (`RUL-PRES-01`).
+  if (input.structureAmbiguityQuestion) {
+    return {
+      reason: "structure_needs_clarification",
+      intent: "direct_response",
+      shape: "texto",
+      text: input.structureAmbiguityQuestion,
+    };
+  }
+
+  const proposal = input.structureProposal;
+  if (proposal) {
+    const commandId = buildStructureCommandText(proposal.proposal_id);
+    return {
+      reason: "structure_needs_confirmation",
+      intent: "direct_response",
+      shape: "propuesta",
+      text: proposal.summary,
+      proposalCommandId: commandId,
+      options: [
+        { id: commandId, label: proposal.confirm_label },
+        { id: STRUCTURE_CANCEL_COMMAND_ID, label: "No, cancelar" },
+      ],
+    };
+  }
+
+  return null;
+}
+
+function composeStructureAppliedText(
+  resolution: Extract<StructureResolutionResult, { kind: "applied" }>,
+): string {
+  if (resolution.idempotent) {
+    return `Eso ya estaba hecho: ${resolution.summary} sigue como estaba. No lo dupliqué.`;
+  }
+
+  if (resolution.operation === "update") {
+    return `Listo. Actualicé ${resolution.summary}.`;
+  }
+
+  // `RUL-PRES-01`: un presupuesto se nombra como referencia, nunca como dinero
+  // apartado, para que nadie crea que le bloqueó saldo.
+  if (resolution.entity === "presupuesto") {
+    return `Listo. Creé ${resolution.summary}. Es una referencia: no aparta ni bloquea tu dinero.`;
+  }
+
+  if (resolution.entity === "caja") {
+    return `Listo. Creé ${resolution.summary}. Ese dinero deja de contar como libre.`;
+  }
+
+  return `Listo. Creé ${resolution.summary}.`;
+}
+
+function composeStructureFailedText(
+  resolution: Extract<StructureResolutionResult, { kind: "failed" }>,
+): string {
+  if (resolution.reason === "proposal_lapsed") {
+    return "Esa propuesta ya venció, así que no la ejecuté. Si todavía la quieres, dímelo otra vez y la vuelvo a armar.";
+  }
+
+  if (resolution.detail) return resolution.detail;
+
+  const que = resolution.entity ? entityLabel(resolution.entity) : "eso";
+  return `No pude crear esa ${que} y no cambié nada. Puedes intentarlo otra vez o hacerlo desde la pantalla.`;
+}
+
 function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse | null {
   const execution = input.financialActionExecution;
   const pendingResolution = input.pendingResolution;
   const captureDraftResolution = input.captureDraftResolution;
+  const structureResponse = buildStructureResponse(input);
+  if (structureResponse) return structureResponse;
+
   const correctionResolution = input.correctionResolution;
   if (correctionResolution?.kind === "applied") {
     const isDeleteCorrection = correctionResolution.command.kind === "delete";

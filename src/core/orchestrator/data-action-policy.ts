@@ -893,8 +893,12 @@ function resolveAccounts(
 }
 
 // domain.ts nombra esta variante "dashboard_manual", no "dashboard": el
-// unico punto donde los dos vocabularios se traducen.
-function toMovementSource(channel: Channel): "whatsapp" | "dashboard_manual" {
+// unico punto donde los dos vocabularios se traducen. Exportado para que el
+// resto del nucleo pueda sellar el origen de un movimiento sin nombrar ningun
+// canal (`AC-INV-04`).
+export function toMovementSource(
+  channel: Channel,
+): "whatsapp" | "dashboard_manual" {
   return channel === "whatsapp" ? "whatsapp" : "dashboard_manual";
 }
 

@@ -9,6 +9,7 @@ import {
   type ConversationReferencedMovement,
   type ConversationStyleProfile,
   type ConversationTurnState,
+  type ConversationWorkingSet,
 } from "@/agents/conversation-agent";
 import { OrchestrationPlanningAgent } from "@/agents/orchestration-planning-agent/orchestration-planning-agent";
 import { buildSafePlanningContext } from "@/agents/orchestration-planning-agent/types";
@@ -87,7 +88,10 @@ import {
   dataAgentResultFromExecutive,
 } from "@/core/conversation/executive-adapters";
 import { readPersistentConversationStyle } from "@/core/conversation/conversation-style-preferences";
-import { getActiveConversationMemoryState } from "@/data/repositories/conversation-memory.repository";
+import {
+  getActiveConversationMemoryState,
+  type ConversationMemoryState,
+} from "@/data/repositories/conversation-memory.repository";
 import {
   clearCaptureDraftMemory,
   getCaptureDraftMissingFacts,
@@ -108,7 +112,20 @@ import {
   createPendingItemsForDataActionPlan,
   type DataActionPendingCreationResult,
 } from "./data-action-pending";
-import { planDataAgentFinancialActions } from "./data-action-policy";
+import {
+  planDataAgentFinancialActions,
+  toMovementSource,
+} from "./data-action-policy";
+import {
+  buildStructureCommandText,
+  compileStructureProposal,
+  isStructureCommandText,
+  lapsedStructureResolution,
+  maybeResolveStructure,
+  readStoredStructureProposal,
+  resolveAwaitingStructure,
+  type StructureResolutionResult,
+} from "@/core/structure";
 import {
   applyDedupPreflight,
   assessRiskSignals,
@@ -180,6 +197,12 @@ export type TurnOrchestrationResult = {
     // `23` §5b.1 / `AC-RT-13`: llego una confirmacion para una propuesta que ya
     // habia caducado (vencida, de otro hilo o sin sello). No se ejecuto nada.
     | "accepted_with_correction_lapsed"
+    // `RUL-ESTR-01`: crear o modificar una caja, meta o presupuesto conversando.
+    | "accepted_with_structure_confirmation"
+    | "accepted_with_structure_applied"
+    | "accepted_with_structure_cancelled"
+    | "accepted_with_structure_clarification"
+    | "accepted_with_structure_lapsed"
     | "accepted_with_memory_control"
     | "missing_external_event"
     | "missing_user"
@@ -414,6 +437,27 @@ export class FinancialOrchestrator {
         reason: "accepted_with_memory_control",
       };
     }
+
+    // `RUL-ESTR-03`: una propuesta de estructura ("¿Creo la caja Viaje?") se
+    // resuelve exactamente igual que una correccion — con el boton `estr:...`
+    // o con el "si" escrito del turno siguiente, mismo hilo y misma vigencia.
+    // Va antes que la correccion porque son excluyentes: solo puede haber una
+    // propuesta viva por hilo, y esta rama solo se activa cuando la ultima
+    // accion recordada es justamente una propuesta de estructura.
+    const structureTurn = await this.resolveStructureTurn({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      activeMemoryState,
+      conversationTurnState: conversationTurn.turn_state,
+    });
+    if (structureTurn.handled) {
+      return structureTurn.result;
+    }
+    activeMemoryState = structureTurn.activeMemoryState;
 
     // `16` §10.3: una correccion propuesta ("¿Lo elimino?") se resuelve con el
     // comando del boton o con la confirmacion escrita en el turno siguiente;
@@ -667,6 +711,22 @@ export class FinancialOrchestrator {
     const effectiveConversationTurnState =
       initialOrchestrationPlanning?.compiled.conversationTurnState ??
       conversationTurn.turn_state;
+
+    // `RUL-ESTR-01`: el ejecutivo propuso crear o cambiar una caja, meta o
+    // presupuesto. El turno no escribe nada aqui: propone y espera el "si".
+    const structureProposalTurn = await this.proposeStructureIfRequested({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      conversationTurnState: effectiveConversationTurnState,
+      executive: initialOrchestrationPlanning?.executive ?? null,
+      previousWorkingSet: activeMemoryState?.working_set ?? null,
+    });
+    if (structureProposalTurn) return structureProposalTurn;
+
     const plannedFinancialResolution =
       initialOrchestrationPlanning?.compiled.financialResolution ?? null;
     const pendingResolution =
@@ -1246,6 +1306,326 @@ export class FinancialOrchestrator {
       traceId: input.traceId,
       orchestrationPlanning,
     });
+  }
+
+  /**
+   * `RUL-ESTR-03`: resuelve el tramo de estructura del turno — confirmar,
+   * descartar o caducar una propuesta de caja, meta o presupuesto.
+   *
+   * Devuelve `handled: true` cuando el turno ya quedo respondido aqui, y
+   * `handled: false` con el estado conversacional actualizado cuando este
+   * turno no tenia nada de estructura que resolver.
+   */
+  private async resolveStructureTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    activeMemoryState: ConversationMemoryState | null;
+    conversationTurnState: ConversationTurnState;
+  }): Promise<
+    | { handled: true; result: TurnOrchestrationResult }
+    | { handled: false; activeMemoryState: ConversationMemoryState | null }
+  > {
+    const userId = params.externalEvent.user_id;
+    if (!userId) {
+      return { handled: false, activeMemoryState: params.activeMemoryState };
+    }
+
+    let activeMemoryState = params.activeMemoryState;
+    const workingSet = activeMemoryState?.working_set ?? null;
+    const isCommand = isStructureCommandText(params.text);
+    const awaiting = resolveAwaitingStructure({
+      text: params.text,
+      workingSet,
+      threadKey: params.threadKey,
+      now: params.externalEvent.received_at,
+    });
+
+    // Un boton pulsado trae su propia intencion: no caduca nada. El borrador
+    // vive en el estado, asi que caducarlo aqui borraria el payload que ese
+    // mismo turno necesita ejecutar.
+    const storedProposal =
+      awaiting.kind === "other_thread"
+        ? null
+        : readStoredStructureProposal(workingSet);
+
+    if (
+      !isCommand &&
+      (awaiting.kind === "lapsed_by_topic_change" ||
+        awaiting.kind === "lapsed_confirmation")
+    ) {
+      logger.warn("orchestrator.structure_proposal_lapsed", {
+        trace_id: params.traceId,
+        external_event_id: params.externalEvent.id,
+        lapse_kind: awaiting.kind,
+      });
+      const expiredState = await rememberExpiredCorrectionProposal({
+        client: this.client,
+        userId,
+        channel: params.channel,
+        threadKey: params.threadKey,
+        previousState: activeMemoryState,
+        now: params.externalEvent.received_at,
+      });
+      activeMemoryState = expiredState ?? activeMemoryState;
+    }
+
+    // `AC-RT-13`: una confirmacion que llego tarde se responde, no se ejecuta
+    // ni se descarta en silencio.
+    if (!isCommand && awaiting.kind === "lapsed_confirmation") {
+      const structureResolution = lapsedStructureResolution(awaiting.reason);
+      const result = await this.presentStructureTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        structureResolution,
+        orchestratorReason: "accepted_with_structure_lapsed",
+      });
+      return { handled: true, result };
+    }
+
+    const commandText = isCommand
+      ? params.text
+      : awaiting.kind === "confirmable"
+        ? awaiting.commandText
+        : null;
+
+    if (!commandText) return { handled: false, activeMemoryState };
+
+    const structureResolution = await maybeResolveStructure({
+      client: this.client,
+      userId,
+      text: commandText,
+      proposal: storedProposal,
+      traceId: params.traceId,
+      source: "orchestrator.structure_confirm",
+      movementSource: toMovementSource(params.channel),
+    });
+
+    if (structureResolution.kind === "not_structure_command") {
+      return { handled: false, activeMemoryState };
+    }
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] =
+      structureResolution.kind === "applied"
+        ? "accepted_with_structure_applied"
+        : structureResolution.kind === "cancelled"
+          ? "accepted_with_structure_cancelled"
+          : "accepted_with_structure_clarification";
+
+    const result = await this.presentStructureTurn({
+      externalEvent: params.externalEvent,
+      turnInput: params.turnInput,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      structureResolution,
+      orchestratorReason,
+      // Ejecutada o cancelada, la propuesta deja de existir: sin borrador, un
+      // "si" posterior no puede volver a crear la misma caja.
+      remember: {
+        channel: params.channel,
+        threadKey: params.threadKey,
+        userId,
+        userMessage: params.text,
+        previous: workingSet,
+        now: params.externalEvent.received_at,
+      },
+    });
+
+    return { handled: true, result };
+  }
+
+  /**
+   * `RUL-ESTR-01` / `RUL-PRES-01`: convierte la propuesta del ejecutivo en un
+   * borrador confirmable, o en una pregunta cuando la lectura no es unica.
+   *
+   * Devuelve `null` cuando este turno no propone estructura, para que siga su
+   * camino normal.
+   */
+  private async proposeStructureIfRequested(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    executive: OrchestrationPlanningTrace["executive"];
+    previousWorkingSet: ConversationWorkingSet | null;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    const compiled = compileStructureProposal({
+      request: params.executive?.result.output.structure_proposal ?? null,
+      userText: params.text,
+      now: params.externalEvent.received_at,
+    });
+
+    if (compiled.kind === "none") return null;
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId,
+      conversationTurnState: params.conversationTurnState,
+      ...(compiled.kind === "proposal"
+        ? { structureProposal: compiled.proposal }
+        : { structureAmbiguityQuestion: compiled.question }),
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: params.executive != null,
+    });
+
+    const isProposal = compiled.kind === "proposal";
+    await rememberConversationOutcome({
+      client: this.client,
+      userId,
+      channel: params.channel,
+      threadKey: params.threadKey,
+      intent: "structure",
+      userMessage: params.text,
+      resultSummary:
+        presented.text ??
+        (isProposal ? compiled.proposal.summary : compiled.question),
+      sourceRef: params.externalEvent.id,
+      topic: "balance",
+      goal: isProposal ? "confirm" : "help",
+      actionKind: isProposal ? "structure_proposed" : "clarification_requested",
+      // `awaiting_confirmation` es lo que sella hilo y vigencia: sin ese
+      // estado, el "si" del turno siguiente no encuentra nada que ejecutar.
+      actionStatus: "awaiting_confirmation",
+      commandIds: isProposal
+        ? [buildStructureCommandText(compiled.proposal.proposal_id)]
+        : [],
+      unresolvedSlots: isProposal ? [] : [compiled.question],
+      structureProposal: isProposal ? compiled.proposal : null,
+      previous: params.previousWorkingSet,
+      now: params.externalEvent.received_at,
+    });
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] = isProposal
+      ? "accepted_with_structure_confirmation"
+      : "accepted_with_structure_clarification";
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: orchestratorReason,
+        agent_runtime_required: false,
+        structure_proposal_kind: compiled.kind,
+        structure_proposal_entity: isProposal ? compiled.proposal.entity : null,
+        structure_proposal_operation: isProposal
+          ? compiled.proposal.operation
+          : null,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: orchestratorReason,
+    };
+  }
+
+  /** Compone, presenta y registra un turno resuelto por la via de estructura. */
+  private async presentStructureTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    structureResolution: StructureResolutionResult;
+    orchestratorReason: TurnOrchestrationResult["reason"];
+    remember?: {
+      channel: Channel;
+      threadKey: string;
+      userId: string;
+      userMessage: string;
+      previous: ConversationWorkingSet | null;
+      now: string;
+    };
+  }): Promise<TurnOrchestrationResult> {
+    const resolution = params.structureResolution;
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId: params.externalEvent.user_id,
+      conversationTurnState: params.conversationTurnState,
+      structureResolution: resolution,
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: false,
+    });
+
+    const remember = params.remember;
+    if (
+      remember &&
+      (resolution.kind === "applied" || resolution.kind === "cancelled")
+    ) {
+      await rememberConversationOutcome({
+        client: this.client,
+        userId: remember.userId,
+        channel: remember.channel,
+        threadKey: remember.threadKey,
+        intent: "structure",
+        userMessage: remember.userMessage,
+        resultSummary: presented.text ?? resolution.summary,
+        sourceRef: params.externalEvent.id,
+        topic: "balance",
+        goal: "confirm",
+        actionKind:
+          resolution.kind === "applied"
+            ? "structure_applied"
+            : "structure_cancelled",
+        actionStatus:
+          resolution.kind === "applied" ? "completed" : "cancelled",
+        structureProposal: null,
+        previous: remember.previous,
+        now: remember.now,
+      });
+    }
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: params.orchestratorReason,
+        agent_runtime_required: false,
+        structure_resolution_kind: resolution.kind,
+        structure_resolution_reason: resolution.reason,
+        structure_resolution_entity:
+          "entity" in resolution ? resolution.entity : null,
+        structure_resolution_operation:
+          "operation" in resolution ? resolution.operation : null,
+        structure_resolution_entity_id:
+          resolution.kind === "applied" ? resolution.entity_id : null,
+        structure_resolution_idempotent:
+          resolution.kind === "applied" ? resolution.idempotent : null,
+        structure_resolution_error_code:
+          resolution.kind === "failed" ? resolution.error_code : null,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: params.orchestratorReason,
+    };
   }
 
   private async handleDataAgentFinancialActions(params: {
