@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, Json } from "@/data/supabase/types";
 import type { Block, TurnContext, TurnInput } from "@/core/channel/types";
+import { commandTextLabel } from "./command-text-label";
 import type { PresentTurn } from "@/core/orchestrator/financial-orchestrator";
 import type { PlanTurnBlocksResult } from "@/core/response/response-planner";
 import {
@@ -94,11 +95,13 @@ export async function handleWebAssistantTurn(
     metadata: { thread_id: input.threadId, text },
   });
 
+  // El motor recibe `text` intacto; esto solo cambia lo que queda escrito para
+  // leer, porque pulsar "Si, crear meta" no es decir `estr:<uuid>`.
   await input.client.from("assistant_messages").insert({
     user_id: input.userId,
     thread_id: input.threadId,
     role: "usuario",
-    content: [{ kind: "texto", text }],
+    content: [{ kind: "texto", text: commandTextLabel(text) ?? text }],
     trace_id: input.traceId,
     idempotency_key: `assistant-request:${externalEvent.id}`,
   });
