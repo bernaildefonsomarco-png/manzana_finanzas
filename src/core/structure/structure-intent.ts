@@ -141,10 +141,17 @@ export function readStructureIntent(text: string): StructureIntentReading {
   );
   const evidenciaMeta = coincidencias(normalizado, SENALES_DE_META);
 
+  // Nombrar una entidad no es pedirla: en "crea una caja para esa meta" la
+  // caja es lo que se crea y la meta es a lo que apunta. Antes bastaba con
+  // que las dos palabras aparecieran para declarar ambigüedad, asi que la
+  // frase mas natural para vincular una caja a una meta preguntaba en vez de
+  // hacer, y repreguntaba igual porque la respuesta volvia a nombrar las dos.
   const candidatos: StructureEntity[] = [];
-  if (evidenciaCaja.length > 0) candidatos.push("caja");
-  if (evidenciaMeta.length > 0) candidatos.push("meta");
-  if (evidenciaPresupuesto.length > 0) candidatos.push("presupuesto");
+  if (esObjetivo(normalizado, evidenciaCaja)) candidatos.push("caja");
+  if (esObjetivo(normalizado, evidenciaMeta)) candidatos.push("meta");
+  if (esObjetivo(normalizado, evidenciaPresupuesto)) {
+    candidatos.push("presupuesto");
+  }
 
   if (candidatos.length === 0) {
     // Sin ninguna senal de dominio no hay nada que clasificar aqui, aunque el
@@ -240,4 +247,62 @@ function contiene(texto: string, senal: string): boolean {
 
 function coincidencias(texto: string, senales: string[]): string[] {
   return senales.filter((senal) => contiene(texto, senal));
+}
+
+/**
+ * Preposiciones que introducen un complemento: lo que viene detras es aquello
+ * a lo que la frase apunta, no lo que pide crear. "una caja para esa meta"
+ * habla de una caja; la meta solo dice para que.
+ */
+const PREPOSICIONES_DE_REFERENCIA = new Set([
+  "para",
+  "de",
+  "del",
+  "hacia",
+  "sobre",
+  "asociada",
+  "asociado",
+  "vinculada",
+  "vinculado",
+  "junto",
+]);
+
+/**
+ * Cuantas palabras se miran hacia atras buscando la preposicion. Tres cubren
+ * el determinante y algun relleno ("para la meta", "para mi meta del carro")
+ * sin llegar tan lejos como para capturar una preposicion de otra clausula.
+ *
+ * Se mira una ventana en vez de detenerse en la primera palabra desconocida
+ * porque la gente escribe rapido: "para es meta" —sin la "a"— es la frase real
+ * que hizo fallar la primera version de esta lectura.
+ */
+const VENTANA_DE_REFERENCIA = 3;
+
+/**
+ * Una señal es el objetivo del turno si aparece al menos una vez SIN una
+ * preposicion de referencia cerca por delante. Si todas sus apariciones son
+ * complementos, la entidad se menciona pero no se pide.
+ *
+ * Las señales de varias palabras ("no gastar mas de") son locuciones que ya
+ * expresan la intencion completa, asi que nunca se leen como complemento.
+ */
+function esObjetivo(texto: string, senales: string[]): boolean {
+  if (senales.length === 0) return false;
+
+  const palabras = texto.split(" ");
+
+  return senales.some((senal) => {
+    if (senal.includes(" ")) return true;
+
+    const patron = new RegExp(`^${senal}${SUFIJOS_TOLERADOS}$`);
+    return palabras.some((palabra, indice) => {
+      if (!patron.test(palabra)) return false;
+
+      const desde = Math.max(0, indice - VENTANA_DE_REFERENCIA);
+      const previas = palabras.slice(desde, indice);
+      return !previas.some((anterior) =>
+        PREPOSICIONES_DE_REFERENCIA.has(anterior),
+      );
+    });
+  });
 }

@@ -97,3 +97,45 @@ describe("la pregunta explica la diferencia, no solo pide elegir", () => {
     expect(pregunta).toContain("no toca tu saldo");
   });
 });
+
+describe("nombrar una entidad no es pedirla", () => {
+  // Reproduccion literal de la sesion del dueno: cada intento nombraba caja y
+  // meta, la lectura las contaba como dos candidatas y el turno repreguntaba
+  // lo mismo. Cinco turnos para crear una caja que habia pedido en el primero.
+  it.each([
+    "ahora crea una caja para es meta",
+    "crea una caja para esa meta",
+    "osea que crees una caja para la meta que acabo de crear",
+    "crea una caja para mi meta del carro",
+  ])("«%s» pide una caja: la meta solo dice para que", (frase) => {
+    expect(readStructureIntent(frase)).toMatchObject({
+      kind: "unambiguous",
+      entity: "caja",
+    });
+  });
+
+  it("al reves tambien: una meta para una caja existente sigue siendo una meta", () => {
+    expect(readStructureIntent("crea una meta para esa caja")).toMatchObject({
+      kind: "unambiguous",
+      entity: "meta",
+    });
+  });
+
+  it("un presupuesto mencionado como referencia no vuelve ambigua la caja", () => {
+    expect(
+      readStructureIntent("aparta 300 de mi presupuesto de comida"),
+    ).toMatchObject({ kind: "unambiguous", entity: "caja" });
+  });
+
+  it("pedir las dos de verdad sigue siendo ambiguo", () => {
+    expect(readStructureIntent("crea una meta y una caja")).toMatchObject({
+      kind: "ambiguous",
+    });
+  });
+
+  it("la ambiguedad real que este modulo existe para atajar no se pierde", () => {
+    expect(
+      readStructureIntent("quiero guardar 500 al mes como tope para comida"),
+    ).toMatchObject({ kind: "ambiguous" });
+  });
+});
