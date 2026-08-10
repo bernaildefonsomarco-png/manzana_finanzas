@@ -30,6 +30,17 @@ type Client = SupabaseClient<Database>;
  * canal, no texto renderizado") y el frontend (fase 4/5) los renderiza como
  * componentes.
  */
+/**
+ * Lo que se dice cuando el planificador no dijo nada. No inventa un resultado
+ * ni finge que la accion ocurrio: nombra el limite y deja la via manual, que
+ * es el contrato de `ERR-ASI-01`.
+ */
+const EMPTY_PLAN_FALLBACK_BLOCK: Block = {
+  kind: "limite",
+  text: "No pude preparar una respuesta para eso. Dime de otra forma qué necesitas, o hazlo directamente.",
+  manualPath: "/movimientos/nuevo",
+};
+
 export async function buildWebPresentTurn(params: {
   client: Client;
   externalEvent: ExternalEventLog;
@@ -48,6 +59,23 @@ export async function buildWebPresentTurn(params: {
     const userId = externalEvent.user_id;
     if (!userId) {
       return notPresentable("missing_user");
+    }
+
+    // Un turno sin bloques se persistia como un mensaje vacio: en pantalla no
+    // aparecia nada y el asistente parecia haber dejado de responder, aunque
+    // el turno hubiera terminado bien. WhatsApp ya trata el caso como anomalia
+    // (`not_sendable`/`no_blocks`); la web lo guardaba en silencio.
+    //
+    // El silencio nunca es una respuesta aceptable (`RUL-ASI-13`): si el plan
+    // llega vacio se declara el limite con su via manual, igual que cuando no
+    // hay modelo, y se registra como error porque significa que alguna rama
+    // del planificador termino sin decir nada.
+    if (plan.blocks.length === 0) {
+      logger.error("web_present_turn.empty_plan", {
+        external_event_id: externalEvent.id,
+        reason: plan.reason,
+      });
+      plan = { ...plan, blocks: [EMPTY_PLAN_FALLBACK_BLOCK] };
     }
 
     // `RSP-WEB-01`: a diferencia de WhatsApp, un turno web casi siempre

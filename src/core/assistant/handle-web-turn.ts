@@ -20,10 +20,32 @@ import { logger } from "@/shared/telemetry/logger";
 // escriba, en vez de confiar en que el motor nunca las proponga.
 const ACTION_BLOCK_KINDS = new Set<Block["kind"]>(["propuesta", "previsualizacion", "accion"]);
 
+/**
+ * Lo que se dice cuando quitar las tarjetas deja el turno sin nada. Un plan
+ * que era solo una propuesta —"¿creo la caja Carro?"— se quedaba en cero
+ * bloques y se persistia como un mensaje vacio: en pantalla no aparecia nada
+ * y el asistente parecia haber dejado de responder.
+ *
+ * Callar es peor que declarar el limite: `AC-ASI-17` pide no emitir la tarjeta,
+ * no ocultar que existia algo que proponer.
+ */
+const READ_ONLY_FALLBACK_BLOCK: Block = {
+  kind: "limite",
+  text: "Ahora mismo puedo responder y explicar, pero no proponer acciones. Vuelve a intentarlo en un momento, o hazlo directamente.",
+  manualPath: "/movimientos/nuevo",
+};
+
+/** Expuesto solo para probar la garantia de que el turno nunca queda mudo. */
+export const withoutActionBlocksForTests = withoutActionBlocks;
+
 function withoutActionBlocks(plan: PlanTurnBlocksResult): PlanTurnBlocksResult {
+  const blocks = plan.blocks.filter(
+    (block: Block) => !ACTION_BLOCK_KINDS.has(block.kind),
+  );
+
   return {
     ...plan,
-    blocks: plan.blocks.filter((block: Block) => !ACTION_BLOCK_KINDS.has(block.kind)),
+    blocks: blocks.length > 0 ? blocks : [READ_ONLY_FALLBACK_BLOCK],
   };
 }
 
