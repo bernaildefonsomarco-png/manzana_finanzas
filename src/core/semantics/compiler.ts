@@ -209,6 +209,7 @@ type SemanticQueryBuilder = {
   lt: (column: string, value: unknown) => SemanticQueryBuilder;
   lte: (column: string, value: unknown) => SemanticQueryBuilder;
   in: (column: string, values: readonly (string | number)[]) => SemanticQueryBuilder;
+  is: (column: string, value: null | boolean) => SemanticQueryBuilder;
   ilike: (column: string, pattern: string) => SemanticQueryBuilder;
   order: (
     column: string,
@@ -238,6 +239,14 @@ export async function executeSemanticQuery(
     .from(plan.tabla)
     .select("*")
     .eq(plan.columnaUsuario, plan.userId) as unknown as SemanticQueryBuilder;
+
+  // Antes que nada del usuario: lo borrado en blando no existe para una
+  // consulta abierta. Contar presupuestos archivados devolveria un numero
+  // equivocado con su `fact:` detras, y el compilador de evidencia lo
+  // respaldaria. Va aqui, no en el plan, para que ningun predicado lo levante.
+  for (const filtro of entidad.filtrosFijos ?? []) {
+    builder = builder.is(filtro.columna, null);
+  }
 
   if (plan.filtros) {
     builder = aplicarPredicadoAnd(builder, plan.filtros, entidad);

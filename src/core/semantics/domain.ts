@@ -24,11 +24,31 @@ export type SemanticMeasureMapping = {
   columna: string | null;
 };
 
+/**
+ * Filtro que la entidad aplica SIEMPRE, antes que cualquier predicado del
+ * usuario, y que este no puede levantar.
+ *
+ * Sin esto, una consulta abierta cuenta lo borrado en blando: "¿cuántos
+ * presupuestos tengo?" incluye los archivados y devuelve un numero equivocado
+ * **con su `fact:` detras**, que es la peor forma de equivocarse aqui — el
+ * compilador de evidencia lo respalda y la respuesta se afirma. Las
+ * dimensiones de estado no alcanzan: `presupuestos` no tiene ninguna en el
+ * catalogo y `cajas` tampoco, asi que el usuario no podria acotarlo ni
+ * queriendo.
+ */
+export type SemanticFixedFilter = {
+  columna: string;
+  /** Unico operador que hace falta hoy: lo vivo es lo que no tiene fecha de borrado. */
+  operador: "es_nulo";
+};
+
 export type SemanticEntitySpec = {
   nombre: string;
   tabla: string;
   columnaUsuario: string;
   columnaId: string;
+  /** Se aplican antes que los predicados del usuario y no se pueden levantar. */
+  filtrosFijos?: readonly SemanticFixedFilter[];
   /** Dimensiones del catálogo (`40`) que este compilador ya sabe traducir. */
   dimensionesCompilables: Record<string, SemanticColumnMapping>;
   /** Medidas del catálogo (`40`) que este compilador ya sabe traducir. */
@@ -50,6 +70,7 @@ export const ENTIDAD_MOVIMIENTOS: SemanticEntitySpec = {
   tabla: "movements",
   columnaUsuario: "user_id",
   columnaId: "id",
+  filtrosFijos: [{ columna: "deleted_at", operador: "es_nulo" }],
   dimensionesCompilables: {
     tipo_movimiento: { columna: "type", tipo: "enum" },
     estado_movimiento: { columna: "status", tipo: "enum" },
@@ -93,6 +114,7 @@ export const ENTIDAD_DEUDAS: SemanticEntitySpec = {
   tabla: "debts",
   columnaUsuario: "user_id",
   columnaId: "id",
+  filtrosFijos: [{ columna: "deleted_at", operador: "es_nulo" }],
   dimensionesCompilables: {
     direccion_deuda: { columna: "direction", tipo: "enum" },
     tipo_deuda: { columna: "kind", tipo: "enum" },
@@ -126,6 +148,7 @@ export const ENTIDAD_PRESUPUESTOS: SemanticEntitySpec = {
   tabla: "budgets",
   columnaUsuario: "user_id",
   columnaId: "id",
+  filtrosFijos: [{ columna: "deleted_at", operador: "es_nulo" }],
   dimensionesCompilables: {
     categoria_presupuestada: { columna: "category_id", tipo: "referencia" },
     tipo_presupuesto: { columna: "kind", tipo: "enum" },
@@ -156,6 +179,7 @@ export const ENTIDAD_CAJAS: SemanticEntitySpec = {
   tabla: "boxes",
   columnaUsuario: "user_id",
   columnaId: "id",
+  filtrosFijos: [{ columna: "deleted_at", operador: "es_nulo" }],
   dimensionesCompilables: {
     caja: { columna: "id", tipo: "referencia" },
     tipo_caja: { columna: "type", tipo: "enum" },
@@ -191,6 +215,7 @@ export const ENTIDAD_RECURRENTES: SemanticEntitySpec = {
   tabla: "recurring_rules",
   columnaUsuario: "user_id",
   columnaId: "id",
+  filtrosFijos: [{ columna: "deleted_at", operador: "es_nulo" }],
   dimensionesCompilables: {
     estado_recurrente: { columna: "status", tipo: "enum" },
     frecuencia_recurrente: { columna: "frequency", tipo: "enum" },

@@ -143,7 +143,7 @@ describe("compileSemanticQuery: AC-SEM-01, el lenguaje no puede expresar user_id
 function fakeSupabaseClient(rows: unknown[]) {
   const calls: Array<{ method: string; args: unknown[] }> = [];
   const builder: Record<string, unknown> = {};
-  const chainMethods = ["select", "eq", "neq", "gt", "gte", "lt", "lte", "in", "ilike", "order"];
+  const chainMethods = ["select", "eq", "neq", "gt", "gte", "lt", "lte", "in", "is", "ilike", "order"];
   for (const method of chainMethods) {
     builder[method] = vi.fn((...args: unknown[]) => {
       calls.push({ method, args });
@@ -224,5 +224,33 @@ describe("executeSemanticQuery: ejecucion real contra el cliente (20b S5.3/S5.4)
     );
 
     expect(calls).toContainEqual({ method: "limit", args: [25] });
+  });
+});
+
+describe("lo borrado en blando no existe para una consulta abierta", () => {
+  it("filtra deleted_at antes que cualquier predicado del usuario", async () => {
+    // Sin esto, "¿cuantos presupuestos tengo?" cuenta los archivados y
+    // devuelve un numero equivocado con su `fact:` detras.
+    const { client, calls } = fakeSupabaseClient([]);
+    const compiled = compileSemanticQuery(baseQuery(), userId);
+    expect(compiled.ok).toBe(true);
+    if (!compiled.ok) return;
+
+    await executeSemanticQuery(
+      client as unknown as Parameters<typeof executeSemanticQuery>[0],
+      compiled.plan,
+    );
+
+    expect(calls).toContainEqual({ method: "is", args: ["deleted_at", null] });
+  });
+
+  it("las cinco entidades del dominio lo declaran, no solo movimientos", async () => {
+    const { ENTIDADES_SEMANTICAS } = await import("./domain");
+    for (const entidad of Object.values(ENTIDADES_SEMANTICAS)) {
+      expect(entidad.filtrosFijos).toContainEqual({
+        columna: "deleted_at",
+        operador: "es_nulo",
+      });
+    }
   });
 });

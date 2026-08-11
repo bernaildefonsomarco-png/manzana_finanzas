@@ -341,7 +341,7 @@ const turnState: ConversationTurnState = {
 function fakeSupabaseClient(rows: unknown[]) {
   const calls: Array<{ method: string; args: unknown[] }> = [];
   const builder: Record<string, unknown> = {};
-  const chainMethods = ["select", "eq", "neq", "gt", "gte", "lt", "lte", "in", "ilike", "order"];
+  const chainMethods = ["select", "eq", "neq", "gt", "gte", "lt", "lte", "in", "is", "ilike", "order"];
   for (const method of chainMethods) {
     builder[method] = vi.fn((...args: unknown[]) => {
       calls.push({ method, args });
