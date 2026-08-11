@@ -21,6 +21,7 @@ import {
 } from "@/agents/orchestration-planning-agent/types";
 import type { AgentConversationTurn } from "@/agents/runtime/types";
 import type { TurnWorkspace } from "@/core/conversation/turn-workspace";
+import { LIGHT_ACTION_INTENTS } from "@/core/light-actions/light-action-request";
 import { SemanticQuerySchema } from "@/core/semantics/query";
 
 export const TurnInterpreterSchema = z.object({
@@ -193,6 +194,39 @@ export const MemoryControlRequestSchema = z.object({
 });
 export type MemoryControlRequest = z.infer<typeof MemoryControlRequestSchema>;
 
+/**
+ * `RUL-LIG-01`: modulo por el que el ejecutivo dice que este turno pide una
+ * accion de nivel `ninguna` del catalogo (`40` §7) — posponer o descartar un
+ * recordatorio, descartar o valorar un descubrimiento, ocultar o mostrar un
+ * bloque del Inicio.
+ *
+ * Es plano por la misma razon que `structure_proposal` y `memory_control`: el
+ * modelo describe lo que entendio y `compileLightActionRequest` lo convierte en
+ * una orden tipada. El modelo no decide el nivel de confirmacion —ya lo decidio
+ * el catalogo— y no ejecuta nada.
+ *
+ * La diferencia con los otros dos: estas si se aplican en el mismo turno,
+ * porque el catalogo dice que no llevan tarjeta. Por eso el umbral de duda es
+ * mas duro y una sola ambiguedad basta para no ejecutar.
+ */
+export const LightActionRequestSchema = z.object({
+  intent: z.enum(LIGHT_ACTION_INTENTS),
+  // `LIGHT_ACTION_INTENTS` vive en el nucleo, con el ejecutor, y no aqui: el
+  // nombre de cada accion es de catalogo (`40` §7), no del contrato del modelo.
+  /**
+   * El `id` exacto que devolvio `get_reminders` o `get_insights`, o la clave de
+   * bloque de `get_home_preferences`. Nunca un identificador inventado.
+   */
+  target_id: z.string().trim().max(80),
+  /** Solo `marcar_descubrimiento`: `util` o `no_util`. */
+  value: z.string().trim().max(40),
+  /** Solo `posponer_recordatorio`: cuantos dias pidio el usuario. */
+  postpone_days: z.number().int().min(1).max(30).nullable(),
+  confidence: z.number().min(0).max(1),
+  ambiguities: z.array(z.string().trim().min(1).max(240)).max(4),
+});
+export type LightActionRequest = z.infer<typeof LightActionRequestSchema>;
+
 export const GroundedClaimSchema = z.object({
   claim_id: z.string().trim().min(1).max(80),
   text: z.string().trim().min(1).max(320),
@@ -252,6 +286,10 @@ export const ConversationalExecutiveOutputSchema = z.object({
   // para que un estado o fixture anterior siga validando. Ausencia es "este
   // turno no habla de memoria".
   memory_control: MemoryControlRequestSchema.nullable().default(null),
+  // `RUL-LIG-01`: mismo contrato que los dos anteriores — nullable con default
+  // para que un estado o fixture anterior siga validando. Ausencia es "este
+  // turno no pide ninguna accion ligera".
+  light_action: LightActionRequestSchema.nullable().default(null),
   response_composition: ResponseCompositionSchema,
   orchestration_plan: OrchestrationPlanSchema,
   findings: z.array(FindingSchema).max(1).default([]),

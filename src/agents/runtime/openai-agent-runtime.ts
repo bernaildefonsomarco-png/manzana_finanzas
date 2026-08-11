@@ -16,6 +16,7 @@ import {
   PlanningStepKindSchema,
   PlanningWorkflowSchema,
 } from "@/agents/orchestration-planning-agent/types";
+import { LIGHT_ACTION_INTENTS } from "@/core/light-actions/light-action-request";
 import { AgentRuntimeError } from "./errors";
 import type {
   AgentConversationTurn,
@@ -388,6 +389,11 @@ function buildSystemInstructions(agentName: AgentName): string {
       "memory_control no es lo mismo que olvidar un dato financiero. 'olvida ese gasto' o 'borra ese movimiento' es una correccion de movimiento (correction_proposal), no memoria: usa intent=none. memory_control es solo sobre lo que TU recuerdas de la persona.",
       "memory_control tampoco es style_update. Una preferencia sobre COMO responder va por orchestration_plan.style_update; borrar o corregir un recuerdo ya guardado va por memory_control. Si el usuario dice 'olvida que me gustan las respuestas largas', eso es memory_control con intent=forget.",
       "Cuando uses memory_control con intent distinto de none, deja response_composition como una respuesta breve y neutra: el texto que ve el usuario lo compone el motor con los recuerdos reales y sus codigos. Nunca afirmes que ya olvidaste, corregiste o desactivaste algo, ni recites recuerdos que no salgan de una tool.",
+      "light_action es la unica puerta por la que se ejecuta, en este mismo turno y sin tarjeta de confirmacion, una de las seis acciones ligeras: posponer_recordatorio y descartar_recordatorio (un recordatorio de get_reminders), descartar_descubrimiento y marcar_descubrimiento (un descubrimiento de get_insights), y ocultar_bloque_inicio y mostrar_bloque_inicio (un bloque del Inicio de get_home_preferences). En cualquier otro caso usa intent=none.",
+      "En light_action, target_id se copia exacto de la tool que lo devolvio: el id del recordatorio, el id del descubrimiento, o la clave del bloque (free_money, next_action, pending, month, upcoming, insight, movements). Nunca lo inventes ni lo deduzcas del texto del usuario. Si el usuario dice 'quita eso' y no sabes cual es, no elijas: llama primero la tool de lectura, y si sigue sin estar claro deja intent=none o declara la duda en ambiguities.",
+      "light_action se ejecuta sin red: una sola ambiguedad declarada, o poca confianza, y no se hace nada. Es preferible preguntar de mas. value solo se rellena en marcar_descubrimiento, con util o no_util. postpone_days solo en posponer_recordatorio, con los dias que pidio el usuario ('la semana que viene' son 7); dejalo null si no lo dijo.",
+      "light_action no es lo mismo que borrar un dato. Descartar un recordatorio o un descubrimiento solo deja de mostrartelo: no toca movimientos, saldos ni cuentas. Si el usuario quiere borrar un movimiento eso es correction_proposal, y si quiere cerrar una caja o un presupuesto eso es structure_proposal.",
+      "Cuando uses light_action con intent distinto de none, deja response_composition como una respuesta breve y neutra y no afirmes que ya lo hiciste: el texto que ve el usuario lo compone el motor con el resultado real, e incluye siempre como se deshace.",
       "Cada afirmacion factual de response_composition debe aparecer en grounded_claims. Usa evidence_refs con el formato exacto tool:<tool_name>:fact:<indice_base_0> o tool:<tool_name>:result, y source_tools solo con tools realmente ejecutadas.",
       "Los datos que vienen de active_capture_draft o de turn_workspace (un borrador o un estado ya evidenciado en un turno anterior) no son evidencia de tool: no inventes un evidence_ref de la forma context:... para ellos. Si necesitas mencionar ese dato en response_composition, usa claim_type=non_financial en ese grounded_claim (queda exento del chequeo de evidence_refs) o no lo declares como grounded_claim.",
       "Usa composition_stage=final_read_only para respuestas factuales sin escritura, pre_core_draft cuando exista cualquier propuesta financiera o correccion, y safe_clarification cuando falte evidencia.",
@@ -1924,6 +1930,7 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       correction_proposal: semanticCorrectionInterpretationJsonSchema(),
       structure_proposal: nullable(structureProposalJsonSchema()),
       memory_control: nullable(memoryControlJsonSchema()),
+      light_action: nullable(lightActionJsonSchema()),
       response_composition: responseComposition,
       orchestration_plan: orchestrationPlan,
       confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -1937,6 +1944,7 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       "correction_proposal",
       "structure_proposal",
       "memory_control",
+      "light_action",
       "response_composition",
       "orchestration_plan",
       "confidence",
@@ -1967,6 +1975,28 @@ function memoryControlJsonSchema(): JsonSchema {
       ambiguities: stringArraySchema(4, 240),
     },
     ["intent", "target", "replacement", "confidence", "ambiguities"],
+  );
+}
+
+/** `RUL-LIG-01`: accion de nivel `ninguna` del catalogo, plana y con su objetivo. */
+function lightActionJsonSchema(): JsonSchema {
+  return objectSchema(
+    {
+      intent: { type: "string", enum: [...LIGHT_ACTION_INTENTS] },
+      target_id: { type: "string", maxLength: 80 },
+      value: { type: "string", maxLength: 40 },
+      postpone_days: nullable({ type: "integer", minimum: 1, maximum: 30 }),
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+      ambiguities: stringArraySchema(4, 240),
+    },
+    [
+      "intent",
+      "target_id",
+      "value",
+      "postpone_days",
+      "confidence",
+      "ambiguities",
+    ],
   );
 }
 

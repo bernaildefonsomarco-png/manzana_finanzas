@@ -38,6 +38,15 @@ export const ConversationToolNameSchema = z.enum([
   "get_budget_summary",
   "get_report_period",
   "get_projection_snapshot",
+  // `RUL-LIG-01`: lo que hay que poder **nombrar** antes de ejecutar una accion
+  // de nivel `ninguna`. Sin ellas el asistente sabria hacer pero no sabria
+  // sobre que: un `target_id` que no salio de una tool no se ejecuta.
+  "get_reminders",
+  "get_home_preferences",
+  // El estado del buzon no habilita ningun comando (`pausar_fuente` y
+  // `desconectar_buzon` son `tarjeta`/`riesgo`), pero "¿mi correo sigue
+  // conectado?" es una pregunta que hoy no tiene tool y se contestaba a ciegas.
+  "get_email_status",
   // `20b` S5: la consulta abierta — de/donde/agrupar_por/medir/ordenar,
   // compilada contra el modelo del dominio de `src/core/semantics`. Unica
   // entidad compilable hoy: `movimientos` (`WEB-D257`, `WEB-D259`).
@@ -317,6 +326,11 @@ export const ConversationWorkingSetSchema = z.object({
         "memory_proposed",
         "memory_applied",
         "memory_cancelled",
+        // `RUL-LIG-01`: los comandos de nivel `ninguna` del catalogo (`40` §7)
+        // no tienen fase de propuesta: se aplican en el turno en que se piden,
+        // asi que su ciclo tiene solo estos dos desenlaces.
+        "light_action_applied",
+        "light_action_failed",
         "query_answered",
         "clarification_requested",
       ]),

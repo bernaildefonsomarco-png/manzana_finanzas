@@ -587,6 +587,15 @@ const TOOL_DESCRIPTIONS: Record<ConversationToolName, string> = {
     "Consulta la proyeccion del mes en curso: dinero libre, compromisos ya " +
     "descontados, ritmo diario de gasto, dias restantes y cierre proyectado " +
     "con su rango y sus supuestos.",
+  get_reminders:
+    "Consulta los recordatorios del usuario con su id, titulo y estado. Es la " +
+    "unica forma de saber cual posponer o descartar: el id sale de aqui.",
+  get_home_preferences:
+    "Consulta que bloques del Inicio estan ocultos y cuales visibles, con su " +
+    "clave. Es la unica forma de saber que bloque ocultar o mostrar.",
+  get_email_status:
+    "Consulta si el correo del usuario esta conectado, con que cuenta, desde " +
+    "cuando y si la captura por correo esta funcionando.",
   consultar_datos_abiertos:
     "Consulta abierta (20b S5): compone de/donde/agrupar_por/medir/ordenar/limitar " +
     "sobre movimientos cuando ninguna de las otras tools cubre la pregunta. " +

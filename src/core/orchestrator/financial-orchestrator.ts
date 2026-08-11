@@ -11,6 +11,10 @@ import {
 } from "@/core/learning/memory-control-from-text";
 import { compileMemoryControlRequest } from "@/core/learning/memory-control-request";
 import {
+  compileLightActionRequest,
+  executeLightAction,
+} from "@/core/light-actions";
+import {
   buildMemoryCommandText,
   isMemoryCommandText,
   parseMemoryCommandText,
@@ -228,6 +232,11 @@ export type TurnOrchestrationResult = {
     | "accepted_with_memory_applied"
     | "accepted_with_memory_cancelled"
     | "accepted_with_memory_lapsed"
+    // `RUL-LIG-01`: una accion de nivel `ninguna` del catalogo, ejecutada en el
+    // mismo turno. `failed` cubre tambien "no encontre eso": en los dos casos no
+    // cambio nada y el usuario tiene que enterarse.
+    | "accepted_with_light_action_applied"
+    | "accepted_with_light_action_failed"
     | "missing_external_event"
     | "missing_user"
     | "non_text_message";
@@ -688,6 +697,25 @@ export class FinancialOrchestrator {
       previousWorkingSet: activeMemoryState?.working_set ?? null,
     });
     if (memoryControlTurn) return memoryControlTurn;
+
+    // `RUL-LIG-01`: el ejecutivo entendio que este turno pide una accion de
+    // nivel `ninguna` del catalogo (`40` §7) — posponer o descartar un
+    // recordatorio, descartar o valorar un descubrimiento, ocultar o mostrar un
+    // bloque del Inicio. Estas si se ejecutan aqui mismo: el catalogo ya decidio
+    // que no llevan tarjeta. Va detras de memoria y delante de estructura porque
+    // no toca dinero pero si escribe.
+    const lightActionTurn = await this.runLightActionIfRequested({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      conversationTurnState: effectiveConversationTurnState,
+      executive: initialOrchestrationPlanning?.executive ?? null,
+      previousWorkingSet: activeMemoryState?.working_set ?? null,
+    });
+    if (lightActionTurn) return lightActionTurn;
 
     // `RUL-ESTR-01`: el ejecutivo propuso crear o cambiar una caja, meta o
     // presupuesto. El turno no escribe nada aqui: propone y espera el "si".
@@ -1628,6 +1656,103 @@ export class FinancialOrchestrator {
       });
       return null;
     }
+  }
+
+  /**
+   * `RUL-LIG-01`: ejecuta en este mismo turno la accion de nivel `ninguna` que
+   * el ejecutivo entendio, y responde con lo que paso de verdad.
+   *
+   * Devuelve `null` cuando este turno no pide ninguna —o la pide sin el objeto
+   * concreto—, para que siga su camino normal. Ese `null` es tambien la red de
+   * seguridad: si algo falla al compilar, el turno no se queda mudo, contesta el
+   * ejecutivo (`WEB-D296`).
+   */
+  private async runLightActionIfRequested(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    executive: OrchestrationPlanningTrace["executive"];
+    previousWorkingSet: ConversationWorkingSet | null;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    const command = compileLightActionRequest(
+      params.executive?.result.output.light_action ?? null,
+    );
+    if (!command) return null;
+
+    const result = await executeLightAction({
+      client: this.client,
+      userId,
+      command,
+      traceId: params.traceId,
+      now: params.externalEvent.received_at,
+    });
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId,
+      dataAgentCompleted: true,
+      dataAgentIntent: "conversation",
+      conversationTurnState: params.conversationTurnState,
+      lightActionText: result.text,
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      // El texto dice que se hizo y como se deshace. Reescribirlo arriesgaria
+      // perder justo la mitad que convierte una escritura sin tarjeta en algo
+      // que el usuario puede revertir (`40` §3.1).
+      skipEnhancement: true,
+    });
+
+    const applied = result.kind === "applied";
+    await rememberConversationOutcome({
+      client: this.client,
+      userId,
+      channel: params.channel,
+      threadKey: params.threadKey,
+      intent: "light_action",
+      userMessage: params.text,
+      resultSummary: presented.text ?? result.text,
+      sourceRef: params.externalEvent.id,
+      topic: null,
+      goal: "review",
+      actionKind: applied ? "light_action_applied" : "light_action_failed",
+      actionStatus: applied ? "completed" : "failed",
+      previous: params.previousWorkingSet,
+      now: params.externalEvent.received_at,
+    });
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] = applied
+      ? "accepted_with_light_action_applied"
+      : "accepted_with_light_action_failed";
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: orchestratorReason,
+        agent_runtime_required: false,
+        light_action: command.action,
+        light_action_result: result.kind,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: orchestratorReason,
+    };
   }
 
   /** Ejecuta o cancela la orden de memoria que el usuario acaba de confirmar. */

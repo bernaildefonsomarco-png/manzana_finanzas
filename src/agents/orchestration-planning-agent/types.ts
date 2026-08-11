@@ -72,6 +72,14 @@ export const PlanningCapabilitySchema = z.enum([
   "get_budget_summary",
   "get_report_period",
   "get_projection_snapshot",
+  // `RUL-LIG-01`: las lecturas que nombran el objeto de una accion de nivel
+  // `ninguna`. El planificador legado no las selecciona nunca por su cuenta —
+  // `defaultToolsForConversationQuery` es un switch cerrado sobre
+  // `ConversationQueryKind`—, pero tienen que ser capacidades validas para que
+  // el ejecutivo pueda declararlas en su plan.
+  "get_reminders",
+  "get_home_preferences",
+  "get_email_status",
   "policy_gate",
   "command_dispatcher",
 ]);
@@ -388,6 +396,24 @@ export const ORCHESTRATION_CAPABILITY_CATALOG: OrchestrationPlanningContextPack[
     kind: "tool",
     read_only: true,
     description: "Consulta la proyeccion del mes: dinero libre, compromisos, ritmo diario, dias restantes y cierre proyectado con supuestos.",
+  },
+  {
+    name: "get_reminders",
+    kind: "tool",
+    read_only: true,
+    description: "Consulta los recordatorios abiertos con su id, titulo, tipo y estado.",
+  },
+  {
+    name: "get_home_preferences",
+    kind: "tool",
+    read_only: true,
+    description: "Consulta que bloques del Inicio estan ocultos y cuales visibles, con su clave.",
+  },
+  {
+    name: "get_email_status",
+    kind: "tool",
+    read_only: true,
+    description: "Consulta si el buzon del usuario esta conectado y que remitentes tiene dados de alta.",
   },
   {
     name: "policy_gate",

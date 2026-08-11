@@ -58,6 +58,13 @@ export type TurnResponsePlannerInput = {
    * cancelar. Va verbatim: lleva codigos `M-XXXXXX` que no se pueden reescribir.
    */
   memoryControlText?: string;
+  /**
+   * `RUL-LIG-01`: texto ya compuesto por el ejecutor de acciones ligeras. Va
+   * verbatim porque es lo unico que le dice al usuario que algo cambio y como
+   * se deshace: un comando de nivel `ninguna` no lleva tarjeta previa, asi que
+   * esta frase es toda la confirmacion que existe (`40` §3.1).
+   */
+  lightActionText?: string;
   conversationAnswer?: ConversationalAnswer;
   supplementalConversationAnswer?: ConversationalAnswer;
   conversationTurnState?: ConversationTurnState;
@@ -175,6 +182,7 @@ type ProductResponseReason =
   | "structure_failed"
   | "memory_needs_confirmation"
   | "memory_control_answered"
+  | "light_action_answered"
   | "ready_for_core_not_executed";
 
 type ProductResponse = {
@@ -459,6 +467,20 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
   // puede quedar detras de nada (`RUL-MEM-16`).
   const memoryResponse = buildMemoryControlResponse(input);
   if (memoryResponse) return memoryResponse;
+
+  // `RUL-LIG-01`: la accion ligera ya se ejecuto antes de llegar aqui, asi que
+  // su texto manda sobre cualquier respuesta conversacional que se hubiera
+  // compuesto en paralelo. Va detras de memoria por la misma razon que todo lo
+  // demas: la privacidad no se pone detras de nada.
+  const lightActionText = input.lightActionText?.trim();
+  if (lightActionText) {
+    return {
+      reason: "light_action_answered",
+      intent: "direct_response",
+      shape: "texto",
+      text: lightActionText,
+    };
+  }
 
   const structureResponse = buildStructureResponse(input);
   if (structureResponse) return structureResponse;

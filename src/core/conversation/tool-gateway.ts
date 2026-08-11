@@ -51,6 +51,13 @@ import {
   type DebtWithPerson,
 } from "@/data/repositories/debts.repository";
 import { listPendingItems } from "@/data/repositories/pending.repository";
+import { listReminders } from "@/data/repositories/reminders.repository";
+import { getHomeHiddenBlocks } from "@/data/repositories/home.repository";
+import { HOME_BLOCK_KINDS } from "@/core/home/home-composer";
+import {
+  getEmailConnectionForUser,
+  listUserEmailSources,
+} from "@/data/repositories/email.repository";
 import { searchConfirmedFinancialMemory } from "@/data/repositories/financial-memory.repository";
 import {
   getInsightEvidence as loadInsightEvidence,
@@ -301,6 +308,19 @@ export class ToolGateway {
     // tool no usa.
     if (input.toolName === "get_projection_snapshot") {
       return this.getProjectionSnapshot(input.userId);
+    }
+    // `RUL-LIG-01`: las tres lecturas que sostienen las acciones de nivel
+    // `ninguna` tampoco tienen parametros — son el estado completo de un
+    // dominio pequeño, y exigirles una `query` solo abriria una forma de fallar
+    // el turno por un campo que no usan.
+    if (input.toolName === "get_reminders") {
+      return this.getReminders(input.userId);
+    }
+    if (input.toolName === "get_home_preferences") {
+      return this.getHomePreferences(input.userId);
+    }
+    if (input.toolName === "get_email_status") {
+      return this.getEmailStatus(input.userId);
     }
     if (!input.query) {
       logger.error("tool_gateway.missing_query_for_closed_tool", {
@@ -1197,6 +1217,163 @@ export class ToolGateway {
         user_id: userId,
       });
       return failedTool("get_record_provenance");
+    }
+  }
+
+  /**
+   * `37` §: los recordatorios abiertos del usuario, con su `id`.
+   *
+   * El `id` es el punto de la tool: `posponer_recordatorio` y
+   * `descartar_recordatorio` solo se ejecutan sobre un identificador que salio
+   * de aqui (`RUL-LIG-01`), nunca sobre uno que el modelo dedujo del texto.
+   *
+   * `reminder_count=0` es una cifra afirmable —"no tienes recordatorios"— y por
+   * eso viaja como `fact`. Un fallo de lectura no puede parecerse a un cero: sale
+   * por `failedTool`, sin `fact` que afirmar.
+   */
+  private async getReminders(userId: string): Promise<ConversationToolResult> {
+    try {
+      const reminders = await listReminders(this.client, userId, {
+        estado: "abiertos",
+      });
+      return {
+        tool_name: "get_reminders",
+        status: "called",
+        facts: [
+          `reminder_count=${reminders.length}`,
+          ...reminders
+            .slice(0, 8)
+            .map(
+              (reminder) =>
+                `reminder:${reminder.id}=${reminder.title} (${reminder.kind}, ${reminder.status})`,
+            ),
+        ],
+        warnings:
+          reminders.length > 8
+            ? [
+                `Solo se listaron 8 de ${reminders.length} recordatorios abiertos.`,
+              ]
+            : [],
+        data: {
+          reminder_count: reminders.length,
+          reminders: reminders.slice(0, 8).map((reminder) => ({
+            id: reminder.id,
+            kind: reminder.kind,
+            title: reminder.title,
+            body: reminder.body,
+            status: reminder.status,
+            created_at: reminder.created_at,
+            expires_at: reminder.expires_at,
+          })),
+        },
+      };
+    } catch (error) {
+      logger.error("tool_gateway.reminders_failed", { error, user_id: userId });
+      return failedTool("get_reminders");
+    }
+  }
+
+  /**
+   * `39` §4.2: que bloques del Inicio estan ocultos y cuales visibles.
+   *
+   * Se devuelven las dos listas y no solo la de ocultos: `mostrar_bloque_inicio`
+   * necesita saber cual esta escondido, y `ocultar_bloque_inicio` cual sigue a
+   * la vista. Con una sola lista el modelo tendria que deducir la otra, y una
+   * clave deducida no es una clave devuelta por una tool.
+   */
+  private async getHomePreferences(
+    userId: string,
+  ): Promise<ConversationToolResult> {
+    try {
+      const hidden = await getHomeHiddenBlocks(this.client, userId);
+      const hiddenSet = new Set<string>(hidden);
+      const visible = HOME_BLOCK_KINDS.filter((kind) => !hiddenSet.has(kind));
+      return {
+        tool_name: "get_home_preferences",
+        status: "called",
+        facts: [
+          `hidden_block_count=${hidden.length}`,
+          `visible_block_count=${visible.length}`,
+          `hidden_blocks=${hidden.length === 0 ? "ninguno" : hidden.join(",")}`,
+        ],
+        warnings: [],
+        data: {
+          hidden_blocks: hidden,
+          visible_blocks: visible,
+          all_blocks: [...HOME_BLOCK_KINDS],
+        },
+      };
+    } catch (error) {
+      logger.error("tool_gateway.home_preferences_failed", {
+        error,
+        user_id: userId,
+      });
+      return failedTool("get_home_preferences");
+    }
+  }
+
+  /**
+   * `29` §: estado del buzon del usuario. Solo lo suyo.
+   *
+   * Deliberadamente **no** usa `getEmailCaptureHealth`: esa metrica es global de
+   * la plataforma, no del usuario, y meterla en una tool conversacional filtraria
+   * cifras de otras personas en la respuesta de una. Lo que se mira es la
+   * conexion de este `user_id` y las fuentes que el mismo dio de alta.
+   */
+  private async getEmailStatus(
+    userId: string,
+  ): Promise<ConversationToolResult> {
+    try {
+      const connection = await getEmailConnectionForUser(this.client, userId);
+      const sources = connection
+        ? await listUserEmailSources(this.client, userId)
+        : [];
+      const connected = connection !== null;
+      return {
+        tool_name: "get_email_status",
+        status: "called",
+        facts: [
+          `email_connected=${connected}`,
+          `email_source_count=${sources.length}`,
+          ...(connection
+            ? [
+                `email_address=${connection.email_address}`,
+                `email_connection_status=${connection.status}`,
+              ]
+            : []),
+        ],
+        // Conectado pero sin remitentes no es lo mismo que conectado y
+        // funcionando: sin fuentes no llega nada, y decir solo "esta conectado"
+        // dejaria al usuario esperando movimientos que no van a aparecer.
+        warnings:
+          connected && sources.length === 0
+            ? [
+                "El buzon esta conectado pero no hay ningun remitente dado de alta, asi que todavia no llega nada por correo.",
+              ]
+            : [],
+        data: {
+          connected,
+          connection: connection
+            ? {
+                email_address: connection.email_address,
+                status: connection.status,
+                watch_status: connection.watch_status,
+                connected_at: connection.created_at,
+              }
+            : null,
+          sources: sources.map((source) => ({
+            id: source.id,
+            sender: source.notification_sender,
+            status: source.status,
+          })),
+        },
+      };
+    } catch (error) {
+      logger.error("tool_gateway.email_status_failed", {
+        error,
+        user_id: userId,
+      });
+      return failedTool("get_email_status");
     }
   }
 
