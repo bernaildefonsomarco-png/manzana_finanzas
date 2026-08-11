@@ -90,8 +90,13 @@ export function compileSemanticQuery(
     issues.push({
       code: "predicado_no_compilable",
       path: "donde",
+      // El mensaje nombra la salida que si existe. La mayoria de los "o" reales
+      // son varias opciones de **una misma dimension** ("comida o transporte"),
+      // y eso ya se expresa hoy con el comparador `en`. Sin esta frase, el
+      // modelo reintentaba el mismo `o` y el turno se quedaba sin datos por una
+      // limitacion que tenia rodeo.
       message:
-        "Este compilador aun solo traduce combinaciones \"y\" (AND); \"o\" y \"no\" no estan soportados todavia.",
+        "Este compilador aun solo traduce combinaciones \"y\" (AND); \"o\" y \"no\" no estan soportados todavia. Si el \"o\" es entre varios valores de la misma dimension, usa el comparador \"en\" con la lista de valores.",
     });
   }
 

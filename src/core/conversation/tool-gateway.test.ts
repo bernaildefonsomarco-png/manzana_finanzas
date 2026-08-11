@@ -449,6 +449,224 @@ describe("ToolGateway.executeAuthorizedTool: consultar_datos_abiertos (20b S5, W
   });
 });
 
+// --- Las cuatro entidades semanticas nuevas (`20b` §5.1) --------------------
+//
+// Una consulta real, una vacia y el aislamiento por usuario, por entidad. Lo
+// que se prueba no es el motor —ya tiene sus tests— sino que la **spec**
+// declarada apunte a la tabla y a las columnas correctas: un mapeo mal escrito
+// aqui no rompe el build, devuelve los datos de otra cosa.
+
+function semanticQueryFor(
+  de: string,
+  donde: SemanticQuery["donde"],
+  medir: string[],
+): SemanticQuery {
+  return {
+    de,
+    donde,
+    agrupar_por: [],
+    medir,
+    ordenar: null,
+    limitar: null,
+    comparar_con: null,
+    a_partir_de: null,
+  };
+}
+
+describe("consultar_datos_abiertos: deudas, presupuestos, cajas y recurrentes", () => {
+  const casos = [
+    {
+      entidad: "deudas",
+      tabla: "debts",
+      dimension: "estado_deuda",
+      valor: "activa",
+      columna: "status",
+      medida: "saldo_total_debido",
+      fila: { id: "d1", status: "activa" },
+    },
+    {
+      entidad: "presupuestos",
+      tabla: "budgets",
+      dimension: "periodo_presupuesto",
+      valor: "mensual",
+      columna: "period_kind",
+      medida: "total_presupuestado",
+      fila: { id: "p1", period_kind: "mensual" },
+    },
+    {
+      entidad: "cajas",
+      tabla: "boxes",
+      dimension: "tipo_caja",
+      valor: "objetivo",
+      columna: "type",
+      medida: "separado_total",
+      fila: { id: "c1", type: "objetivo" },
+    },
+    {
+      entidad: "recurrentes",
+      tabla: "recurring_rules",
+      dimension: "estado_recurrente",
+      valor: "activo",
+      columna: "status",
+      medida: "total_comprometido",
+      fila: { id: "r1", status: "activo" },
+    },
+  ] as const;
+
+  for (const caso of casos) {
+    it(`${caso.entidad}: una consulta real lee ${caso.tabla} por ${caso.columna} y devuelve referencias`, async () => {
+      const { client, calls } = fakeSupabaseClient([caso.fila]);
+      const gateway = new ToolGateway(client as never);
+
+      const result = await gateway.executeAuthorizedTool({
+        toolName: "consultar_datos_abiertos",
+        userId,
+        query: null,
+        semanticQuery: semanticQueryFor(
+          caso.entidad,
+          {
+            kind: "comparacion",
+            dimension: caso.dimension,
+            comparador: "=",
+            valor: caso.valor,
+          },
+          [caso.medida],
+        ),
+        activeMemoryState: null,
+        turnState,
+      });
+
+      expect(result.status).toBe("called");
+      expect(client.from).toHaveBeenCalledWith(caso.tabla);
+      expect(result.data.referencias).toEqual([
+        `${caso.entidad}:${caso.fila.id}`,
+      ]);
+      expect(result.facts).toContain("filas=1");
+      expect(result.facts).toContain(`entidad=${caso.entidad}`);
+      // La dimension se tradujo a la columna real, no se paso tal cual.
+      expect(calls).toContainEqual({
+        method: "eq",
+        args: [caso.columna, caso.valor],
+      });
+      // Una consulta con filas no lleva el aviso de vacio: si lo llevara, la
+      // respuesta pediria disculpas por unos datos que si existen.
+      expect(result.warnings).toEqual([]);
+    });
+
+    it(`${caso.entidad}: una consulta vacia avisa que no es un cero afirmable`, async () => {
+      const { client } = fakeSupabaseClient([]);
+      const gateway = new ToolGateway(client as never);
+
+      const result = await gateway.executeAuthorizedTool({
+        toolName: "consultar_datos_abiertos",
+        userId,
+        query: null,
+        semanticQuery: semanticQueryFor(caso.entidad, null, [caso.medida]),
+        activeMemoryState: null,
+        turnState,
+      });
+
+      expect(result.status).toBe("called");
+      expect(result.facts).toContain("filas=0");
+      expect(result.data.referencias).toEqual([]);
+      expect(
+        result.warnings.some((aviso) => aviso.includes("no que el resultado sea cero")),
+      ).toBe(true);
+    });
+
+    it(`${caso.entidad}: filtra siempre por el user_id del turno`, async () => {
+      const { client, calls } = fakeSupabaseClient([caso.fila]);
+      const gateway = new ToolGateway(client as never);
+
+      await gateway.executeAuthorizedTool({
+        toolName: "consultar_datos_abiertos",
+        userId: otherUserId,
+        query: null,
+        semanticQuery: semanticQueryFor(
+          caso.entidad,
+          // `AC-SEM-01`: aunque la consulta intente nombrar otra persona, el
+          // `user_id` no es expresable en este lenguaje y el filtro real sale
+          // del turno.
+          {
+            kind: "comparacion",
+            dimension: caso.dimension,
+            comparador: "=",
+            valor: caso.valor,
+          },
+          [caso.medida],
+        ),
+        activeMemoryState: null,
+        turnState,
+      });
+
+      expect(calls).toContainEqual({
+        method: "eq",
+        args: ["user_id", otherUserId],
+      });
+      expect(
+        calls.some(
+          (call) => call.method === "eq" && call.args[0] === "user_id" && call.args[1] === userId,
+        ),
+      ).toBe(false);
+    });
+  }
+
+  it("rechaza `fecha` en las entidades nuevas en vez de mapearla a una columna cualquiera", async () => {
+    const { client } = fakeSupabaseClient([]);
+    const gateway = new ToolGateway(client as never);
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "consultar_datos_abiertos",
+      userId,
+      query: null,
+      semanticQuery: semanticQueryFor(
+        "deudas",
+        {
+          kind: "comparacion",
+          dimension: "fecha",
+          comparador: "entre",
+          valor: { desde: "2026-01-01", hasta: "2026-01-31" },
+        },
+        ["conteo"],
+      ),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(
+      result.warnings.some((aviso) => aviso.includes("dimension_no_compilable")),
+    ).toBe(true);
+    expect(client.from).not.toHaveBeenCalled();
+  });
+
+  it("una dimension de otra entidad no cuela: `tipo_caja` sobre deudas se rechaza", async () => {
+    const { client } = fakeSupabaseClient([]);
+    const gateway = new ToolGateway(client as never);
+
+    const result = await gateway.executeAuthorizedTool({
+      toolName: "consultar_datos_abiertos",
+      userId,
+      query: null,
+      semanticQuery: semanticQueryFor(
+        "deudas",
+        {
+          kind: "comparacion",
+          dimension: "tipo_caja",
+          comparador: "=",
+          valor: "objetivo",
+        },
+        ["conteo"],
+      ),
+      activeMemoryState: null,
+      turnState,
+    });
+
+    expect(result.status).toBe("failed");
+    expect(client.from).not.toHaveBeenCalled();
+  });
+});
+
 // --- Tools de dominio completo: presupuestos, reportes, proyeccion, metas ---
 // Cada tool es una puerta delgada a un motor de `src/core/` que ya tiene sus
 // propios tests. Lo que se prueba aqui es la puerta: que el usuario correcto

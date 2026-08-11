@@ -431,14 +431,40 @@ export class ToolGateway {
         });
         return failedTool("consultar_datos_abiertos");
       }
+      const vacia = executed.filas.length === 0;
+      const truncada = executed.filas.length >= compiled.plan.limite;
       return {
         tool_name: "consultar_datos_abiertos",
         status: "called",
+        // `22`: toda cifra afirmable viaja como `fact`, porque el
+        // `EvidenceAndPolicyCompiler` deriva `tool:<nombre>:fact:<i>` de cada
+        // string de esta lista y una afirmacion sin referencia se rechaza. El
+        // conteo de filas es la unica cifra que esta tool calcula; las medidas
+        // solo se declaran (el motor no agrega), asi que van como contexto, no
+        // como numero.
         facts: [
           `entidad=${compiled.plan.entidad}`,
           `filas=${executed.filas.length}`,
+          `medidas_pedidas=${compiled.plan.medir.join(",")}`,
+          ...(compiled.plan.agruparPor.length > 0
+            ? [`agrupado_por=${compiled.plan.agruparPor.join(",")}`]
+            : []),
         ],
-        warnings: [],
+        // `20b` §6.3: "no hay filas" y "el total es cero" no son lo mismo, y
+        // confundirlos es la forma mas facil de afirmar un cero que nadie midio.
+        // El aviso lo dice para que la respuesta no presente el vacio como dato.
+        warnings: [
+          ...(vacia
+            ? [
+                `La consulta sobre "${compiled.plan.entidad}" no devolvio ninguna fila. Eso significa que no hay nada que cumpla esos filtros, no que el resultado sea cero.`,
+              ]
+            : []),
+          ...(truncada
+            ? [
+                `La consulta se corto en el limite de ${compiled.plan.limite} filas: puede haber mas datos fuera de lo que se leyo.`,
+              ]
+            : []),
+        ],
         data: { filas: executed.filas, referencias: executed.referencias },
       };
     } catch (error) {
