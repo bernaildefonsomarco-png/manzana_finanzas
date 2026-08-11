@@ -593,6 +593,12 @@ const TOOL_DESCRIPTIONS: Record<ConversationToolName, string> = {
   get_home_preferences:
     "Consulta que bloques del Inicio estan ocultos y cuales visibles, con su " +
     "clave. Es la unica forma de saber que bloque ocultar o mostrar.",
+  get_profile_summary:
+    "Consulta lo que Manzana sabe de la persona: hechos de perfil confirmados " +
+    "(como le pagan, a que se dedica, con quien vive, su preocupacion) y " +
+    "candidatos observados que todavia NO estan confirmados. Los confirmados " +
+    "se pueden usar para interpretar sus numeros; los candidatos solo para " +
+    "preguntar, nunca para calcular ni afirmar.",
   get_email_status:
     "Consulta si el correo del usuario esta conectado, con que cuenta, desde " +
     "cuando y si la captura por correo esta funcionando.",

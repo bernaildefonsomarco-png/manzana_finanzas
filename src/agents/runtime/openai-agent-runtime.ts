@@ -394,6 +394,13 @@ function buildSystemInstructions(agentName: AgentName): string {
       "light_action se ejecuta sin red: una sola ambiguedad declarada, o poca confianza, y no se hace nada. Es preferible preguntar de mas. value solo se rellena en marcar_descubrimiento, con util o no_util. postpone_days solo en posponer_recordatorio, con los dias que pidio el usuario ('la semana que viene' son 7); dejalo null si no lo dijo.",
       "light_action no es lo mismo que borrar un dato. Descartar un recordatorio o un descubrimiento solo deja de mostrartelo: no toca movimientos, saldos ni cuentas. Si el usuario quiere borrar un movimiento eso es correction_proposal, y si quiere cerrar una caja o un presupuesto eso es structure_proposal.",
       "Cuando uses light_action con intent distinto de none, deja response_composition como una respuesta breve y neutra y no afirmes que ya lo hiciste: el texto que ve el usuario lo compone el motor con el resultado real, e incluye siempre como se deshace.",
+      "profile_signal es la unica puerta por la que algo que la persona conto SOBRE ELLA MISMA llega a su perfil. Usa intent=observed cuando el turno deje ver un hecho de su vida o de su relacion con el dinero que cambie como se leen sus numeros: como le pagan, que dias cobra, a que se dedica, con quien vive, a quien mantiene, su rutina laboral, un viaje o mudanza en curso, su preocupacion principal o el objetivo que declara. En cualquier otro caso, intent=none.",
+      "Un comentario aparentemente no financiero suele ser la mejor informacion financiera: 'me ascendieron', 'me mude', 'me despidieron', 'nacio mi hija', 'me voy tres semanas de viaje'. Registralo con profile_signal y responde a la persona; NO conviertas esa confidencia en una pregunta ni en una leccion financiera en ese mismo turno. Se guarda ahora y se pregunta despues, y de preguntar se encarga el motor, no tu.",
+      "En profile_signal, subject_key tiene la forma ambito:valor y el ambito solo puede ser vida o vinculo (vida:cobro, vida:trabajo, vida:vivienda, vida:viaje, vinculo:preocupacion, vinculo:objetivo). Una preferencia sobre COMO responder no es esto: eso es orchestration_plan.style_update. Un dato financiero concreto tampoco: eso es financial_proposals.",
+      "En profile_signal, statement es la frase que se le mostrara a la persona para que la confirme, en segunda persona y con sus palabras ('Cobras el 15 y el ultimo dia del mes'). origin=dicho si lo conto, origin=observado si lo dedujiste de los datos. unlocks dice en una frase que habilita saberlo ('poder decirte si llegas a fin de mes'): si no habilita nada concreto, usa intent=none, porque guardar algo de alguien y no usarlo nunca es coste sin beneficio.",
+      "profile_signal nunca sale de una categoria sensible ni de un atributo protegido. No infieras salud, ideologia, religion, orientacion ni situacion legal, ni siquiera para descartarlas: la correlacion no es permiso. Si el hecho salio de un movimiento, copia su categoria en source_category_id para que el motor aplique su propia barrera.",
+      "get_profile_summary es la unica forma de saber que sabes de la persona. Devuelve dos listas que no se mezclan: facts son hechos que la persona confirmo o conto, y puedes usarlos para interpretar sus numeros; pending_candidates son observaciones SIN confirmar, y solo sirven para preguntar. Nunca afirmes un candidato, nunca lo metas en un calculo ni en una proyeccion, y nunca lo des por cierto porque parezca probable.",
+      "profile_signal no cambia tu respuesta. Nunca afirmes que aprendiste algo, ni pidas confirmacion del hecho, ni recites el perfil: response_composition sigue respondiendo a lo que la persona dijo.",
       "Cada afirmacion factual de response_composition debe aparecer en grounded_claims. Usa evidence_refs con el formato exacto tool:<tool_name>:fact:<indice_base_0> o tool:<tool_name>:result, y source_tools solo con tools realmente ejecutadas.",
       "Los datos que vienen de active_capture_draft o de turn_workspace (un borrador o un estado ya evidenciado en un turno anterior) no son evidencia de tool: no inventes un evidence_ref de la forma context:... para ellos. Si necesitas mencionar ese dato en response_composition, usa claim_type=non_financial en ese grounded_claim (queda exento del chequeo de evidence_refs) o no lo declares como grounded_claim.",
       "Usa composition_stage=final_read_only para respuestas factuales sin escritura, pre_core_draft cuando exista cualquier propuesta financiera o correccion, y safe_clarification cuando falte evidencia.",
@@ -1931,6 +1938,7 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       structure_proposal: nullable(structureProposalJsonSchema()),
       memory_control: nullable(memoryControlJsonSchema()),
       light_action: nullable(lightActionJsonSchema()),
+      profile_signal: nullable(profileSignalJsonSchema()),
       response_composition: responseComposition,
       orchestration_plan: orchestrationPlan,
       confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -1945,6 +1953,7 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       "structure_proposal",
       "memory_control",
       "light_action",
+      "profile_signal",
       "response_composition",
       "orchestration_plan",
       "confidence",
@@ -1994,6 +2003,32 @@ function lightActionJsonSchema(): JsonSchema {
       "target_id",
       "value",
       "postpone_days",
+      "confidence",
+      "ambiguities",
+    ],
+  );
+}
+
+/** `AC-PERF-14`: hecho sobre la persona observado en el turno, plano. */
+function profileSignalJsonSchema(): JsonSchema {
+  return objectSchema(
+    {
+      intent: { type: "string", enum: ["none", "observed"] },
+      subject_key: { type: "string", maxLength: 120 },
+      statement: { type: "string", maxLength: 280 },
+      origin: { type: "string", enum: ["dicho", "observado"] },
+      unlocks: { type: "string", maxLength: 240 },
+      source_category_id: nullable({ type: "string", maxLength: 80 }),
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+      ambiguities: stringArraySchema(4, 240),
+    },
+    [
+      "intent",
+      "subject_key",
+      "statement",
+      "origin",
+      "unlocks",
+      "source_category_id",
       "confidence",
       "ambiguities",
     ],

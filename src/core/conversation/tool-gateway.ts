@@ -53,6 +53,11 @@ import {
 import { listPendingItems } from "@/data/repositories/pending.repository";
 import { listReminders } from "@/data/repositories/reminders.repository";
 import { getHomeHiddenBlocks } from "@/data/repositories/home.repository";
+import {
+  listActiveProfileFacts,
+  listOpenProfileCandidates,
+} from "@/data/repositories/profile-candidates.repository";
+import { capaDelHecho } from "@/core/profile/layers";
 import { HOME_BLOCK_KINDS } from "@/core/home/home-composer";
 import {
   getEmailConnectionForUser,
@@ -321,6 +326,11 @@ export class ToolGateway {
     }
     if (input.toolName === "get_email_status") {
       return this.getEmailStatus(input.userId);
+    }
+    // El perfil tampoco tiene parametros: es el estado completo de lo que se
+    // sabe de la persona, y no se filtra por la pregunta del turno.
+    if (input.toolName === "get_profile_summary") {
+      return this.getProfileSummary(input.userId);
     }
     if (!input.query) {
       logger.error("tool_gateway.missing_query_for_closed_tool", {
@@ -1309,6 +1319,73 @@ export class ToolGateway {
         user_id: userId,
       });
       return failedTool("get_home_preferences");
+    }
+  }
+
+  /**
+   * `36` §14.3 y `AC-MEM-04`: lo que Manzana sabe de la persona, en dos listas
+   * que **no se mezclan**.
+   *
+   * `facts` son hechos que el usuario confirmo o conto: se pueden usar para
+   * interpretar sus numeros. `pending_candidates` son observaciones sin
+   * confirmar: sirven para preguntar y para nada mas. Van separadas y cada
+   * candidato lleva `confirmado: false` porque juntarlas en una sola lista
+   * "de cosas que sé" es exactamente como un candidato termina entrando en una
+   * proyeccion (`WEB-D023`).
+   *
+   * La capa sale del prefijo del `subject_key` con `capaDelHecho`, unica fuente
+   * de esa convencion: aqui no se reimplementa.
+   */
+  private async getProfileSummary(
+    userId: string,
+  ): Promise<ConversationToolResult> {
+    try {
+      const [facts, candidates] = await Promise.all([
+        listActiveProfileFacts(this.client, { userId }),
+        listOpenProfileCandidates(this.client, { userId }),
+      ]);
+      return {
+        tool_name: "get_profile_summary",
+        status: "called",
+        facts: [
+          `confirmed_fact_count=${facts.length}`,
+          `pending_candidate_count=${candidates.length}`,
+        ],
+        warnings:
+          candidates.length > 0
+            ? [
+                "Los candidatos no estan confirmados: sirven para preguntar, nunca para calcular ni afirmar.",
+              ]
+            : [],
+        data: {
+          facts: facts.map((fact) => ({
+            id: fact.id,
+            capa: capaDelHecho(fact.subject_key),
+            subject_key: fact.subject_key,
+            statement: fact.statement,
+            origin: fact.origin,
+            status: fact.status,
+            validity: fact.validity,
+            last_confirmed_at: fact.last_confirmed_at,
+            confirmado: true,
+          })),
+          pending_candidates: candidates.map((candidate) => ({
+            id: candidate.id,
+            capa: capaDelHecho(candidate.subject_key),
+            subject_key: candidate.subject_key,
+            statement: candidate.statement,
+            status: candidate.status,
+            ask_count: candidate.ask_count,
+            confirmado: false,
+          })),
+        },
+      };
+    } catch (error) {
+      logger.error("tool_gateway.profile_summary_failed", {
+        error,
+        user_id: userId,
+      });
+      return failedTool("get_profile_summary");
     }
   }
 

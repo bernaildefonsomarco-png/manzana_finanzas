@@ -43,6 +43,11 @@ export const ConversationToolNameSchema = z.enum([
   // sobre que: un `target_id` que no salio de una tool no se ejecuta.
   "get_reminders",
   "get_home_preferences",
+  // `36` S14.3: "que sabes de mi" tiene que poder contestarse con el perfil
+  // real, no solo con la memoria clasificatoria. Es ademas la unica forma de
+  // que el asistente pueda **nombrar** un hecho de perfil o un candidato sin
+  // inventarselo (`AC-MEM-03`/`AC-MEM-04`).
+  "get_profile_summary",
   // El estado del buzon no habilita ningun comando (`pausar_fuente` y
   // `desconectar_buzon` son `tarjeta`/`riesgo`), pero "¿mi correo sigue
   // conectado?" es una pregunta que hoy no tiene tool y se contestaba a ciegas.

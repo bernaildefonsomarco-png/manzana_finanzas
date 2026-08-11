@@ -227,6 +227,56 @@ export const LightActionRequestSchema = z.object({
 });
 export type LightActionRequest = z.infer<typeof LightActionRequestSchema>;
 
+/**
+ * `AC-PERF-14`, `20c` §6b.1: modulo por el que el ejecutivo dice que en este
+ * turno la persona conto —o dejo ver— algo **sobre ella misma** que cambia como
+ * se leen sus numeros: como le pagan, a que se dedica, con quien vive, a quien
+ * mantiene, un viaje en curso, su preocupacion principal.
+ *
+ * Existe por la misma razon que `structure_proposal`, `memory_control` y
+ * `light_action`, y se resuelve igual: **sin una pasada de modelo nueva**. El
+ * ejecutivo ya lee el turno entero una vez; pedirle un campo mas cuesta tokens,
+ * no latencia. Una segunda llamada encadenada para "extraer hechos de perfil"
+ * habria devuelto el turno a la arquitectura que se desmonto por lenta.
+ *
+ * Es deliberadamente plano y no un comando: el modelo describe lo que oyo y
+ * `compileProfileSignal` decide si eso se guarda. El modelo no elige la capa
+ * (sale del prefijo del `subject_key`), no decide si algo es sensible, no
+ * pregunta y no escribe.
+ *
+ * `20c` §6b.1: se registra en el momento y **se pregunta despues**. Este modulo
+ * es solo el registro; quien pregunta es el gate (`AC-PERF-02`).
+ */
+export const ProfileSignalRequestSchema = z.object({
+  intent: z.enum(["none", "observed"]),
+  /**
+   * `ambito:valor` (`36` §7). El ambito es la capa de `20c` §2 y solo se
+   * aceptan `vida:` y `vinculo:`: `estilo` ya viaja por
+   * `orchestration_plan.style_update` y `hilo` es el estado del hilo.
+   */
+  subject_key: z.string().trim().max(120),
+  /** La frase que se le mostrara al usuario para confirmarla, en sus terminos. */
+  statement: z.string().trim().max(280),
+  /** `20c` §3: `dicho` lo conto la persona, `observado` lo dedujo el motor. */
+  origin: z.enum(["dicho", "observado"]),
+  /**
+   * `20c` §3: "se pregunta cuando el hecho desbloquea algo concreto". Que
+   * habilita saberlo, dicho en una frase. Vacio significa que no habilita nada,
+   * y entonces no se guarda: `20c` §9 cuenta como coste de privacidad sin
+   * beneficio los hechos que nunca se usan.
+   */
+  unlocks: z.string().trim().max(240),
+  /**
+   * `id` exacto de la categoria de la que salio la observacion, si salio de
+   * una. El nucleo resuelve su `is_sensitive` contra el catalogo real
+   * (`AC-PERF-10`); el modelo no declara sensibilidad.
+   */
+  source_category_id: z.string().trim().max(80).nullable(),
+  confidence: z.number().min(0).max(1),
+  ambiguities: z.array(z.string().trim().min(1).max(240)).max(4),
+});
+export type ProfileSignalRequest = z.infer<typeof ProfileSignalRequestSchema>;
+
 export const GroundedClaimSchema = z.object({
   claim_id: z.string().trim().min(1).max(80),
   text: z.string().trim().min(1).max(320),
@@ -290,6 +340,10 @@ export const ConversationalExecutiveOutputSchema = z.object({
   // para que un estado o fixture anterior siga validando. Ausencia es "este
   // turno no pide ninguna accion ligera".
   light_action: LightActionRequestSchema.nullable().default(null),
+  // `AC-PERF-14`: mismo contrato que los tres anteriores — nullable con default
+  // para que un estado o fixture anterior siga validando. Ausencia es "este
+  // turno no observo nada sobre la persona".
+  profile_signal: ProfileSignalRequestSchema.nullable().default(null),
   response_composition: ResponseCompositionSchema,
   orchestration_plan: OrchestrationPlanSchema,
   findings: z.array(FindingSchema).max(1).default([]),

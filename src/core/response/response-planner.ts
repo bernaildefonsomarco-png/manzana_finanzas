@@ -65,6 +65,14 @@ export type TurnResponsePlannerInput = {
    * esta frase es toda la confirmacion que existe (`40` §3.1).
    */
   lightActionText?: string;
+  /**
+   * `ACT-MEM-03`/`04`/`05`: texto ya compuesto por el ejecutor de confirmacion
+   * de perfil. Va verbatim y por la misma razon que `lightActionText`: el
+   * usuario acaba de responder a una pregunta sobre lo que el sistema cree de
+   * el, y esta frase es toda la constancia que va a tener de que su respuesta
+   * se guardo (o de que no se pudo).
+   */
+  profileConfirmationText?: string;
   conversationAnswer?: ConversationalAnswer;
   supplementalConversationAnswer?: ConversationalAnswer;
   conversationTurnState?: ConversationTurnState;
@@ -183,6 +191,7 @@ type ProductResponseReason =
   | "memory_needs_confirmation"
   | "memory_control_answered"
   | "light_action_answered"
+  | "profile_confirmation_answered"
   | "ready_for_core_not_executed";
 
 type ProductResponse = {
@@ -479,6 +488,20 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
       intent: "direct_response",
       shape: "texto",
       text: lightActionText,
+    };
+  }
+
+  // `AC-PERF-02`: responder a la pregunta de perfil resuelve el turno. Va junto
+  // a la accion ligera y por el mismo motivo — ya se escribio en la base antes
+  // de llegar aqui, asi que su texto manda sobre cualquier respuesta
+  // conversacional compuesta en paralelo.
+  const profileConfirmationText = input.profileConfirmationText?.trim();
+  if (profileConfirmationText) {
+    return {
+      reason: "profile_confirmation_answered",
+      intent: "direct_response",
+      shape: "texto",
+      text: profileConfirmationText,
     };
   }
 

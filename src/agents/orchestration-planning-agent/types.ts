@@ -79,6 +79,7 @@ export const PlanningCapabilitySchema = z.enum([
   // el ejecutivo pueda declararlas en su plan.
   "get_reminders",
   "get_home_preferences",
+  "get_profile_summary",
   "get_email_status",
   "policy_gate",
   "command_dispatcher",
@@ -408,6 +409,12 @@ export const ORCHESTRATION_CAPABILITY_CATALOG: OrchestrationPlanningContextPack[
     kind: "tool",
     read_only: true,
     description: "Consulta que bloques del Inicio estan ocultos y cuales visibles, con su clave.",
+  },
+  {
+    name: "get_profile_summary",
+    kind: "tool",
+    read_only: true,
+    description: "Consulta el perfil del usuario: hechos confirmados por capa y candidatos observados todavia sin confirmar, con su id.",
   },
   {
     name: "get_email_status",

@@ -14,6 +14,21 @@ import {
   compileLightActionRequest,
   executeLightAction,
 } from "@/core/light-actions";
+import { captureProfileCandidate } from "@/core/profile/profile-candidate-capture";
+import { applyProfileConfirmation } from "@/core/profile/profile-confirmation-executor";
+import {
+  decidirPreguntaDePerfil,
+  esTextoDeConfirmacionDePerfil,
+  esTextoDeNoPreguntarMas,
+  esTextoDeRechazoDePerfil,
+  isProfileCommandText,
+  resolveAwaitingProfileConfirmation,
+} from "@/core/profile/profile-confirmation-turn";
+import { compileProfileSignal } from "@/core/profile/profile-signal";
+import {
+  listOpenProfileCandidates,
+  markProfileCandidateAsked,
+} from "@/data/repositories/profile-candidates.repository";
 import {
   buildMemoryCommandText,
   isMemoryCommandText,
@@ -78,7 +93,7 @@ import {
   listRecentMovementsForPreflight,
   SupabaseFinancialCoreRepository,
 } from "@/data/repositories/movements.repository";
-import type { Channel, PresentedTurn, TurnInput } from "@/core/channel/types";
+import type { Block, Channel, PresentedTurn, TurnInput } from "@/core/channel/types";
 import {
   planTurnBlocks,
   type PlanTurnBlocksResult,
@@ -237,6 +252,11 @@ export type TurnOrchestrationResult = {
     // cambio nada y el usuario tiene que enterarse.
     | "accepted_with_light_action_applied"
     | "accepted_with_light_action_failed"
+    // `AC-PERF-02`: el usuario respondio a la pregunta de perfil. `failed`
+    // cubre que la base no acepto la respuesta: no cambio nada y hay que
+    // decirlo, porque el usuario cree que acaba de decidir algo suyo.
+    | "accepted_with_profile_confirmation"
+    | "accepted_with_profile_confirmation_failed"
     | "missing_external_event"
     | "missing_user"
     | "non_text_message";
@@ -697,6 +717,23 @@ export class FinancialOrchestrator {
       previousWorkingSet: activeMemoryState?.working_set ?? null,
     });
     if (memoryControlTurn) return memoryControlTurn;
+
+    // `AC-PERF-02`: el turno anterior pregunto por un hecho de perfil y esto es
+    // la respuesta. Va pegado a la puerta de privacidad y delante de todo lo
+    // demas porque "si, es asi" o "no exactamente" son frases cortisimas que
+    // cualquier otro camino podria leer como otra cosa.
+    const profileAnswerTurn = await this.answerProfileQuestionIfPending({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      conversationTurnState: effectiveConversationTurnState,
+      activeMemoryState,
+      previousWorkingSet: activeMemoryState?.working_set ?? null,
+    });
+    if (profileAnswerTurn) return profileAnswerTurn;
 
     // `RUL-LIG-01`: el ejecutivo entendio que este turno pide una accion de
     // nivel `ninguna` del catalogo (`40` §7) — posponer o descartar un
@@ -1221,15 +1258,35 @@ export class FinancialOrchestrator {
         dataAgentIntent: dataAgentResult.output.intent,
         conversationAnswer: conversationAgentResult.output,
       });
-      const presented = await this.presentTurn(plan, {
-        turnInput,
-        externalEventId: externalEvent.id,
+      // `AC-PERF-14` y `AC-PERF-02`: el perfil se aprende y se pregunta **aqui**
+      // y en ningun otro camino. Es el turno en que el usuario esta
+      // conversando, no registrando ni corrigiendo: `20c` §6b.1 dice que el
+      // hecho se registra en el momento y se pregunta "cuando venga a cuento",
+      // y venir a cuento es esto. Colgarlo de un turno que acaba de crear un
+      // movimiento convertiria cada gasto anotado en una entrevista.
+      //
+      // Solo puede **añadir** un bloque detras de la respuesta ya compuesta: si
+      // falla, `plan.blocks` vuelve intacto y el turno se presenta igual.
+      const profileAwareBlocks = await this.withProfileFollowUp({
+        blocks: plan.blocks,
+        externalEvent,
         traceId: input.traceId,
-        conversationTurnState: effectiveConversationTurnState,
-        timezone: dataContextPack.timezone,
-        styleOverride: orchestrationPlanning?.compiled.styleUpdate ?? null,
-        skipEnhancement: executiveActive,
+        executive: executiveTrace,
+        dataContextPack,
+        activeMemoryState,
       });
+      const presented = await this.presentTurn(
+        { ...plan, blocks: profileAwareBlocks },
+        {
+          turnInput,
+          externalEventId: externalEvent.id,
+          traceId: input.traceId,
+          conversationTurnState: effectiveConversationTurnState,
+          timezone: dataContextPack.timezone,
+          styleOverride: orchestrationPlanning?.compiled.styleUpdate ?? null,
+          skipEnhancement: executiveActive,
+        },
+      );
 
       await updateExternalEventStatus(this.client, {
         external_event_id: externalEvent.id,
@@ -1290,7 +1347,10 @@ export class FinancialOrchestrator {
             }),
           ),
           ...getOrchestrationPlanningMetadata(orchestrationPlanning),
-          ...presentedTurnMetadata(plan, presented),
+          ...presentedTurnMetadata(
+            { ...plan, blocks: profileAwareBlocks },
+            presented,
+          ),
         },
       });
 
@@ -1753,6 +1813,206 @@ export class FinancialOrchestrator {
       status: "accepted",
       reason: orchestratorReason,
     };
+  }
+
+  /**
+   * `AC-PERF-02`: resuelve la pregunta de perfil que este turno responde.
+   *
+   * Devuelve `null` —y el turno sigue su camino de siempre— en cuanto algo no
+   * encaja: el texto no responde a nada, no hay pregunta viva en esta
+   * conversacion, o la ventana ya paso. Nunca se come un turno por si acaso.
+   */
+  private async answerProfileQuestionIfPending(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    activeMemoryState: ConversationMemoryState | null;
+    previousWorkingSet: ConversationWorkingSet | null;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    // Antes de ir a la base: si el texto no puede ser una respuesta a esa
+    // pregunta, no hay nada que consultar. Un turno normal no paga una lectura
+    // por una pregunta que probablemente no se hizo.
+    if (
+      !isProfileCommandText(params.text) &&
+      !esTextoDeConfirmacionDePerfil(params.text) &&
+      !esTextoDeRechazoDePerfil(params.text) &&
+      !esTextoDeNoPreguntarMas(params.text)
+    ) {
+      return null;
+    }
+
+    let candidatos;
+    try {
+      candidatos = await listOpenProfileCandidates(this.client, { userId });
+    } catch (error) {
+      // Una lectura de perfil que falla no puede tumbar el turno: el usuario
+      // sigue teniendo derecho a su respuesta (`WEB-D296`).
+      logger.warn("profile.candidates_read_failed", {
+        user_id: userId,
+        trace_id: params.traceId,
+        error,
+      });
+      return null;
+    }
+
+    const awaiting = resolveAwaitingProfileConfirmation({
+      text: params.text,
+      candidatos,
+      conversationStateId: params.activeMemoryState?.id ?? null,
+      now: params.externalEvent.received_at,
+    });
+    if (awaiting.kind !== "answered") return null;
+
+    const result = await applyProfileConfirmation({
+      client: this.client,
+      userId,
+      candidato: awaiting.candidato,
+      answer: awaiting.answer,
+      traceId: params.traceId,
+    });
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId,
+      dataAgentCompleted: true,
+      dataAgentIntent: "conversation",
+      conversationTurnState: params.conversationTurnState,
+      profileConfirmationText: result.text,
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      // El texto dice donde se cambia y como se deshace. Reescribirlo perderia
+      // justo esa mitad (`40` §3.1).
+      skipEnhancement: true,
+    });
+
+    const applied = result.kind === "applied";
+    await rememberConversationOutcome({
+      client: this.client,
+      userId,
+      channel: params.channel,
+      threadKey: params.threadKey,
+      intent: "profile_confirmation",
+      userMessage: params.text,
+      resultSummary: presented.text ?? result.text,
+      sourceRef: params.externalEvent.id,
+      topic: "memory",
+      goal: "confirm",
+      actionKind: applied ? "light_action_applied" : "light_action_failed",
+      actionStatus: applied ? "completed" : "failed",
+      previous: params.previousWorkingSet,
+      now: params.externalEvent.received_at,
+    });
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] = applied
+      ? "accepted_with_profile_confirmation"
+      : "accepted_with_profile_confirmation_failed";
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: orchestratorReason,
+        agent_runtime_required: false,
+        // Solo identificadores: `20c` §8 prohibe contenido del perfil en los
+        // registros tecnicos.
+        profile_candidate_id: result.candidateId,
+        profile_answer: result.answer,
+        profile_fact_id: result.promotedFactId,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: orchestratorReason,
+    };
+  }
+
+  /**
+   * `AC-PERF-14` + `AC-PERF-02`: registra lo que el turno dejo ver sobre la
+   * persona y, si toca, añade la pregunta de confirmacion a la respuesta que ya
+   * estaba compuesta.
+   *
+   * Devuelve los bloques, y devolver **los mismos** es el caso normal. Nunca
+   * quita ni reemplaza un bloque: el perfil solo puede añadir una pregunta
+   * detras de lo que el usuario vino a buscar. Cualquier fallo se traga y
+   * devuelve los bloques de entrada intactos (`WEB-D296`).
+   */
+  private async withProfileFollowUp(params: {
+    blocks: Block[];
+    externalEvent: ExternalEventLog;
+    traceId: string;
+    executive: OrchestrationPlanningTrace["executive"];
+    dataContextPack: DataContextPack;
+    activeMemoryState: ConversationMemoryState | null;
+  }): Promise<Block[]> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return params.blocks;
+
+    try {
+      const signal = params.executive?.result.output.profile_signal ?? null;
+      const draft = compileProfileSignal(signal, {
+        // `AC-PERF-10`: la sensibilidad sale del catalogo real del turno, no del
+        // modelo. Una categoria que el modelo nombra y que no esta en el
+        // catalogo se trata como sensible: el lado seguro es no aprender.
+        categoriaOrigenEsSensible: esCategoriaSensible(
+          params.dataContextPack,
+          signal?.source_category_id ?? null,
+        ),
+      });
+
+      await captureProfileCandidate({
+        client: this.client,
+        userId,
+        draft,
+        evidenceRef: params.externalEvent.id,
+        observedAt: params.externalEvent.received_at,
+        traceId: params.traceId,
+      });
+
+      const conversationStateId = params.activeMemoryState?.id ?? null;
+      // En el primer turno de la conversacion el gate dice que no sin mirar los
+      // candidatos (`AC-PERF-02`), asi que tampoco se paga la lectura.
+      if (conversationStateId === null) return params.blocks;
+
+      const candidatos = await listOpenProfileCandidates(this.client, {
+        userId,
+      });
+      const decision = decidirPreguntaDePerfil({
+        candidatos,
+        conversationStateId,
+        now: params.externalEvent.received_at,
+      });
+      if (!decision.preguntar) return params.blocks;
+
+      await markProfileCandidateAsked(this.client, {
+        userId,
+        candidateId: decision.candidato.id,
+        conversationStateId,
+        now: params.externalEvent.received_at,
+      });
+      return [...params.blocks, decision.block];
+    } catch (error) {
+      logger.warn("profile.follow_up_failed", {
+        user_id: userId,
+        trace_id: params.traceId,
+        error,
+      });
+      return params.blocks;
+    }
   }
 
   /** Ejecuta o cancela la orden de memoria que el usuario acaba de confirmar. */
@@ -3301,6 +3561,25 @@ function readStringArray(metadata: unknown, keys: string[]): string[] {
     }
   }
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+/**
+ * `AC-PERF-10`: `categories[].is_sensitive` del catalogo real del turno es la
+ * unica fuente de sensibilidad —`sensitive-topics.ts` es explicito en que no
+ * mantiene su propia lista—. Sin categoria declarada, la observacion no viene
+ * de un movimiento y no hay nada sensible que mirar; con una categoria que el
+ * catalogo no conoce, se trata como sensible: el lado seguro es no aprender.
+ */
+function esCategoriaSensible(
+  dataContextPack: DataContextPack,
+  categoryId: string | null,
+): boolean {
+  const id = categoryId?.trim();
+  if (!id) return false;
+  const categoria = dataContextPack.categories.find(
+    (candidata) => candidata.id === id,
+  );
+  return categoria ? categoria.is_sensitive : true;
 }
 
 function presentedTurnMetadata(plan: PlanTurnBlocksResult, presented: PresentedTurn) {

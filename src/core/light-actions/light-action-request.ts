@@ -28,10 +28,16 @@ import { HOME_BLOCK_KINDS, type HomeBlockKind } from "@/core/home/home-composer"
  *   agrupacion + filtros). Una conversacion no tiene ese objeto: lo mas cercano
  *   es una `SemanticQuery`, que no reproduce lo que el usuario vio. Guardar algo
  *   que al reabrirse muestra otra cosa es peor que no guardarlo.
- * - `confirmar_hecho_perfil` (`36`): promueve una fila de
- *   `user_profile_candidates` a `user_profile_facts`, y hoy ninguna tool de
- *   lectura expone esos candidatos. El asistente estaria confirmando un hecho
- *   que no puede nombrar, contra `AC-MEM-03`/`AC-MEM-04`.
+ * - `confirmar_hecho_perfil` (`36`): sigue fuera, pero **ya no por falta de
+ *   lectura** — `get_profile_summary` expone los candidatos con su id desde
+ *   `AC-PERF-02`. Queda fuera por lo que promueve: `WEB-D023` dice que un hecho
+ *   de perfil no pasa a vigente sin que el usuario lo confirme, *nunca*, y esa
+ *   es la unica clase de aprendizaje de la que el producto exige eso. Un
+ *   `light_action` pone al modelo a decidir que el usuario confirmo; el camino
+ *   que si existe —la pregunta de `SCR-MEM-03` con sus tres botones, y su
+ *   respuesta leida por `resolveAwaitingProfileConfirmation` contra la pregunta
+ *   exacta que se hizo y dentro de su ventana— es el usuario confirmando. Con
+ *   dos caminos hacia la misma escritura, el debil manda; por eso hay uno.
  * - `no_preguntar_mas` y `reactivar_aprendizaje` (`36`): ya se ejecutan en
  *   `resolveMemoryControl` (`RUL-MEM-16`), por la puerta de privacidad.
  */

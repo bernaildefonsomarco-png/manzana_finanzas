@@ -55,7 +55,10 @@ describe("censo de cobertura del asistente sobre el catalogo de `40` §7", () =>
     // `light-action-request.ts`: `posponer_siguiente` (mismo ejecutor que
     // `descartar_recordatorio`), `guardar_busqueda` y `guardar_vista_reporte`
     // (guardan configuracion de pantalla, que una conversacion no tiene) y
-    // `confirmar_hecho_perfil` (no hay tool que exponga los candidatos).
+    // `confirmar_hecho_perfil`, que desde `AC-PERF-02` si tiene tool de lectura
+    // (`get_profile_summary`) pero sigue fuera a proposito: promover un hecho
+    // de perfil exige confirmacion del usuario y no la lectura del modelo
+    // (`WEB-D023`). El motivo largo esta en `light-action-request.ts`.
     const ningunaEnCatalogo = CATALOGO_GENERADO.comandos
       .filter((comando) => comando.niveles.includes("ninguna"))
       .map((comando) => comando.nombre);
