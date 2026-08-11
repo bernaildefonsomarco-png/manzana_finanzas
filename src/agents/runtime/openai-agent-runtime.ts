@@ -17,6 +17,8 @@ import {
   PlanningWorkflowSchema,
 } from "@/agents/orchestration-planning-agent/types";
 import { LIGHT_ACTION_INTENTS } from "@/core/light-actions/light-action-request";
+import { PREFERENCE_INTENTS } from "@/core/preferences/preference-request";
+import { REMINDER_KINDS } from "@/shared/types/domain";
 import { AgentRuntimeError } from "./errors";
 import type {
   AgentConversationTurn,
@@ -401,6 +403,12 @@ function buildSystemInstructions(agentName: AgentName): string {
       "profile_signal nunca sale de una categoria sensible ni de un atributo protegido. No infieras salud, ideologia, religion, orientacion ni situacion legal, ni siquiera para descartarlas: la correlacion no es permiso. Si el hecho salio de un movimiento, copia su categoria en source_category_id para que el motor aplique su propia barrera.",
       "get_profile_summary es la unica forma de saber que sabes de la persona. Devuelve dos listas que no se mezclan: facts son hechos que la persona confirmo o conto, y puedes usarlos para interpretar sus numeros; pending_candidates son observaciones SIN confirmar, y solo sirven para preguntar. Nunca afirmes un candidato, nunca lo metas en un calculo ni en una proyeccion, y nunca lo des por cierto porque parezca probable.",
       "profile_signal no cambia tu respuesta. Nunca afirmes que aprendiste algo, ni pidas confirmacion del hecho, ni recites el perfil: response_composition sigue respondiendo a lo que la persona dijo.",
+      "preference_change es la unica puerta por la que se cambia una preferencia de aviso hablando: pausar_recordatorios ('no me molestes esta semana', 'pausa los avisos', y su inversa 'reanuda los avisos'), silenciar_tipo_recordatorio ('deja de avisarme de los presupuestos', y su inversa 'vuelve a avisarme de X'), cambiar_horario_silencioso ('no me escribas de noche', 'escribeme solo entre las 9 y las 8') y activar_correo_recordatorios ('avisame por correo de las cuotas', y su inversa 'deja de escribirme al correo'). En cualquier otro caso usa intent=none.",
+      "En preference_change, activar dice la direccion: true para pausar, silenciar o activar el correo, y false para su accion inversa (reanudar, volver a avisar, dejar de escribir). No inventes un intent nuevo para deshacer: el intent es siempre el nombre del comando y la direccion va en activar. En cambiar_horario_silencioso activar se ignora.",
+      "En preference_change, reminder_kind se elige del enum de tipos de `37` y solo en silenciar_tipo_recordatorio y activar_correo_recordatorios; en los demas dejalo vacio. Si el usuario dice 'no me avises de nada' eso es pausar_recordatorios, no silenciar diez tipos. Si dice 'deja de avisarme' sin decir de que, no elijas un tipo: declara la duda en ambiguities y deja que el turno pregunte.",
+      "En preference_change, pausar_dias son los dias de pausa contados desde hoy ('esta semana' son 7, 'hasta el lunes' los dias que falten hasta el lunes); dejalo null si no lo dijo y el motor pone una semana, que es lo que la tarjeta mostrara. desde_hora y hasta_hora son HH:MM en 24 horas y solo en cambiar_horario_silencioso ('no me escribas de noche' es 22:00 a 08:00); en los demas van null.",
+      "Ninguna preference_change se ejecuta en este turno: todas llevan tarjeta y el usuario la confirma en el siguiente. activar_correo_recordatorios es ademas un consentimiento, asi que exige mas certeza: si no estas seguro de que la persona esta autorizando que le escriban al correo, usa intent=none. Nunca afirmes que ya lo cambiaste; deja response_composition breve y neutra, que el texto que ve el usuario lo compone el motor.",
+      "preference_change no es style_update ni memory_control. Como quieres que te responda va por orchestration_plan.style_update; olvidar un recuerdo va por memory_control; dejar de recibir avisos va por aqui. Y no es light_action: posponer o descartar un recordatorio concreto es light_action, silenciar el tipo entero es preference_change.",
       "Cada afirmacion factual de response_composition debe aparecer en grounded_claims. Usa evidence_refs con el formato exacto tool:<tool_name>:fact:<indice_base_0> o tool:<tool_name>:result, y source_tools solo con tools realmente ejecutadas.",
       "Los datos que vienen de active_capture_draft o de turn_workspace (un borrador o un estado ya evidenciado en un turno anterior) no son evidencia de tool: no inventes un evidence_ref de la forma context:... para ellos. Si necesitas mencionar ese dato en response_composition, usa claim_type=non_financial en ese grounded_claim (queda exento del chequeo de evidence_refs) o no lo declares como grounded_claim.",
       "Usa composition_stage=final_read_only para respuestas factuales sin escritura, pre_core_draft cuando exista cualquier propuesta financiera o correccion, y safe_clarification cuando falte evidencia.",
@@ -1939,6 +1947,7 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       memory_control: nullable(memoryControlJsonSchema()),
       light_action: nullable(lightActionJsonSchema()),
       profile_signal: nullable(profileSignalJsonSchema()),
+      preference_change: nullable(preferenceChangeJsonSchema()),
       response_composition: responseComposition,
       orchestration_plan: orchestrationPlan,
       confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -1954,6 +1963,7 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       "memory_control",
       "light_action",
       "profile_signal",
+      "preference_change",
       "response_composition",
       "orchestration_plan",
       "confidence",
@@ -2003,6 +2013,35 @@ function lightActionJsonSchema(): JsonSchema {
       "target_id",
       "value",
       "postpone_days",
+      "confidence",
+      "ambiguities",
+    ],
+  );
+}
+
+/** `RUL-PREF-01`: cambio de preferencia de aviso, plano y con su direccion. */
+function preferenceChangeJsonSchema(): JsonSchema {
+  return objectSchema(
+    {
+      intent: { type: "string", enum: [...PREFERENCE_INTENTS] },
+      activar: { type: "boolean" },
+      // El tipo sale del vocabulario cerrado de `37` (`RUL-NOTIF-01`): se
+      // declara como enum para que el modelo no pueda inventarse uno, igual que
+      // pasa con las claves de bloque en `light_action`.
+      reminder_kind: { type: "string", enum: ["", ...REMINDER_KINDS] },
+      pausar_dias: nullable({ type: "integer", minimum: 1, maximum: 90 }),
+      desde_hora: nullable({ type: "string", maxLength: 5 }),
+      hasta_hora: nullable({ type: "string", maxLength: 5 }),
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+      ambiguities: stringArraySchema(4, 240),
+    },
+    [
+      "intent",
+      "activar",
+      "reminder_kind",
+      "pausar_dias",
+      "desde_hora",
+      "hasta_hora",
       "confidence",
       "ambiguities",
     ],

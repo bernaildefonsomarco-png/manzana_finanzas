@@ -173,6 +173,11 @@ export async function rememberConversationOutcome(input: {
    * confirmacion. Pasar `null` limpia el que hubiera.
    */
   memoryProposal?: Record<string, unknown> | null;
+  /**
+   * `RUL-PREF-03`: borrador del cambio de preferencia que queda esperando
+   * confirmacion. Pasar `null` limpia el que hubiera.
+   */
+  preferenceProposal?: Record<string, unknown> | null;
   previous?: ConversationWorkingSet | null;
   now?: string;
 }) {
@@ -205,6 +210,7 @@ export async function rememberConversationOutcome(input: {
     focusSet,
     structureProposal: input.structureProposal ?? null,
     memoryProposal: input.memoryProposal ?? null,
+    preferenceProposal: input.preferenceProposal ?? null,
     now,
   });
 
@@ -407,6 +413,8 @@ function buildConversationWorkingSet(input: {
   structureProposal?: Record<string, unknown> | null;
   /** Borrador de control de memoria vivo tras este turno (`RUL-MEM-16`). */
   memoryProposal?: Record<string, unknown> | null;
+  /** Borrador de cambio de preferencia vivo tras este turno (`RUL-PREF-03`). */
+  preferenceProposal?: Record<string, unknown> | null;
   now?: string;
 }): ConversationWorkingSet {
   const now = input.now ?? new Date().toISOString();
@@ -456,6 +464,10 @@ function buildConversationWorkingSet(input: {
     // que ya olvido, corrigio o cancelo lo deja limpio, y un "si" posterior no
     // encuentra nada que disparar (`RUL-MEM-16`).
     memory_proposal: input.memoryProposal ?? null,
+    // Misma regla para el borrador de preferencia: cada turno declara si sigue
+    // vivo, para que un "si" posterior no apague unos avisos que el usuario ya
+    // no tiene en mente (`RUL-PREF-03`).
+    preference_proposal: input.preferenceProposal ?? null,
     conversation_style: input.previous?.conversation_style ?? null,
     updated_at: now,
   };

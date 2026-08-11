@@ -26,6 +26,13 @@ describe("commandTextLabel", () => {
     expect(commandTextLabel("mem:cancel")).toBe("No, dejalo");
   });
 
+  it("traduce los cambios de preferencia, cuyo id tampoco dice nada", () => {
+    expect(commandTextLabel("pref:55555555-5555-4555-8555-555555555555")).toBe(
+      "Si, confirmar"
+    );
+    expect(commandTextLabel("pref:cancel")).toBe("No, dejalo asi");
+  });
+
   it("una correccion desconocida sigue siendo una confirmacion, no un identificador crudo", () => {
     expect(commandTextLabel("corr:futuro:mov-1")).toBe("Si, confirmar");
   });

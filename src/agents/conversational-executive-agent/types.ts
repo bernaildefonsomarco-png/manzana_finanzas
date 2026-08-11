@@ -22,6 +22,7 @@ import {
 import type { AgentConversationTurn } from "@/agents/runtime/types";
 import type { TurnWorkspace } from "@/core/conversation/turn-workspace";
 import { LIGHT_ACTION_INTENTS } from "@/core/light-actions/light-action-request";
+import { PREFERENCE_INTENTS } from "@/core/preferences/preference-request";
 import { SemanticQuerySchema } from "@/core/semantics/query";
 
 export const TurnInterpreterSchema = z.object({
@@ -277,6 +278,66 @@ export const ProfileSignalRequestSchema = z.object({
 });
 export type ProfileSignalRequest = z.infer<typeof ProfileSignalRequestSchema>;
 
+/**
+ * `RUL-PREF-01`: modulo por el que el ejecutivo dice que este turno pide
+ * cambiar una **preferencia de aviso** — pausar los recordatorios, dejar de
+ * recibir los de un tipo, mover el horario silencioso, o autorizar (o revocar)
+ * que se le escriba al correo.
+ *
+ * Existe por la misma razon que `structure_proposal`, `memory_control`,
+ * `light_action` y `profile_signal`, y se resuelve igual: **sin una pasada de
+ * modelo nueva**. El ejecutivo ya lee el turno entero una vez; pedirle un campo
+ * mas cuesta tokens, no latencia.
+ *
+ * Es deliberadamente plano y no un comando: el modelo describe lo que entendio
+ * y `compilePreferenceRequest` lo convierte en una orden tipada. El modelo no
+ * elige el nivel de confirmacion —ya lo decidio el catalogo (`40` §7.14): tres
+ * son `tarjeta` y uno es `consentimiento`—, no calcula fechas y no ejecuta
+ * nada.
+ *
+ * A diferencia de `light_action`, ninguna de estas se aplica en el turno en que
+ * se pide: todas llevan tarjeta, y la de correo lleva ademas la constancia del
+ * consentimiento.
+ */
+export const PreferenceChangeRequestSchema = z.object({
+  intent: z.enum(PREFERENCE_INTENTS),
+  // `PREFERENCE_INTENTS` vive en el nucleo, con el ejecutor, y no aqui: el
+  // nombre de cada comando es de catalogo (`40` §7.14), no del contrato del
+  // modelo.
+  /**
+   * Direccion de lo que pide el usuario: `true` enciende lo que nombra el
+   * intent (pausar, silenciar, activar el correo) y `false` es su accion
+   * inversa (reanudar, volver a avisar, dejar de escribir). `40` §3 exige que
+   * toda `tarjeta` se pueda deshacer y que un `consentimiento` sea revocable
+   * en cualquier momento, y ninguna de esas inversas tiene nombre propio en
+   * §7. Se ignora en `cambiar_horario_silencioso`, que no tiene direccion.
+   */
+  activar: z.boolean(),
+  /**
+   * Tipo de recordatorio del vocabulario cerrado de `37` (`RUL-NOTIF-01`).
+   * Solo en `silenciar_tipo_recordatorio` y `activar_correo_recordatorios`;
+   * vacio en los demas. El nucleo rechaza cualquier nombre que no exista en
+   * vez de aproximarlo al mas parecido.
+   */
+  reminder_kind: z.string().trim().max(40),
+  /**
+   * Solo en `pausar_recordatorios`: cuantos dias pidio el usuario. El nucleo
+   * convierte los dias a fecha —"hasta el lunes" son 3 dias, no una fecha que
+   * el modelo escriba— y la tarjeta muestra el dia resultante (`40` §7.14).
+   */
+  pausar_dias: z.number().int().min(1).max(90).nullable(),
+  /** Solo en `cambiar_horario_silencioso`: inicio de la franja, `HH:MM` en 24h. */
+  desde_hora: z.string().trim().max(5).nullable(),
+  /** Solo en `cambiar_horario_silencioso`: fin de la franja, `HH:MM` en 24h. */
+  hasta_hora: z.string().trim().max(5).nullable(),
+  confidence: z.number().min(0).max(1),
+  /** Dudas que impiden proponer. Con una sola, el turno pregunta. */
+  ambiguities: z.array(z.string().trim().min(1).max(240)).max(4),
+});
+export type PreferenceChangeRequest = z.infer<
+  typeof PreferenceChangeRequestSchema
+>;
+
 export const GroundedClaimSchema = z.object({
   claim_id: z.string().trim().min(1).max(80),
   text: z.string().trim().min(1).max(320),
@@ -344,6 +405,10 @@ export const ConversationalExecutiveOutputSchema = z.object({
   // para que un estado o fixture anterior siga validando. Ausencia es "este
   // turno no observo nada sobre la persona".
   profile_signal: ProfileSignalRequestSchema.nullable().default(null),
+  // `RUL-PREF-01`: mismo contrato que los cuatro anteriores — nullable con
+  // default para que un estado o fixture anterior siga validando. Ausencia es
+  // "este turno no pide cambiar ninguna preferencia".
+  preference_change: PreferenceChangeRequestSchema.nullable().default(null),
   response_composition: ResponseCompositionSchema,
   orchestration_plan: OrchestrationPlanSchema,
   findings: z.array(FindingSchema).max(1).default([]),

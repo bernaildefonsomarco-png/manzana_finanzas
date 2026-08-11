@@ -26,6 +26,11 @@ import {
   MEMORY_CANCEL_COMMAND_ID,
   type MemoryControlProposal,
 } from "@/core/learning/memory-control-proposal";
+import {
+  buildPreferenceCommandText,
+  PREFERENCE_CANCEL_COMMAND_ID,
+  type PreferenceProposal,
+} from "@/core/preferences/preference-proposal";
 import { buildDashboardDeepLink } from "@/shared/app-links";
 import type { PendingItem } from "@/shared/types/domain";
 
@@ -73,6 +78,19 @@ export type TurnResponsePlannerInput = {
    * se guardo (o de que no se pudo).
    */
   profileConfirmationText?: string;
+  /**
+   * `RUL-PREF-03`: cambio de preferencia que este turno propone. Sale como
+   * tarjeta con botones porque los cuatro comandos de `40` §7.14 son `tarjeta`
+   * o `consentimiento`, y ninguno se ejecuta en el turno en que se pide.
+   */
+  preferenceProposal?: PreferenceProposal;
+  /**
+   * Texto ya compuesto por el ejecutor de preferencias: lo que se aplico, lo
+   * que se cancelo, o la confirmacion que llego tarde. Va verbatim porque dice
+   * exactamente que cambio y como se deshace, y en el caso del correo es ademas
+   * la constancia que el usuario tiene de lo que autorizo (`40` §3).
+   */
+  preferenceText?: string;
   conversationAnswer?: ConversationalAnswer;
   supplementalConversationAnswer?: ConversationalAnswer;
   conversationTurnState?: ConversationTurnState;
@@ -192,6 +210,8 @@ type ProductResponseReason =
   | "memory_control_answered"
   | "light_action_answered"
   | "profile_confirmation_answered"
+  | "preference_needs_confirmation"
+  | "preference_answered"
   | "ready_for_core_not_executed";
 
 type ProductResponse = {
@@ -305,6 +325,46 @@ function buildMemoryControlResponse(
 
   return {
     reason: "memory_control_answered",
+    intent: "direct_response",
+    shape: "texto",
+    text,
+  };
+}
+
+/**
+ * `RUL-PREF-03`: todo lo que este turno puede decir sobre un cambio de
+ * preferencia de aviso.
+ *
+ * La tarjeta va primero porque los cuatro comandos de `40` §7.14 exigen
+ * confirmacion —tres como `tarjeta` y el del correo como `consentimiento`—:
+ * mostrar lo que va a pasar y que el usuario acepte. El texto suelto cubre el
+ * resto (aplicado, cancelado, caducado, fallido) y siempre trae algo que decir,
+ * para que este camino no pueda terminar en cero bloques (`WEB-D296`).
+ */
+function buildPreferenceResponse(
+  input: TurnResponsePlannerInput,
+): ProductResponse | null {
+  const proposal = input.preferenceProposal;
+  if (proposal) {
+    const commandId = buildPreferenceCommandText(proposal.proposal_id);
+    return {
+      reason: "preference_needs_confirmation",
+      intent: "direct_response",
+      shape: "propuesta",
+      text: proposal.summary,
+      proposalCommandId: commandId,
+      options: [
+        { id: commandId, label: proposal.confirm_label },
+        { id: PREFERENCE_CANCEL_COMMAND_ID, label: "No, déjalo así" },
+      ],
+    };
+  }
+
+  const text = input.preferenceText?.trim();
+  if (!text) return null;
+
+  return {
+    reason: "preference_answered",
     intent: "direct_response",
     shape: "texto",
     text,
@@ -504,6 +564,12 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
       text: profileConfirmationText,
     };
   }
+
+  // `RUL-PREF-03`: el cambio de preferencia va detras de memoria y delante de
+  // estructura, por lo mismo que en el orquestador: decidir si te interrumpen
+  // esta al lado de la privacidad, y por delante de cualquier cosa financiera.
+  const preferenceResponse = buildPreferenceResponse(input);
+  if (preferenceResponse) return preferenceResponse;
 
   const structureResponse = buildStructureResponse(input);
   if (structureResponse) return structureResponse;

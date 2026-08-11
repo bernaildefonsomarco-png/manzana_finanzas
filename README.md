@@ -49,6 +49,7 @@ src/
     budgets/        # Presupuestos/metas: periodos, avance, umbrales, rollover y ritmo
     structure/      # Escritura conversacional de cajas, metas y presupuestos (RUL-ESTR-01): comandos tipados, propuesta confirmable y ejecutor propio
     light-actions/  # Comandos de nivel `ninguna` del catálogo (RUL-LIG-01): se aplican en el mismo turno, sin tarjeta, y dicen siempre cómo se deshacen
+    preferences/    # Preferencias de aviso conversando (RUL-PREF-01): pausar, silenciar, horario silencioso y consentimiento de correo, siempre con tarjeta
     projections/    # Proyección y simulación deterministas, mediana/IQR en Lima
     insights/       # Insight Engine
     memory/         # Operaciones y resolución gobernable de Memoria

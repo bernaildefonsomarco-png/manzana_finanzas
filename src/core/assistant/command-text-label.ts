@@ -25,9 +25,12 @@ export function commandTextLabel(text: string): string | null {
   // `RUL-MEM-16`: lo mismo para la tarjeta de memoria. Sin esto, el historial
   // guardaria al usuario "diciendo" `mem:<uuid>`, que es justo lo que no hizo.
   if (normalized === "mem:cancel") return "No, dejalo";
+  // `RUL-PREF-03`: y lo mismo para la tarjeta de preferencia.
+  if (normalized === "pref:cancel") return "No, dejalo asi";
 
   if (normalized.startsWith("estr:")) return "Si, confirmar";
   if (normalized.startsWith("mem:")) return "Si, confirmar";
+  if (normalized.startsWith("pref:")) return "Si, confirmar";
 
   if (!normalized.startsWith("corr:")) return null;
 

@@ -204,6 +204,100 @@ export async function resumeReminders(client: Client, userId: string): Promise<v
   if (error) throw mapRpcError(error.message);
 }
 
+// --- Variantes para el motor conversacional (`RUL-PREF-04`) -----------------
+//
+// `set_reminder_preference`, `pause_reminders` y `resume_reminders` abortan con
+// `REMINDER_FORBIDDEN` si `auth.uid()` no es el dueno, asi que solo sirven
+// cuando la peticion trae la sesion del usuario. `FinancialOrchestrator` corre
+// siempre con el cliente de servicio —lo hace el asistente web y lo hace el
+// webhook de mensajeria, que ni siquiera tiene usuario autenticado—, asi que
+// para el la migracion `076` expone las variantes `*_for_user`: reciben el
+// `user_id` explicito, estan concedidas **solo a `service_role`** y delegan en
+// la funcion de siempre. Mismo patron que `071` para presupuestos y metas y que
+// `075` para candidatos de perfil.
+//
+// El aislamiento por usuario no se debilita: pasa de venir de un token a venir
+// de un parametro obligatorio que el motor toma del `external_event_log` ya
+// autenticado. Y sigue cerrado para los demas: `authenticated` y `anon` no
+// pueden ejecutar estas variantes, asi que ningun cliente puede pasar el
+// `user_id` de otra persona. La pantalla sigue usando las funciones originales.
+
+/**
+ * Los RPC de `076` son nuevos y todavia no estan en los tipos generados de
+ * Supabase. Mismo puente que usa `profile-candidates.repository.ts` para los de
+ * `075`: se llama por nombre y se comprueba el error al leerlo, en vez de
+ * mentirle al tipo generado.
+ */
+async function callRpc(
+  client: Client,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ error: { message: string } | null }> {
+  const rpc = client.rpc as unknown as (
+    functionName: string,
+    functionArgs: Record<string, unknown>,
+  ) => Promise<{ error: { message: string } | null }>;
+  return rpc(name, args);
+}
+
+export async function setReminderPreferenceForUser(
+  client: Client,
+  userId: string,
+  input: { nudgeType: NudgeType; channel: "dashboard" | "email"; enabled: boolean },
+): Promise<void> {
+  const { error } = await callRpc(client, "set_reminder_preference_for_user", {
+    p_user_id: userId,
+    p_nudge_type: input.nudgeType,
+    p_channel: input.channel,
+    p_enabled: input.enabled,
+  });
+  if (error) throw mapRpcError(error.message);
+}
+
+export async function pauseRemindersForUser(
+  client: Client,
+  userId: string,
+  until: string,
+): Promise<void> {
+  const { error } = await callRpc(client, "pause_reminders_for_user", {
+    p_user_id: userId,
+    p_until: until,
+  });
+  if (error) throw mapRpcError(error.message);
+}
+
+export async function resumeRemindersForUser(
+  client: Client,
+  userId: string,
+): Promise<void> {
+  const { error } = await callRpc(client, "resume_reminders_for_user", {
+    p_user_id: userId,
+  });
+  if (error) throw mapRpcError(error.message);
+}
+
+/**
+ * El horario silencioso vive en `user_preferences.quiet_hours_start/end`, y
+ * hasta `076` la unica escritura que lo tocaba era
+ * `set_whatsapp_nudge_consent`, que ademas sella un evento de consentimiento de
+ * un canal externo con `source: 'dashboard_settings'`. Reutilizarla para
+ * cambiar solo el horario habria registrado un consentimiento que nadie dio, y
+ * en el sitio equivocado. Por eso `076` crea una funcion que escribe **solo** el
+ * horario y nada mas.
+ */
+export async function setQuietHoursForUser(
+  client: Client,
+  userId: string,
+  input: { desde: string; hasta: string },
+): Promise<void> {
+  const { error } = await callRpc(client, "set_quiet_hours_for_user", {
+    p_user_id: userId,
+    p_start: input.desde,
+    p_end: input.hasta,
+  });
+  if (error) throw mapRpcError(error.message);
+}
+
 export async function getReminderPause(
   client: Client,
   userId: string,

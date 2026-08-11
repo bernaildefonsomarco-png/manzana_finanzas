@@ -27,12 +27,44 @@ describe("censo de cobertura del asistente sobre el catalogo de `40` §7", () =>
     expect(sinVia).toEqual([]);
   });
 
-  it("el asistente ejecuta 36 de los 99 comandos del catalogo", () => {
-    // 30 antes de `RUL-LIG-01` + las 6 acciones ligeras de esta tanda. El
-    // numero se afirma aqui a proposito: si alguien cablea o descablea un
-    // comando sin tocar el censo, este test lo dice.
+  it("el asistente ejecuta 40 de los 99 comandos del catalogo", () => {
+    // 30 antes de `RUL-LIG-01`, + las 6 acciones ligeras, + las 4 preferencias
+    // de aviso de `RUL-PREF-01`. El numero se afirma aqui a proposito: si
+    // alguien cablea o descablea un comando sin tocar el censo, este test lo
+    // dice.
     expect(CATALOGO_GENERADO.censo.totalComandos).toBe(99);
-    expect(nombres.length).toBe(36);
+    expect(nombres.length).toBe(40);
+  });
+
+  it("las cuatro preferencias cableadas llevan el nivel que dice el catalogo", () => {
+    // `RUL-PREF-01` no elige el nivel: lo lee. Tres son `tarjeta` y la del
+    // correo es `consentimiento`, que es su propio nivel (`40` §3) y por eso
+    // exige mas certeza y deja constancia. Si `40` reclasificara alguno, este
+    // test lo dice antes de que el asistente ejecute con el nivel equivocado.
+    expect(nivelesDeComando("pausar_recordatorios")).toEqual(["tarjeta"]);
+    expect(nivelesDeComando("silenciar_tipo_recordatorio")).toEqual(["tarjeta"]);
+    expect(nivelesDeComando("cambiar_horario_silencioso")).toEqual(["tarjeta"]);
+    expect(nivelesDeComando("activar_correo_recordatorios")).toEqual([
+      "consentimiento",
+    ]);
+    for (const nombre of [
+      "pausar_recordatorios",
+      "silenciar_tipo_recordatorio",
+      "cambiar_horario_silencioso",
+      "activar_correo_recordatorios",
+    ]) {
+      expect(nombres).toContain(nombre);
+    }
+  });
+
+  it("el unico comando `consentimiento` del catalogo esta cubierto", () => {
+    // `40` §7 tiene exactamente uno. Si aparece un segundo, esta tanda no lo
+    // cubre y el censo tiene que decirlo en vez de callarlo.
+    const consentimiento = CATALOGO_GENERADO.comandos
+      .filter((comando) => comando.niveles.includes("consentimiento"))
+      .map((comando) => comando.nombre);
+    expect(consentimiento).toEqual(["activar_correo_recordatorios"]);
+    expect(nombres).toContain("activar_correo_recordatorios");
   });
 
   it("las seis acciones ligeras cableadas son todas de nivel `ninguna`", () => {

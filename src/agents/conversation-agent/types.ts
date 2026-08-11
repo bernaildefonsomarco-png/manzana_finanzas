@@ -331,6 +331,12 @@ export const ConversationWorkingSetSchema = z.object({
         "memory_proposed",
         "memory_applied",
         "memory_cancelled",
+        // `RUL-PREF-03`: pausar, silenciar o autorizar un aviso es `tarjeta` o
+        // `consentimiento` en el catalogo (`40` §7.14), asi que pasa por el
+        // mismo ciclo propuesta -> confirmacion que las tres anteriores.
+        "preference_proposed",
+        "preference_applied",
+        "preference_cancelled",
         // `RUL-LIG-01`: los comandos de nivel `ninguna` del catalogo (`40` §7)
         // no tienen fase de propuesta: se aplican en el turno en que se piden,
         // asi que su ciclo tiene solo estos dos desenlaces.
@@ -398,6 +404,23 @@ export const ConversationWorkingSetSchema = z.object({
    * sale del estado del propio usuario y no de lo que devuelva el canal.
    */
   memory_proposal: z
+    .record(z.string(), z.unknown())
+    .nullable()
+    .default(null)
+    .optional(),
+  /**
+   * `RUL-PREF-03`: borrador del cambio de preferencia que espera confirmacion
+   * —pausar los avisos, silenciar un tipo, mover el horario silencioso, o
+   * autorizar el correo—. Mismo contrato que los dos anteriores: se guarda sin
+   * forma fuerte para que un estado escrito por una version anterior no rompa
+   * la lectura del hilo, y lo valida `PreferenceProposalSchema` al usarlo.
+   *
+   * Vive aqui y no en el `id` del boton porque lo que se ejecuta tiene que
+   * salir del estado del propio usuario y no de lo que devuelva el canal: un
+   * consentimiento que se pudiera conceder mandando un `id` no seria un
+   * consentimiento.
+   */
+  preference_proposal: z
     .record(z.string(), z.unknown())
     .nullable()
     .default(null)

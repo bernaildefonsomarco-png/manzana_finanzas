@@ -112,4 +112,28 @@ export const COMANDOS_EJECUTABLES_POR_EL_ASISTENTE: ComandoEjecutable[] = [
     nombre: "mostrar_bloque_inicio",
     via: "light-action-executor: setHomeBlockHidden(false)",
   },
+
+  // --- Preferencias de aviso (`RUL-PREF-01`, `preference-executor.ts`) -----
+  //
+  // Los cuatro llevan tarjeta, asi que entran por el ciclo propuesta ->
+  // confirmacion, no por ejecucion directa. La accion inversa de cada uno
+  // (reanudar, volver a avisar, dejar de escribir) viaja bajo el mismo nombre
+  // de catalogo con `activar: false`, asi que no suma nombres al censo: `40`
+  // §7 no le da nombre propio a ninguna de esas inversas.
+  {
+    nombre: "pausar_recordatorios",
+    via: "preference-executor: pauseRemindersForUser / resumeRemindersForUser (tarjeta)",
+  },
+  {
+    nombre: "silenciar_tipo_recordatorio",
+    via: "preference-executor: setReminderPreferenceForUser channel=dashboard (tarjeta)",
+  },
+  {
+    nombre: "cambiar_horario_silencioso",
+    via: "preference-executor: setQuietHoursForUser (tarjeta)",
+  },
+  {
+    nombre: "activar_correo_recordatorios",
+    via: "preference-executor: setReminderPreferenceForUser channel=email (consentimiento)",
+  },
 ];

@@ -37,6 +37,21 @@ import {
   resolveAwaitingMemoryControl,
   type MemoryControlProposal,
 } from "@/core/learning/memory-control-proposal";
+import {
+  buildPreferenceCommandText,
+  isPreferenceCommandText,
+  parsePreferenceCommandText,
+  readStoredPreferenceProposal,
+  resolveAwaitingPreference,
+  type PreferenceProposal,
+} from "@/core/preferences/preference-proposal";
+import { compilePreferenceRequest } from "@/core/preferences/preference-request";
+import {
+  buildPreferenceProposal,
+  composePreferenceCancelledText,
+  composePreferenceLapsedText,
+  executePreferenceProposal,
+} from "@/core/preferences/preference-executor";
 import type { Database } from "@/data/supabase/types";
 import {
   ConversationAgent,
@@ -257,6 +272,15 @@ export type TurnOrchestrationResult = {
     // decirlo, porque el usuario cree que acaba de decidir algo suyo.
     | "accepted_with_profile_confirmation"
     | "accepted_with_profile_confirmation_failed"
+    // `RUL-PREF-01`: pausar, silenciar, mover el horario silencioso o autorizar
+    // el correo, conversando. `confirmation` es la tarjeta que exige el catalogo
+    // (`40` §7.14) antes de tocar nada; `applied`, `cancelled` y `failed`, su
+    // desenlace. Ninguna de las cuatro se ejecuta en el turno en que se pide.
+    | "accepted_with_preference_confirmation"
+    | "accepted_with_preference_applied"
+    | "accepted_with_preference_cancelled"
+    | "accepted_with_preference_failed"
+    | "accepted_with_preference_lapsed"
     | "missing_external_event"
     | "missing_user"
     | "non_text_message";
@@ -427,6 +451,24 @@ export class FinancialOrchestrator {
     });
     if (memoryTurn.handled) return memoryTurn.result;
     activeMemoryState = memoryTurn.activeMemoryState;
+
+    // `RUL-PREF-03`: una propuesta de preferencia ("¿Pauso tus recordatorios
+    // hasta el lunes?") se resuelve igual que una de memoria o de estructura —
+    // con el boton `pref:...` o con el "si" escrito del turno siguiente, mismo
+    // hilo y misma vigencia. Va pegada a memoria porque decidir si te
+    // interrumpen esta al lado de decidir que se recuerda de ti.
+    const preferenceTurn = await this.resolvePreferenceTurn({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      activeMemoryState,
+      conversationTurnState: conversationTurn.turn_state,
+    });
+    if (preferenceTurn.handled) return preferenceTurn.result;
+    activeMemoryState = preferenceTurn.activeMemoryState;
 
     // `RUL-ESTR-03`: una propuesta de estructura ("¿Creo la caja Viaje?") se
     // resuelve exactamente igual que una correccion — con el boton `estr:...`
@@ -753,6 +795,22 @@ export class FinancialOrchestrator {
       previousWorkingSet: activeMemoryState?.working_set ?? null,
     });
     if (lightActionTurn) return lightActionTurn;
+
+    // `RUL-PREF-01`: el ejecutivo entendio que este turno pide cambiar una
+    // preferencia de aviso. El turno no escribe nada aqui: propone y espera el
+    // "si", porque los cuatro comandos de `40` §7.14 llevan tarjeta.
+    const preferenceProposalTurn = await this.proposePreferenceIfRequested({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      conversationTurnState: effectiveConversationTurnState,
+      executive: initialOrchestrationPlanning?.executive ?? null,
+      previousWorkingSet: activeMemoryState?.working_set ?? null,
+    });
+    if (preferenceProposalTurn) return preferenceProposalTurn;
 
     // `RUL-ESTR-01`: el ejecutivo propuso crear o cambiar una caja, meta o
     // presupuesto. El turno no escribe nada aqui: propone y espera el "si".
@@ -1812,6 +1870,350 @@ export class FinancialOrchestrator {
       externalEventId: params.externalEvent.id,
       status: "accepted",
       reason: orchestratorReason,
+    };
+  }
+
+  /**
+   * `RUL-PREF-03`: resuelve el tramo de preferencias que **no** necesita juicio
+   * del modelo — confirmar, descartar o caducar un cambio ya propuesto.
+   *
+   * Todo el bloque va dentro de un `try`: si algo falla, se registra y el turno
+   * sigue su camino normal en vez de quedarse mudo (`WEB-D296`).
+   */
+  private async resolvePreferenceTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    activeMemoryState: ConversationMemoryState | null;
+    conversationTurnState: ConversationTurnState;
+  }): Promise<
+    | { handled: true; result: TurnOrchestrationResult }
+    | { handled: false; activeMemoryState: ConversationMemoryState | null }
+  > {
+    const userId = params.externalEvent.user_id;
+    let activeMemoryState = params.activeMemoryState;
+    if (!userId) return { handled: false, activeMemoryState };
+
+    const workingSet = activeMemoryState?.working_set ?? null;
+
+    try {
+      const isCommand = isPreferenceCommandText(params.text);
+      const awaiting = resolveAwaitingPreference({
+        text: params.text,
+        workingSet,
+        threadKey: params.threadKey,
+        now: params.externalEvent.received_at,
+      });
+
+      // Un boton pulsado trae su propia intencion: no caduca nada. El borrador
+      // vive en el estado, y caducarlo aqui borraria lo que hay que ejecutar.
+      const storedProposal =
+        awaiting.kind === "other_thread"
+          ? null
+          : readStoredPreferenceProposal(workingSet);
+
+      if (
+        !isCommand &&
+        (awaiting.kind === "lapsed_by_topic_change" ||
+          awaiting.kind === "lapsed_confirmation")
+      ) {
+        logger.warn("orchestrator.preference_proposal_lapsed", {
+          trace_id: params.traceId,
+          external_event_id: params.externalEvent.id,
+          lapse_kind: awaiting.kind,
+        });
+        const expiredState = await rememberExpiredCorrectionProposal({
+          client: this.client,
+          userId,
+          channel: params.channel,
+          threadKey: params.threadKey,
+          previousState: activeMemoryState,
+          now: params.externalEvent.received_at,
+        });
+        activeMemoryState = expiredState ?? activeMemoryState;
+      }
+
+      // `AC-RT-13`: una confirmacion tardia se responde, no se ejecuta ni se
+      // descarta en silencio.
+      if (!isCommand && awaiting.kind === "lapsed_confirmation") {
+        const result = await this.presentPreferenceTurn({
+          externalEvent: params.externalEvent,
+          turnInput: params.turnInput,
+          traceId: params.traceId,
+          conversationTurnState: params.conversationTurnState,
+          text: composePreferenceLapsedText(),
+          proposal: null,
+          preferenceAction: "lapsed",
+          orchestratorReason: "accepted_with_preference_lapsed",
+          remember: {
+            channel: params.channel,
+            threadKey: params.threadKey,
+            userId,
+            userMessage: params.text,
+            previous: workingSet,
+            now: params.externalEvent.received_at,
+            actionKind: "preference_cancelled",
+            actionStatus: "expired",
+          },
+        });
+        return { handled: true, result };
+      }
+
+      const commandText = isCommand
+        ? params.text
+        : awaiting.kind === "confirmable"
+          ? awaiting.commandText
+          : null;
+      const command = commandText
+        ? parsePreferenceCommandText(commandText)
+        : null;
+      if (!command) return { handled: false, activeMemoryState };
+
+      const remember = {
+        channel: params.channel,
+        threadKey: params.threadKey,
+        userId,
+        userMessage: params.text,
+        previous: workingSet,
+        now: params.externalEvent.received_at,
+      };
+
+      if (command.kind === "cancel") {
+        const result = await this.presentPreferenceTurn({
+          externalEvent: params.externalEvent,
+          turnInput: params.turnInput,
+          traceId: params.traceId,
+          conversationTurnState: params.conversationTurnState,
+          text: composePreferenceCancelledText(storedProposal),
+          proposal: null,
+          preferenceAction: "cancelled",
+          orchestratorReason: "accepted_with_preference_cancelled",
+          remember: {
+            ...remember,
+            actionKind: "preference_cancelled",
+            actionStatus: "cancelled",
+          },
+        });
+        return { handled: true, result };
+      }
+
+      // Un `pref:<uuid>` inventado no encuentra borrador y no toca nada. Y un
+      // borrador de otra persona nunca esta en este working set, porque el
+      // estado conversacional se lee por `user_id`.
+      if (!storedProposal || storedProposal.proposal_id !== command.proposal_id) {
+        const result = await this.presentPreferenceTurn({
+          externalEvent: params.externalEvent,
+          turnInput: params.turnInput,
+          traceId: params.traceId,
+          conversationTurnState: params.conversationTurnState,
+          text: "No encontré esa confirmación, así que no cambié ninguna de tus preferencias. Si todavía lo quieres, dímelo otra vez.",
+          proposal: null,
+          preferenceAction: "unknown_proposal",
+          orchestratorReason: "accepted_with_preference_lapsed",
+          remember: {
+            ...remember,
+            actionKind: "preference_cancelled",
+            actionStatus: "failed",
+          },
+        });
+        return { handled: true, result };
+      }
+
+      const execution = await executePreferenceProposal({
+        client: this.client,
+        userId,
+        proposal: storedProposal,
+        traceId: params.traceId,
+        now: params.externalEvent.received_at,
+      });
+
+      const applied = execution.kind === "applied";
+      const result = await this.presentPreferenceTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        text: execution.response_text,
+        proposal: null,
+        preferenceAction: applied ? execution.command : execution.kind,
+        orchestratorReason: applied
+          ? "accepted_with_preference_applied"
+          : "accepted_with_preference_failed",
+        remember: {
+          ...remember,
+          actionKind: applied ? "preference_applied" : "preference_cancelled",
+          actionStatus: applied ? "completed" : "failed",
+        },
+      });
+      return { handled: true, result };
+    } catch (error) {
+      logger.warn("orchestrator.preference_turn_failed", {
+        trace_id: params.traceId,
+        external_event_id: params.externalEvent.id,
+        error,
+      });
+    }
+
+    return { handled: false, activeMemoryState };
+  }
+
+  /**
+   * `RUL-PREF-01`: convierte lo que el ejecutivo entendio en un borrador
+   * confirmable. Nunca escribe: los cuatro comandos llevan tarjeta.
+   *
+   * Devuelve `null` cuando este turno no pide ningun cambio de preferencia
+   * —o lo pide sin los datos que lo hacen ejecutable—, para que siga su camino
+   * normal. Ese `null` es tambien la red de seguridad: si algo falla al
+   * compilar, contesta el ejecutivo y el turno no se queda mudo (`WEB-D296`).
+   */
+  private async proposePreferenceIfRequested(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    executive: OrchestrationPlanningTrace["executive"];
+    previousWorkingSet: ConversationWorkingSet | null;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    const command = compilePreferenceRequest(
+      params.executive?.result.output.preference_change ?? null,
+    );
+    if (!command) return null;
+
+    const proposal = buildPreferenceProposal({
+      command,
+      now: params.externalEvent.received_at,
+    });
+    // Un borrador que no valida no puede prometerse con un boton: el turno
+    // sigue su camino y responde el ejecutivo.
+    if (!proposal) return null;
+
+    return this.presentPreferenceTurn({
+      externalEvent: params.externalEvent,
+      turnInput: params.turnInput,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      text: proposal.summary,
+      proposal,
+      preferenceAction: proposal.command,
+      orchestratorReason: "accepted_with_preference_confirmation",
+      skipEnhancement: params.executive != null,
+      remember: {
+        channel: params.channel,
+        threadKey: params.threadKey,
+        userId,
+        userMessage: params.text,
+        previous: params.previousWorkingSet,
+        now: params.externalEvent.received_at,
+        actionKind: "preference_proposed",
+        // `awaiting_confirmation` es lo que sella hilo y vigencia: sin ese
+        // estado, el "si" del turno siguiente no encuentra nada que ejecutar.
+        actionStatus: "awaiting_confirmation",
+      },
+    });
+  }
+
+  /**
+   * Compone, presenta y registra un turno resuelto por la via de preferencias.
+   *
+   * `text` puede llegar vacio si algo aguas arriba degrado: se sustituye por
+   * una frase honesta antes de planificar, porque un turno de preferencias sin
+   * bloques dejaria al usuario sin saber si le apagaron los avisos o no.
+   */
+  private async presentPreferenceTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    text: string | null;
+    proposal: PreferenceProposal | null;
+    preferenceAction: string;
+    orchestratorReason: TurnOrchestrationResult["reason"];
+    skipEnhancement?: boolean;
+    remember: {
+      channel: Channel;
+      threadKey: string;
+      userId: string;
+      userMessage: string;
+      previous: ConversationWorkingSet | null;
+      now: string;
+      actionKind: ConversationOutcomeAction;
+      actionStatus: NonNullable<
+        ConversationWorkingSet["last_action"]
+      >["status"];
+    };
+  }): Promise<TurnOrchestrationResult> {
+    const proposal = params.proposal;
+    const text =
+      params.text?.trim() ||
+      "No pude cambiar esa preferencia ahora mismo, así que tus avisos siguen como estaban. Vuelve a pedírmelo en un momento.";
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId: params.externalEvent.user_id,
+      dataAgentCompleted: true,
+      dataAgentIntent: "conversation",
+      conversationTurnState: params.conversationTurnState,
+      ...(proposal ? { preferenceProposal: proposal } : { preferenceText: text }),
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      // El texto lleva la fecha de reanudacion, el horario resultante o los
+      // tres datos del consentimiento, que el catalogo exige literalmente
+      // (`40` §7.14). Reescribirlo arriesgaria perder justo esa mitad.
+      skipEnhancement: params.skipEnhancement ?? true,
+    });
+
+    const remember = params.remember;
+    await rememberConversationOutcome({
+      client: this.client,
+      userId: remember.userId,
+      channel: remember.channel,
+      threadKey: remember.threadKey,
+      intent: "preference_change",
+      userMessage: remember.userMessage,
+      resultSummary: presented.text ?? text,
+      sourceRef: params.externalEvent.id,
+      topic: "support",
+      goal: proposal ? "confirm" : "review",
+      actionKind: remember.actionKind,
+      actionStatus: remember.actionStatus,
+      commandIds: proposal
+        ? [buildPreferenceCommandText(proposal.proposal_id)]
+        : [],
+      preferenceProposal: proposal,
+      previous: remember.previous,
+      now: remember.now,
+    });
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: params.orchestratorReason,
+        agent_runtime_required: false,
+        preference_action: params.preferenceAction,
+        preference_level: proposal?.nivel ?? null,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: params.orchestratorReason,
     };
   }
 
