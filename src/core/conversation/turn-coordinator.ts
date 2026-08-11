@@ -74,6 +74,39 @@ export type CoordinatedTurnPlan = {
   executiveRan: boolean;
 };
 
+/**
+ * `WEB-D298`: la planificacion del turno se cayo **despues** de que el ejecutivo
+ * ya dijo lo que la persona pedia.
+ *
+ * Existe para que esa excepcion no borre ese dato. Sin plan no se ejecuta nada
+ * —eso no cambia—, pero perder la excepcion y perder la intencion no son lo
+ * mismo: lo primero obliga a degradar, lo segundo deja a la persona creyendo
+ * que su orden se cumplio. El error transporta lo unico que hace falta para
+ * poder decirselo.
+ */
+export class TurnPlanUnavailableError extends Error {
+  constructor(
+    readonly requestedActionIntents: ExecutiveActionSurface[],
+    readonly cause: unknown,
+  ) {
+    super("No se pudo planificar el turno.");
+    this.name = "TurnPlanUnavailableError";
+  }
+}
+
+/** Los cinco modulos que la persona si pidio en este turno. */
+function requestedActionSurfaces(
+  intent: ExecutiveActionIntent,
+): ExecutiveActionSurface[] {
+  const surfaces: ExecutiveActionSurface[] = [];
+  if (intent.memory_control) surfaces.push("memory_control");
+  if (intent.structure_proposal) surfaces.push("structure_proposal");
+  if (intent.light_action) surfaces.push("light_action");
+  if (intent.profile_signal) surfaces.push("profile_signal");
+  if (intent.preference_change) surfaces.push("preference_change");
+  return surfaces;
+}
+
 export class TurnCoordinator {
   constructor(
     private readonly dependencies: {
@@ -125,22 +158,40 @@ export class TurnCoordinator {
       });
     }
 
-    const result =
-      input.mode === "active" && executiveResult && composed
-        ? planningResultFromExecutive(executiveResult)
-        : await this.dependencies.legacyPlanningAgent.plan(
-            input.executiveContext.planning_context,
-            input.traceId,
-          );
-    const compiled = compileOrchestrationPlan({
-      plan: result.output,
-      fallbackQuery:
-        input.executiveContext.planning_context.kernel_hint.query,
-      fallbackTurnState:
-        input.executiveContext.planning_context.kernel_hint.turn_state,
-      workingSet: input.workingSet,
-      receivedAt: input.executiveContext.planning_context.received_at,
-    });
+    const carried = input.mode !== "off" ? executiveResult : null;
+    const carriedIntent = carried
+      ? actionIntentFrom(carried.output)
+      : EMPTY_EXECUTIVE_ACTION_INTENT;
+
+    // `WEB-D298`: el planner legado es una llamada de modelo sin red propia, y
+    // es justo la que corre cuando el ejecutivo se rechazo — es decir, cuando ya
+    // habia una intencion rescatada que perder. Si se cae, la intencion sale por
+    // el error en vez de evaporarse con el turno.
+    let result: OrchestrationPlanningResult;
+    let compiled: CompiledOrchestrationPlan;
+    try {
+      result =
+        input.mode === "active" && executiveResult && composed
+          ? planningResultFromExecutive(executiveResult)
+          : await this.dependencies.legacyPlanningAgent.plan(
+              input.executiveContext.planning_context,
+              input.traceId,
+            );
+      compiled = compileOrchestrationPlan({
+        plan: result.output,
+        fallbackQuery:
+          input.executiveContext.planning_context.kernel_hint.query,
+        fallbackTurnState:
+          input.executiveContext.planning_context.kernel_hint.turn_state,
+        workingSet: input.workingSet,
+        receivedAt: input.executiveContext.planning_context.received_at,
+      });
+    } catch (error) {
+      throw new TurnPlanUnavailableError(
+        requestedActionSurfaces(carriedIntent),
+        error,
+      );
+    }
     const executive =
       input.mode !== "off" && executiveResult && composed
         ? {
@@ -157,15 +208,11 @@ export class TurnCoordinator {
           }
         : null;
 
-    const carried = input.mode !== "off" ? executiveResult : null;
-
     return {
       result,
       compiled,
       executive,
-      actionIntent: carried
-        ? actionIntentFrom(carried.output)
-        : EMPTY_EXECUTIVE_ACTION_INTENT,
+      actionIntent: carriedIntent,
       droppedActionIntents: carried
         ? carried.compilation.dropped_action_intents
         : [],

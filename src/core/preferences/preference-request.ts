@@ -1,5 +1,9 @@
 import { z } from "zod";
 import type { PreferenceChangeRequest } from "@/agents/conversational-executive-agent/types";
+import {
+  NOT_REQUESTED,
+  type ActionRequestOutcome,
+} from "@/core/actions/action-request-outcome";
 import { esComandoDeNivel } from "@/core/catalog";
 import { REMINDER_KINDS, type ReminderKind } from "@/shared/types/domain";
 
@@ -162,72 +166,123 @@ const MAX_DIAS_DE_PAUSA = 90;
 const TIPOS_DE_RECORDATORIO = new Set<string>(REMINDER_KINDS);
 
 /**
- * Convierte lo que dijo el ejecutivo en una orden tipada, o `null` cuando este
- * turno no pide ningun cambio de preferencia —o lo pide sin los datos que lo
- * hacen ejecutable.
+ * Convierte lo que dijo el ejecutivo en una orden tipada.
  *
- * Devolver `null` nunca es un error: significa "esto no es un cambio de
- * preferencia", y el turno continua por la via normal.
+ * `WEB-D298`: antes devolvia `null` tanto cuando el turno no hablaba de
+ * preferencias como cuando si lo hacia y los datos no validaban —un plazo fuera
+ * de rango, un tipo de aviso inexistente, un horario imposible—. Los dos casos
+ * terminaban igual: el turno contestaba amable y la persona se quedaba creyendo
+ * que le habian pausado los avisos.
+ *
+ * La confianza baja sigue siendo `not_requested` a proposito (`RUL-PREF-02`):
+ * no es un fallo, es que no esta claro que la persona pidiera nada.
  */
 export function compilePreferenceRequest(
   request: PreferenceChangeRequest | null,
-): PreferenceCommand | null {
-  if (!request) return null;
-  if (request.intent === "none") return null;
+): ActionRequestOutcome<PreferenceCommand> {
+  if (!request) return NOT_REQUESTED;
+  if (request.intent === "none") return NOT_REQUESTED;
   // Una duda declarada es una duda. Preguntar de mas es barato; apagar los
   // avisos de vencimiento de alguien que no lo pidio, no.
-  if (request.ambiguities.length > 0) return null;
+  if (request.ambiguities.length > 0) {
+    return { kind: "needs_clarification", question: request.ambiguities[0]! };
+  }
 
   const esConsentimiento = esComandoDeNivel(request.intent, "consentimiento");
   const minimo = esConsentimiento
     ? MIN_CONFIDENCE_CONSENTIMIENTO
     : MIN_CONFIDENCE;
-  if (request.confidence < minimo) return null;
+  if (request.confidence < minimo) return NOT_REQUESTED;
 
   switch (request.intent) {
     case "pausar_recordatorios": {
-      if (!request.activar) return { command: "pausar_recordatorios", activar: false };
-      const pedidos = request.pausar_dias ?? DIAS_DE_PAUSA_POR_DEFECTO;
-      // Un plazo fuera de rango no se recorta a la fuerza: se descarta y el
-      // turno pregunta. Recortar "pausalos un año" a 90 dias seria contestar
-      // otra cosa sin decirlo.
-      if (!Number.isInteger(pedidos) || pedidos < 1 || pedidos > MAX_DIAS_DE_PAUSA) {
-        return null;
+      if (!request.activar) {
+        return {
+          kind: "ready",
+          command: { command: "pausar_recordatorios", activar: false },
+        };
       }
-      return { command: "pausar_recordatorios", activar: true, dias: pedidos };
+      const pedidos = request.pausar_dias ?? DIAS_DE_PAUSA_POR_DEFECTO;
+      // Un plazo fuera de rango no se recorta a la fuerza: se pregunta.
+      // Recortar "pausalos un año" a 90 dias seria contestar otra cosa sin
+      // decirlo, y dejarlo caer en silencio seria no contestar nada.
+      if (!Number.isInteger(pedidos) || pedidos < 1 || pedidos > MAX_DIAS_DE_PAUSA) {
+        return {
+          kind: "needs_clarification",
+          question: `¿Cuántos días quieres pausarlos? Puedo hasta ${MAX_DIAS_DE_PAUSA}.`,
+        };
+      }
+      return {
+        kind: "ready",
+        command: { command: "pausar_recordatorios", activar: true, dias: pedidos },
+      };
     }
 
     case "silenciar_tipo_recordatorio": {
       const tipo = normalizarTipo(request.reminder_kind);
-      if (!tipo) return null;
+      if (!tipo) return tipoNoValido();
       return {
-        command: "silenciar_tipo_recordatorio",
-        activar: request.activar,
-        tipo,
+        kind: "ready",
+        command: {
+          command: "silenciar_tipo_recordatorio",
+          activar: request.activar,
+          tipo,
+        },
       };
     }
 
     case "cambiar_horario_silencioso": {
       const desde = request.desde_hora?.trim() ?? "";
       const hasta = request.hasta_hora?.trim() ?? "";
-      if (!HORA_HH_MM.test(desde) || !HORA_HH_MM.test(hasta)) return null;
+      if (!HORA_HH_MM.test(desde) || !HORA_HH_MM.test(hasta)) {
+        return {
+          kind: "needs_clarification",
+          question: "¿Entre qué horas quieres el silencio? Dímelas como 22:00 y 08:00.",
+        };
+      }
       // Un horario silencioso puede cruzar la medianoche (22:00 → 08:00), asi
       // que `desde > hasta` es legitimo. Lo que no significa nada es que sean
       // iguales: eso no es una franja, es un instante.
-      if (desde === hasta) return null;
-      return { command: "cambiar_horario_silencioso", desde, hasta };
+      if (desde === hasta) {
+        return {
+          kind: "needs_clarification",
+          question: "Esa franja empieza y acaba a la misma hora. ¿Entre qué horas la quieres?",
+        };
+      }
+      return {
+        kind: "ready",
+        command: { command: "cambiar_horario_silencioso", desde, hasta },
+      };
     }
 
     case "activar_correo_recordatorios": {
       const tipo = normalizarTipo(request.reminder_kind);
-      if (!tipo) return null;
+      if (!tipo) return tipoNoValido();
       return {
-        command: "activar_correo_recordatorios",
-        activar: request.activar,
-        tipo,
+        kind: "ready",
+        command: {
+          command: "activar_correo_recordatorios",
+          activar: request.activar,
+          tipo,
+        },
       };
     }
   }
+}
+
+/**
+ * El nucleo rechaza un tipo de aviso que no existe en vez de aproximarlo al mas
+ * parecido. Preguntar es mejor que declarar un limite: el vocabulario cerrado
+ * de `37` es cosa nuestra, no un fallo de la persona.
+ */
+function tipoNoValido(): Extract<
+  ActionRequestOutcome<never>,
+  { kind: "needs_clarification" }
+> {
+  return {
+    kind: "needs_clarification",
+    question: "¿De qué tipo de aviso hablamos? Por ejemplo: los pagos que vienen, los pagos vencidos o los presupuestos cerca del límite.",
+  };
 }
 
 /**

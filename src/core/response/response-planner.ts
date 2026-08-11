@@ -102,6 +102,13 @@ export type TurnResponsePlannerInput = {
    * mencione es peor que un error visible.
    */
   unhonoredActionIntents?: ExecutiveActionSurface[];
+  /**
+   * `WEB-D298`/`40` §3: el ejecutivo entendio que se pedia una accion pero le
+   * falta un dato para hacerla bien. Se pregunta en vez de actuar y en vez de
+   * callar: preguntar de mas es barato, actuar de mas no lo es, y dejarlo caer
+   * en una respuesta amable era lo peor de los tres.
+   */
+  actionClarificationQuestion?: string;
   conversationAnswer?: ConversationalAnswer;
   supplementalConversationAnswer?: ConversationalAnswer;
   conversationTurnState?: ConversationTurnState;
@@ -220,6 +227,7 @@ type ProductResponseReason =
   | "memory_needs_confirmation"
   | "memory_control_answered"
   | "executive_action_not_honored"
+  | "action_needs_clarification"
   | "light_action_answered"
   | "profile_confirmation_answered"
   | "preference_needs_confirmation"
@@ -612,6 +620,20 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
   // a no decirlo.
   const unhonoredResponse = buildUnhonoredActionResponse(input);
   if (unhonoredResponse) return unhonoredResponse;
+
+  // `WEB-D298`: la duda sobre una accion se pregunta antes que cualquier otra
+  // cosa que el turno tuviera preparada. Contestar otra cosa y no preguntar es
+  // como se pierden las acciones que el modelo casi entendio.
+  const clarificationQuestion = input.actionClarificationQuestion?.trim();
+  if (clarificationQuestion) {
+    return {
+      reason: "action_needs_clarification",
+      intent: "direct_response",
+      shape: "pregunta",
+      text: clarificationQuestion,
+      options: [],
+    };
+  }
 
   // `RUL-LIG-01`: la accion ligera ya se ejecuto antes de llegar aqui, asi que
   // su texto manda sobre cualquier respuesta conversacional que se hubiera

@@ -32,10 +32,17 @@ describe("el catalogo manda: ningun nombre cableado aqui es de otro nivel", () =
   );
 });
 
+/** `WEB-D298`: el compilador ya no devuelve la orden pelada, sino que paso. */
+function listo(command: unknown) {
+  return { kind: "ready", command };
+}
+
 describe("compileLightActionRequest", () => {
   it("sin peticion, o con intent none, no hay accion", () => {
-    expect(compileLightActionRequest(null)).toBeNull();
-    expect(compileLightActionRequest(request())).toBeNull();
+    expect(compileLightActionRequest(null)).toEqual({ kind: "not_requested" });
+    expect(compileLightActionRequest(request())).toEqual({
+      kind: "not_requested",
+    });
   });
 
   it("compila posponer_recordatorio con los dias que pidio el usuario", () => {
@@ -47,25 +54,36 @@ describe("compileLightActionRequest", () => {
           postpone_days: 7,
         }),
       ),
-    ).toEqual({
-      action: "posponer_recordatorio",
-      reminderId: REMINDER_ID,
-      days: 7,
-    });
+    ).toEqual(
+      listo({
+        action: "posponer_recordatorio",
+        reminderId: REMINDER_ID,
+        days: 7,
+      }),
+    );
   });
 
   it("sin dias declarados, posponer es mañana y no un plazo inventado", () => {
     const command = compileLightActionRequest(
       request({ intent: "posponer_recordatorio", target_id: REMINDER_ID }),
     );
-    expect(command).toEqual({
-      action: "posponer_recordatorio",
-      reminderId: REMINDER_ID,
-      days: 1,
-    });
+    expect(command).toEqual(
+      listo({
+        action: "posponer_recordatorio",
+        reminderId: REMINDER_ID,
+        days: 1,
+      }),
+    );
   });
+});
 
-  it("una sola duda declarada basta para no ejecutar nada", () => {
+/**
+ * `WEB-D298`: los cinco motivos por los que esto devolvia `null` no son el
+ * mismo. Que lo parecieran es la razon de que una accion pedida pudiera
+ * desaparecer sin que nadie lo dijera.
+ */
+describe("compileLightActionRequest: no pedirlo no es lo mismo que no poder", () => {
+  it("una duda declarada ya no se traga: se pregunta con las palabras del modelo", () => {
     expect(
       compileLightActionRequest(
         request({
@@ -74,10 +92,15 @@ describe("compileLightActionRequest", () => {
           ambiguities: ["No se cual de los tres recordatorios"],
         }),
       ),
-    ).toBeNull();
+    ).toEqual({
+      kind: "needs_clarification",
+      question: "No se cual de los tres recordatorios",
+    });
   });
 
-  it("poca confianza no ejecuta: sin tarjeta previa no hay donde frenar despues", () => {
+  it("poca confianza sigue siendo silencio: no consta que pidiera una accion", () => {
+    // Deliberado (`RUL-LIG-02`): sin tarjeta previa no hay donde frenar
+    // despues, pero tampoco se le anuncia un limite por algo que quiza no pidio.
     expect(
       compileLightActionRequest(
         request({
@@ -86,25 +109,26 @@ describe("compileLightActionRequest", () => {
           confidence: 0.55,
         }),
       ),
-    ).toBeNull();
+    ).toEqual({ kind: "not_requested" });
   });
 
-  it("un target_id que no es un identificador de tool no se ejecuta", () => {
+  it("un target_id que no es un identificador de tool se declara, no se calla", () => {
     // El modelo copiando "el del gimnasio" en vez del `id` que devolvio la tool
-    // es exactamente el fallo que este guardarrail ataja.
+    // es exactamente el fallo que este guardarrail ataja. Aqui el modelo si
+    // estaba seguro de la accion: solo falla el objeto, y eso se dice.
     expect(
       compileLightActionRequest(
         request({
           intent: "descartar_descubrimiento",
           target_id: "el del gimnasio",
         }),
-      ),
-    ).toBeNull();
+      ).kind,
+    ).toBe("unavailable");
     expect(
       compileLightActionRequest(
         request({ intent: "descartar_descubrimiento", target_id: "" }),
-      ),
-    ).toBeNull();
+      ).kind,
+    ).toBe("unavailable");
   });
 
   it("marcar_descubrimiento solo admite los dos valores de `34`", () => {
@@ -116,12 +140,15 @@ describe("compileLightActionRequest", () => {
           value: "UTIL",
         }),
       ),
-    ).toEqual({
-      action: "marcar_descubrimiento",
-      insightId: REMINDER_ID,
-      value: "util",
-    });
-    // "mas o menos" no se redondea a util: se descarta y el turno pregunta.
+    ).toEqual(
+      listo({
+        action: "marcar_descubrimiento",
+        insightId: REMINDER_ID,
+        value: "util",
+      }),
+    );
+    // "mas o menos" no se redondea a util: se pregunta, que es lo que el
+    // comentario decia desde el principio y nadie hacia.
     expect(
       compileLightActionRequest(
         request({
@@ -129,25 +156,25 @@ describe("compileLightActionRequest", () => {
           target_id: REMINDER_ID,
           value: "mas o menos",
         }),
-      ),
-    ).toBeNull();
+      ).kind,
+    ).toBe("needs_clarification");
   });
 
-  it("un bloque del Inicio que no existe no se oculta", () => {
+  it("un bloque del Inicio que no existe no se oculta, y se dice", () => {
     expect(
       compileLightActionRequest(
         request({ intent: "ocultar_bloque_inicio", target_id: "deudas" }),
-      ),
-    ).toBeNull();
+      ).kind,
+    ).toBe("unavailable");
     expect(
       compileLightActionRequest(
         request({ intent: "ocultar_bloque_inicio", target_id: "pending" }),
       ),
-    ).toEqual({ action: "ocultar_bloque_inicio", block: "pending" });
+    ).toEqual(listo({ action: "ocultar_bloque_inicio", block: "pending" }));
     expect(
       compileLightActionRequest(
         request({ intent: "mostrar_bloque_inicio", target_id: "insight" }),
       ),
-    ).toEqual({ action: "mostrar_bloque_inicio", block: "insight" });
+    ).toEqual(listo({ action: "mostrar_bloque_inicio", block: "insight" }));
   });
 });

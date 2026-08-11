@@ -1,4 +1,8 @@
 import type { LightActionRequest } from "@/agents/conversational-executive-agent/types";
+import {
+  NOT_REQUESTED,
+  type ActionRequestOutcome,
+} from "@/core/actions/action-request-outcome";
 import { HOME_BLOCK_KINDS, type HomeBlockKind } from "@/core/home/home-composer";
 
 /**
@@ -85,55 +89,104 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const HOME_BLOCKS = new Set<string>(HOME_BLOCK_KINDS);
 
 /**
- * Convierte lo que dijo el ejecutivo en una orden tipada, o `null` cuando este
- * turno no pide ninguna accion ligera —o la pide sin los datos que la hacen
- * ejecutable.
+ * Convierte lo que dijo el ejecutivo en una orden tipada.
  *
- * Devolver `null` nunca es un error: significa "esto no es una accion ligera",
- * y el turno continua por la via normal.
+ * `WEB-D298`: antes devolvia `null` por cinco motivos distintos —no era una
+ * accion ligera, el modelo dudaba, no tenia confianza, o el objetivo no
+ * validaba— y desde fuera los cinco se veian iguales: el turno seguia su camino
+ * y contestaba amable. Los dos ultimos no son "no aplicaba", son "entendi lo
+ * que pediste y no puedo hacerlo", y eso hay que decirlo.
+ *
+ * La confianza baja se queda deliberadamente en `not_requested`: no significa
+ * "fallo la accion", significa "no estoy seguro de que esto fuera una accion".
+ * Anunciar un limite ahi seria inventarle a la persona un pedido que quiza no
+ * hizo, y el turno ya le contesta lo que vino a preguntar (`RUL-LIG-02`).
  */
 export function compileLightActionRequest(
   request: LightActionRequest | null,
-): LightActionCommand | null {
-  if (!request) return null;
-  if (request.intent === "none") return null;
+): ActionRequestOutcome<LightActionCommand> {
+  if (!request) return NOT_REQUESTED;
+  if (request.intent === "none") return NOT_REQUESTED;
   // Una duda declarada es una duda: preguntar de mas es barato, ejecutar de mas
-  // no lo es, aunque sea reversible.
-  if (request.ambiguities.length > 0) return null;
-  if (request.confidence < MIN_CONFIDENCE) return null;
+  // no lo es, aunque sea reversible. Y ahora se pregunta de verdad, con las
+  // palabras del propio modelo, en vez de dejarlo caer.
+  if (request.ambiguities.length > 0) {
+    return { kind: "needs_clarification", question: request.ambiguities[0]! };
+  }
+  if (request.confidence < MIN_CONFIDENCE) return NOT_REQUESTED;
 
   const target = request.target_id.trim();
-  if (!target) return null;
+  // A partir de aqui el modelo si esta seguro de que la persona pidio esta
+  // accion, y solo falla el objeto concreto: eso ya no es "no aplicaba".
+  if (!target) {
+    return { kind: "unavailable", reason: "target_id_vacio" };
+  }
 
   switch (request.intent) {
     case "posponer_recordatorio":
-      if (!UUID.test(target)) return null;
+      if (!UUID.test(target)) return targetNoValido(request.intent);
       return {
-        action: "posponer_recordatorio",
-        reminderId: target,
-        // Sin dias declarados, "recuerdamelo despues" es mañana: es el plazo
-        // mas corto que cumple la peticion y el que menos tarda en volver.
-        days: request.postpone_days ?? 1,
+        kind: "ready",
+        command: {
+          action: "posponer_recordatorio",
+          reminderId: target,
+          // Sin dias declarados, "recuerdamelo despues" es mañana: es el plazo
+          // mas corto que cumple la peticion y el que menos tarda en volver.
+          days: request.postpone_days ?? 1,
+        },
       };
     case "descartar_recordatorio":
-      if (!UUID.test(target)) return null;
-      return { action: "descartar_recordatorio", reminderId: target };
+      if (!UUID.test(target)) return targetNoValido(request.intent);
+      return {
+        kind: "ready",
+        command: { action: "descartar_recordatorio", reminderId: target },
+      };
     case "descartar_descubrimiento":
-      if (!UUID.test(target)) return null;
-      return { action: "descartar_descubrimiento", insightId: target };
+      if (!UUID.test(target)) return targetNoValido(request.intent);
+      return {
+        kind: "ready",
+        command: { action: "descartar_descubrimiento", insightId: target },
+      };
     case "marcar_descubrimiento": {
-      if (!UUID.test(target)) return null;
+      if (!UUID.test(target)) return targetNoValido(request.intent);
       const value = request.value.trim().toLowerCase();
       // `34`: el feedback tiene exactamente dos valores. Cualquier otra cosa no
-      // se normaliza a uno de ellos a la fuerza — se descarta y se pregunta.
-      if (value !== "util" && value !== "no_util") return null;
-      return { action: "marcar_descubrimiento", insightId: target, value };
+      // se normaliza a uno de ellos a la fuerza — se pregunta, que es justo lo
+      // que el comentario decia y nadie hacia.
+      if (value !== "util" && value !== "no_util") {
+        return {
+          kind: "needs_clarification",
+          question: "¿Ese descubrimiento te resultó útil o no?",
+        };
+      }
+      return {
+        kind: "ready",
+        command: { action: "marcar_descubrimiento", insightId: target, value },
+      };
     }
     case "ocultar_bloque_inicio":
-      if (!HOME_BLOCKS.has(target)) return null;
-      return { action: "ocultar_bloque_inicio", block: target as HomeBlockKind };
+      if (!HOME_BLOCKS.has(target)) return targetNoValido(request.intent);
+      return {
+        kind: "ready",
+        command: {
+          action: "ocultar_bloque_inicio",
+          block: target as HomeBlockKind,
+        },
+      };
     case "mostrar_bloque_inicio":
-      if (!HOME_BLOCKS.has(target)) return null;
-      return { action: "mostrar_bloque_inicio", block: target as HomeBlockKind };
+      if (!HOME_BLOCKS.has(target)) return targetNoValido(request.intent);
+      return {
+        kind: "ready",
+        command: {
+          action: "mostrar_bloque_inicio",
+          block: target as HomeBlockKind,
+        },
+      };
   }
+}
+
+function targetNoValido(
+  intent: string,
+): Extract<ActionRequestOutcome<never>, { kind: "unavailable" }> {
+  return { kind: "unavailable", reason: `target_id_no_valido:${intent}` };
 }

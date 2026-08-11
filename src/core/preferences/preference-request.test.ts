@@ -9,6 +9,11 @@ import {
   PREFERENCE_COMMAND_NAMES,
 } from "./preference-request";
 
+/** `WEB-D298`: el compilador ya no devuelve el comando pelado, sino que paso. */
+function listo(command: unknown) {
+  return { kind: "ready", command };
+}
+
 function request(
   overrides: Partial<PreferenceChangeRequest>,
 ): PreferenceChangeRequest {
@@ -54,7 +59,7 @@ describe("compilePreferenceRequest: caso feliz de cada preferencia", () => {
       compilePreferenceRequest(
         request({ intent: "pausar_recordatorios", activar: true, pausar_dias: 3 }),
       ),
-    ).toEqual({ command: "pausar_recordatorios", activar: true, dias: 3 });
+    ).toEqual(listo({ command: "pausar_recordatorios", activar: true, dias: 3 }));
   });
 
   it("sin dias declarados, una pausa dura una semana", () => {
@@ -62,11 +67,13 @@ describe("compilePreferenceRequest: caso feliz de cada preferencia", () => {
       compilePreferenceRequest(
         request({ intent: "pausar_recordatorios", activar: true }),
       ),
-    ).toEqual({
-      command: "pausar_recordatorios",
-      activar: true,
-      dias: DIAS_DE_PAUSA_POR_DEFECTO,
-    });
+    ).toEqual(
+      listo({
+        command: "pausar_recordatorios",
+        activar: true,
+        dias: DIAS_DE_PAUSA_POR_DEFECTO,
+      }),
+    );
   });
 
   it("reanudar es el mismo comando con la direccion inversa", () => {
@@ -74,7 +81,7 @@ describe("compilePreferenceRequest: caso feliz de cada preferencia", () => {
       compilePreferenceRequest(
         request({ intent: "pausar_recordatorios", activar: false }),
       ),
-    ).toEqual({ command: "pausar_recordatorios", activar: false });
+    ).toEqual(listo({ command: "pausar_recordatorios", activar: false }));
   });
 
   it("silenciar un tipo de recordatorio", () => {
@@ -86,11 +93,13 @@ describe("compilePreferenceRequest: caso feliz de cada preferencia", () => {
           reminder_kind: "presupuesto_umbral",
         }),
       ),
-    ).toEqual({
-      command: "silenciar_tipo_recordatorio",
-      activar: true,
-      tipo: "presupuesto_umbral",
-    });
+    ).toEqual(
+      listo({
+        command: "silenciar_tipo_recordatorio",
+        activar: true,
+        tipo: "presupuesto_umbral",
+      }),
+    );
   });
 
   it("cambiar el horario silencioso, incluso cruzando la medianoche", () => {
@@ -102,11 +111,13 @@ describe("compilePreferenceRequest: caso feliz de cada preferencia", () => {
           hasta_hora: "08:00",
         }),
       ),
-    ).toEqual({
-      command: "cambiar_horario_silencioso",
-      desde: "22:00",
-      hasta: "08:00",
-    });
+    ).toEqual(
+      listo({
+        command: "cambiar_horario_silencioso",
+        desde: "22:00",
+        hasta: "08:00",
+      }),
+    );
   });
 
   it("activar el correo de un tipo", () => {
@@ -119,21 +130,31 @@ describe("compilePreferenceRequest: caso feliz de cada preferencia", () => {
           confidence: 0.9,
         }),
       ),
-    ).toEqual({
-      command: "activar_correo_recordatorios",
-      activar: true,
-      tipo: "cuota_proxima",
-    });
+    ).toEqual(
+      listo({
+        command: "activar_correo_recordatorios",
+        activar: true,
+        tipo: "cuota_proxima",
+      }),
+    );
   });
 });
 
-describe("compilePreferenceRequest: lo que no se ejecuta", () => {
-  it("`none` y `null` no son ordenes", () => {
-    expect(compilePreferenceRequest(null)).toBeNull();
-    expect(compilePreferenceRequest(request({ intent: "none" }))).toBeNull();
+/**
+ * `WEB-D298`: "no se ejecuta" son en realidad tres cosas distintas, y hasta
+ * ahora las tres devolvian `null`. Desde fuera eran indistinguibles, asi que el
+ * turno las trataba igual: contestaba amable y no hacia nada. Estos tests fijan
+ * cual es cual, porque de esa diferencia depende que la persona se entere.
+ */
+describe("compilePreferenceRequest: no pedirlo no es lo mismo que no poder", () => {
+  it("`none` y `null` son silencio legitimo: este turno no pedia nada", () => {
+    expect(compilePreferenceRequest(null)).toEqual({ kind: "not_requested" });
+    expect(compilePreferenceRequest(request({ intent: "none" }))).toEqual({
+      kind: "not_requested",
+    });
   });
 
-  it("una sola duda declarada basta para no proponer nada", () => {
+  it("una sola duda declarada no se ejecuta: se pregunta con las palabras del modelo", () => {
     expect(
       compilePreferenceRequest(
         request({
@@ -142,15 +163,21 @@ describe("compilePreferenceRequest: lo que no se ejecuta", () => {
           ambiguities: ["¿de qué avisos habla?"],
         }),
       ),
-    ).toBeNull();
+    ).toEqual({
+      kind: "needs_clarification",
+      question: "¿de qué avisos habla?",
+    });
   });
 
-  it("por debajo del umbral de una tarjeta no se propone", () => {
+  it("por debajo del umbral sigue siendo silencio: no consta que pidiera nada", () => {
+    // Deliberado (`RUL-PREF-02`): poca confianza no es "fallo la accion", es
+    // "no esta claro que esto fuera una accion". Anunciar un limite aqui seria
+    // inventarle a la persona un pedido que quiza no hizo.
     expect(
       compilePreferenceRequest(
         request({ intent: "pausar_recordatorios", confidence: 0.55 }),
       ),
-    ).toBeNull();
+    ).toEqual({ kind: "not_requested" });
   });
 
   it("un consentimiento exige mas certeza que una tarjeta", () => {
@@ -161,65 +188,58 @@ describe("compilePreferenceRequest: lo que no se ejecuta", () => {
       reminder_kind: "pago_proximo",
       confidence: 0.7,
     });
-    expect(compilePreferenceRequest(dudoso)).toBeNull();
+    expect(compilePreferenceRequest(dudoso).kind).toBe("not_requested");
     expect(
-      compilePreferenceRequest({ ...dudoso, confidence: 0.8 }),
-    ).not.toBeNull();
+      compilePreferenceRequest({ ...dudoso, confidence: 0.8 }).kind,
+    ).toBe("ready");
     // El mismo 0.7 si alcanza para una `tarjeta`.
     expect(
       compilePreferenceRequest(
         request({ intent: "pausar_recordatorios", confidence: 0.7 }),
-      ),
-    ).not.toBeNull();
+      ).kind,
+    ).toBe("ready");
   });
 
-  it("un tipo de recordatorio que no existe no se aproxima al mas parecido", () => {
-    expect(
-      compilePreferenceRequest(
+  it("un tipo de recordatorio que no existe se pregunta, no se aproxima ni se calla", () => {
+    // El vocabulario cerrado de `37` es cosa nuestra, no un fallo de la
+    // persona: por eso se pregunta en vez de declarar un limite.
+    for (const kind of ["pagos_proximos", ""]) {
+      const resultado = compilePreferenceRequest(
         request({
           intent: "silenciar_tipo_recordatorio",
-          reminder_kind: "pagos_proximos",
+          reminder_kind: kind,
         }),
-      ),
-    ).toBeNull();
-    expect(
-      compilePreferenceRequest(
-        request({ intent: "silenciar_tipo_recordatorio", reminder_kind: "" }),
-      ),
-    ).toBeNull();
+      );
+      expect(resultado.kind).toBe("needs_clarification");
+    }
   });
 
-  it("un plazo fuera de rango se descarta, no se recorta", () => {
+  it("un plazo fuera de rango no se recorta ni se descarta: se pregunta", () => {
     // Recortar "pausalos un año" a 90 dias seria contestar otra cosa sin
-    // decirlo.
-    expect(
-      compilePreferenceRequest(
-        request({ intent: "pausar_recordatorios", pausar_dias: 365 }),
-      ),
-    ).toBeNull();
-    expect(
-      compilePreferenceRequest(
-        request({ intent: "pausar_recordatorios", pausar_dias: 0 }),
-      ),
-    ).toBeNull();
+    // decirlo; dejarlo caer era no contestar nada.
+    for (const dias of [365, 0]) {
+      const resultado = compilePreferenceRequest(
+        request({ intent: "pausar_recordatorios", pausar_dias: dias }),
+      );
+      expect(resultado.kind).toBe("needs_clarification");
+    }
   });
 
-  it("un horario mal formado, o de duracion cero, no se traduce", () => {
+  it("un horario mal formado, o de duracion cero, se pregunta", () => {
     for (const [desde, hasta] of [
       ["25:00", "08:00"],
       ["22", "08:00"],
       ["", "08:00"],
       ["22:00", "22:00"],
     ]) {
-      expect(
-        compilePreferenceRequest(
-          request({
-            intent: "cambiar_horario_silencioso",
-            desde_hora: desde,
-            hasta_hora: hasta,
-          }),
-        ),
-      ).toBeNull();
+      const resultado = compilePreferenceRequest(
+        request({
+          intent: "cambiar_horario_silencioso",
+          desde_hora: desde,
+          hasta_hora: hasta,
+        }),
+      );
+      expect(resultado.kind).toBe("needs_clarification");
     }
   });
 });

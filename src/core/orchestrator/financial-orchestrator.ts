@@ -128,8 +128,10 @@ import { ToolGateway } from "@/core/conversation/tool-gateway";
 import { buildTurnWorkspace } from "@/core/conversation/turn-workspace";
 import {
   TurnCoordinator,
+  TurnPlanUnavailableError,
   type CoordinatedTurnPlan,
 } from "@/core/conversation/turn-coordinator";
+import type { ExecutiveActionSurface } from "@/agents/conversational-executive-agent";
 import {
   conversationContextFromExecutive,
   conversationResultFromExecutive,
@@ -210,6 +212,16 @@ type ExternalEventLog = NonNullable<
 >;
 type DataAgentExtractResult = Awaited<ReturnType<DataAgent["extract"]>>;
 type OrchestrationPlanningTrace = CoordinatedTurnPlan;
+
+/**
+ * `WEB-D298`: lo que devuelve planificar un turno. El `trace` es lo de siempre;
+ * `lostActionIntents` es lo que antes se perdia con la excepcion — lo que la
+ * persona pidio y este turno ya no va a poder atender.
+ */
+type PlannedTurn = {
+  trace: OrchestrationPlanningTrace | null;
+  lostActionIntents: ExecutiveActionSurface[];
+};
 type MixedConversationTrace = {
   contextPack: ConversationContextPack;
   result: Awaited<ReturnType<ConversationAgent["answer"]>>;
@@ -252,6 +264,9 @@ export type TurnOrchestrationResult = {
     // accion, pero la validacion reprocho ese mismo modulo y el turno no la va a
     // hacer. No cambio nada, y callarlo dejaria a la persona creyendo que si.
     | "accepted_with_action_not_honored"
+    // `WEB-D298`/`40` §3: se entendio que pedia una accion y falta un dato para
+    // hacerla bien. Se pregunta; no se adivina ni se deja caer.
+    | "accepted_with_action_clarification"
     // `RUL-ESTR-01`: crear o modificar una caja, meta o presupuesto conversando.
     | "accepted_with_structure_confirmation"
     | "accepted_with_structure_applied"
@@ -710,7 +725,10 @@ export class FinancialOrchestrator {
       channel,
       timezone,
     );
-    const initialOrchestrationPlanning = await this.planTurn({
+    const {
+      trace: initialOrchestrationPlanning,
+      lostActionIntents,
+    } = await this.planTurn({
       externalEvent,
       text,
       timezone,
@@ -841,6 +859,7 @@ export class FinancialOrchestrator {
       traceId: input.traceId,
       conversationTurnState: effectiveConversationTurnState,
       planning: initialOrchestrationPlanning,
+      lostActionIntents,
     });
     if (unhonoredActionTurn) return unhonoredActionTurn;
 
@@ -1767,7 +1786,19 @@ export class FinancialOrchestrator {
         traceId: params.traceId,
         now: params.externalEvent.received_at,
       });
-      if (!result.handled) return null;
+      // `resolveMemoryControl` siempre atiende una orden ya compilada; este
+      // `false` solo existiria si algun dia dejara de hacerlo, y entonces
+      // seguiria siendo una orden de privacidad sin atender: se dice.
+      if (!result.handled) {
+        return await this.presentUnhonoredActionTurn({
+          externalEvent: params.externalEvent,
+          turnInput: params.turnInput,
+          traceId: params.traceId,
+          conversationTurnState: params.conversationTurnState,
+          surfaces: ["memory_control"],
+          reason: "memory_control_not_handled",
+        });
+      }
 
       return await this.presentMemoryControlResult({
         externalEvent: params.externalEvent,
@@ -1782,14 +1813,35 @@ export class FinancialOrchestrator {
         skipEnhancement: params.planning?.executiveRan ?? false,
       });
     } catch (error) {
-      // El turno no se queda mudo: cae al camino normal, donde el ejecutivo ya
-      // compuso una respuesta.
+      // `WEB-D298`: aqui se caia el peor silencio del motor. Este `catch` cubre
+      // una orden de privacidad —olvidar, corregir, apagar el aprendizaje— que
+      // la persona acaba de dar y que la base no pudo atender. Caer al camino
+      // normal dejaba una respuesta amable y ningun recuerdo borrado: exactamente
+      // creer que se hizo algo que no se hizo, y encima sobre sus datos.
       logger.warn("orchestrator.memory_control_failed", {
         trace_id: params.traceId,
         external_event_id: params.externalEvent.id,
         error,
       });
-      return null;
+      // El aviso tambien puede fallar (el canal, la base). Si falla, el turno
+      // sigue su camino y contesta: la garantia de no quedarse mudo manda.
+      try {
+        return await this.presentUnhonoredActionTurn({
+          externalEvent: params.externalEvent,
+          turnInput: params.turnInput,
+          traceId: params.traceId,
+          conversationTurnState: params.conversationTurnState,
+          surfaces: ["memory_control"],
+          reason: "memory_control_failed",
+        });
+      } catch (noticeError) {
+        logger.error("orchestrator.memory_control_notice_failed", {
+          trace_id: params.traceId,
+          external_event_id: params.externalEvent.id,
+          error: noticeError,
+        });
+        return null;
+      }
     }
   }
 
@@ -1812,28 +1864,67 @@ export class FinancialOrchestrator {
     traceId: string;
     conversationTurnState: ConversationTurnState;
     planning: OrchestrationPlanningTrace | null;
+    /**
+     * `WEB-D298`: intenciones que se perdieron **antes** de llegar a su rama —
+     * hoy, cuando la planificacion del turno se cae despues de que el ejecutivo
+     * ya dijo lo que la persona pedia.
+     */
+    lostActionIntents: ExecutiveActionSurface[];
+  }): Promise<TurnOrchestrationResult | null> {
+    const surfaces = [
+      ...new Set([
+        ...(params.planning?.droppedActionIntents ?? []),
+        ...params.lostActionIntents,
+      ]),
+    ];
+    if (surfaces.length === 0) return null;
+
+    return this.presentUnhonoredActionTurn({
+      externalEvent: params.externalEvent,
+      turnInput: params.turnInput,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      surfaces,
+    });
+  }
+
+  /**
+   * `WEB-D297`/`WEB-D298`: unico compositor del aviso "entendi lo que pediste y
+   * no se hizo". Lo llaman todas las puertas que antes devolvian `null` en
+   * silencio, para que ninguna invente su propia forma de decirlo —o de no
+   * decirlo.
+   *
+   * Devuelve `null` cuando no hay nada que anunciar: hoy, cuando lo unico caido
+   * es `profile_signal`, que no es un pedido de la persona.
+   */
+  private async presentUnhonoredActionTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    surfaces: ExecutiveActionSurface[];
+    /** Para el registro: por que no se pudo. Nunca se le muestra a la persona. */
+    reason?: string;
   }): Promise<TurnOrchestrationResult | null> {
     const userId = params.externalEvent.user_id;
     if (!userId) return null;
-
-    const dropped = params.planning?.droppedActionIntents ?? [];
-    if (dropped.length === 0) return null;
 
     const plan = planTurnBlocks({
       turnInput: params.turnInput,
       userId,
       conversationTurnState: params.conversationTurnState,
-      unhonoredActionIntents: dropped,
+      unhonoredActionIntents: params.surfaces,
     });
     // `profile_signal` no compone aviso (ver `UNHONORED_ACTION_NOTICES`): si era
-    // lo unico reprochado, no hay nada que decirle a la persona y el turno sigue
-    // su camino normal.
+    // lo unico caido, no hay nada que decirle a la persona y el turno sigue su
+    // camino normal.
     if (plan.reason !== "executive_action_not_honored") return null;
 
     logger.warn("orchestrator.executive_action_not_honored", {
       trace_id: params.traceId,
       external_event_id: params.externalEvent.id,
-      dropped_action_intents: dropped,
+      unhonored_action_intents: params.surfaces,
+      unhonored_reason: params.reason ?? null,
     });
 
     const presented = await this.presentTurn(plan, {
@@ -1851,7 +1942,8 @@ export class FinancialOrchestrator {
         orchestrator_status: "accepted",
         orchestrator_reason: "accepted_with_action_not_honored",
         agent_runtime_required: false,
-        unhonored_action_intents: dropped,
+        unhonored_action_intents: params.surfaces,
+        unhonored_reason: params.reason ?? null,
         ...presentedTurnMetadata(plan, presented),
       },
     });
@@ -1860,6 +1952,58 @@ export class FinancialOrchestrator {
       externalEventId: params.externalEvent.id,
       status: "accepted",
       reason: "accepted_with_action_not_honored",
+    };
+  }
+
+  /**
+   * `WEB-D298`/`40` §3: unico compositor de la pregunta que resuelve una duda
+   * sobre una accion. La duda la declara el modelo o la detecta el compilador
+   * de esa accion; la pregunta va verbatim porque es la unica frase del turno
+   * que le pide a la persona el dato que falta.
+   */
+  private async presentActionClarificationTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    surface: ExecutiveActionSurface;
+    question: string;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId,
+      conversationTurnState: params.conversationTurnState,
+      actionClarificationQuestion: params.question,
+    });
+    if (plan.reason !== "action_needs_clarification") return null;
+
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: true,
+    });
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: "accepted_with_action_clarification",
+        agent_runtime_required: false,
+        action_clarification_surface: params.surface,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: "accepted_with_action_clarification",
     };
   }
 
@@ -1886,10 +2030,33 @@ export class FinancialOrchestrator {
     const userId = params.externalEvent.user_id;
     if (!userId) return null;
 
-    const command = compileLightActionRequest(
+    const outcome = compileLightActionRequest(
       params.planning?.actionIntent.light_action ?? null,
     );
-    if (!command) return null;
+    // `WEB-D298`: "no lo pedia" sigue siendo silencio; "lo pedia y no puedo" y
+    // "lo pedia y me falta un dato" ya no.
+    if (outcome.kind === "not_requested") return null;
+    if (outcome.kind === "needs_clarification") {
+      return await this.presentActionClarificationTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        surface: "light_action",
+        question: outcome.question,
+      });
+    }
+    if (outcome.kind === "unavailable") {
+      return await this.presentUnhonoredActionTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        surfaces: ["light_action"],
+        reason: outcome.reason,
+      });
+    }
+    const command = outcome.command;
 
     const result = await executeLightAction({
       client: this.client,
@@ -2170,18 +2337,49 @@ export class FinancialOrchestrator {
     const userId = params.externalEvent.user_id;
     if (!userId) return null;
 
-    const command = compilePreferenceRequest(
+    const outcome = compilePreferenceRequest(
       params.planning?.actionIntent.preference_change ?? null,
     );
-    if (!command) return null;
+    if (outcome.kind === "not_requested") return null;
+    if (outcome.kind === "needs_clarification") {
+      return await this.presentActionClarificationTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        surface: "preference_change",
+        question: outcome.question,
+      });
+    }
+    if (outcome.kind === "unavailable") {
+      return await this.presentUnhonoredActionTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        surfaces: ["preference_change"],
+        reason: outcome.reason,
+      });
+    }
+    const command = outcome.command;
 
     const proposal = buildPreferenceProposal({
       command,
       now: params.externalEvent.received_at,
     });
-    // Un borrador que no valida no puede prometerse con un boton: el turno
-    // sigue su camino y responde el ejecutivo.
-    if (!proposal) return null;
+    // `WEB-D298`: un borrador que no valida no puede prometerse con un boton,
+    // pero tampoco puede desaparecer. La persona pidio pausar sus avisos: si no
+    // se le ofrece el boton, se le dice, con la via manual.
+    if (!proposal) {
+      return await this.presentUnhonoredActionTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        surfaces: ["preference_change"],
+        reason: "preference_proposal_invalid",
+      });
+    }
 
     return this.presentPreferenceTurn({
       externalEvent: params.externalEvent,
@@ -3522,7 +3720,7 @@ export class FinancialOrchestrator {
     >;
     traceId: string;
     dataContextPack: DataContextPack;
-  }): Promise<OrchestrationPlanningTrace | null> {
+  }): Promise<PlannedTurn> {
     const activeState = params.activeMemoryState;
     try {
       const [captureDraft, pendingCandidates, accounts, categories] =
@@ -3666,25 +3864,28 @@ export class FinancialOrchestrator {
           "Toda correccion accionable requiere confirmacion.",
         ],
       };
-      return await this.turnCoordinator.coordinate({
-        mode: executiveMode,
-        executiveContext,
-        traceId: params.traceId,
-        workingSet: activeState?.working_set ?? null,
-        executeReadOnlyTool: (toolName, toolInput) =>
-          toolGateway.executeAuthorizedTool({
-            toolName,
-            userId: params.externalEvent.user_id!,
-            query: toolInput.query,
-            semanticQuery: toolInput.semantic_query,
-            activeMemoryState: activeState,
-            turnState: {
-              ...params.conversationTurn.turn_state,
-              should_use_active_memory:
-                toolInput.should_use_active_memory,
-            },
-          }),
-      });
+      return {
+        trace: await this.turnCoordinator.coordinate({
+          mode: executiveMode,
+          executiveContext,
+          traceId: params.traceId,
+          workingSet: activeState?.working_set ?? null,
+          executeReadOnlyTool: (toolName, toolInput) =>
+            toolGateway.executeAuthorizedTool({
+              toolName,
+              userId: params.externalEvent.user_id!,
+              query: toolInput.query,
+              semanticQuery: toolInput.semantic_query,
+              activeMemoryState: activeState,
+              turnState: {
+                ...params.conversationTurn.turn_state,
+                should_use_active_memory:
+                  toolInput.should_use_active_memory,
+              },
+            }),
+        }),
+        lostActionIntents: [],
+      };
     } catch (error) {
       // Shadow/legacy planning can improve a turn but must never block fallback.
       logger.warn("orchestrator.orchestration_planning_failed", {
@@ -3692,7 +3893,18 @@ export class FinancialOrchestrator {
         external_event_id: params.externalEvent.id,
         error,
       });
-      return null;
+      // `WEB-D298`: aqui se distingue el fallo del que se puede informar del que
+      // solo obliga a degradar. Si el turno se cayo armando el contexto, nunca
+      // se llego a entender nada y no hay nada que anunciar —el silencio es
+      // correcto—. Si se cayo planificando **despues** de que el ejecutivo ya
+      // dijo lo que la persona pedia, eso si se dice.
+      return {
+        trace: null,
+        lostActionIntents:
+          error instanceof TurnPlanUnavailableError
+            ? error.requestedActionIntents
+            : [],
+      };
     }
   }
 
