@@ -111,6 +111,46 @@ describe("planTurnBlocks", () => {
     });
   });
 
+  // `WEB-D297`/`ERR-ASI-01`: una accion entendida que no se hizo se admite con
+  // su via manual. Callarlo y contestar amable es lo que hay que eliminar.
+  it("una accion entendida que no se pudo hacer sale como limite con via manual", () => {
+    const result = planTurnBlocks({
+      turnInput: turnInput("olvidate de que trabajo en Acme"),
+      userId: DEFAULT_USER_ID,
+      unhonoredActionIntents: ["memory_control"],
+    });
+
+    expect(result.reason).toBe("executive_action_not_honored");
+    expect(result.blocks).toMatchObject([{ kind: "limite" }]);
+    expect(blockText(result)).toMatch(/no cambié nada/i);
+    expect(
+      (result.blocks[0] as { manualPath?: string | null }).manualPath,
+    ).toContain("view=settings");
+  });
+
+  it("varias acciones caidas se dicen juntas, sin prometer ninguna", () => {
+    const result = planTurnBlocks({
+      turnInput: turnInput("olvidá eso y pausá mis avisos"),
+      userId: DEFAULT_USER_ID,
+      unhonoredActionIntents: ["memory_control", "preference_change"],
+    });
+
+    expect(result.reason).toBe("executive_action_not_honored");
+    expect(blockText(result)).toMatch(/no cambié nada/i);
+  });
+
+  // La senal de perfil no es un pedido de la persona: anunciar que no se
+  // guardo seria contarle lo que el motor iba a deducir a sus espaldas.
+  it("una senal de perfil caida no genera aviso: no era un pedido suyo", () => {
+    const result = planTurnBlocks({
+      turnInput: turnInput("me pagan el 15"),
+      userId: DEFAULT_USER_ID,
+      unhonoredActionIntents: ["profile_signal"],
+    });
+
+    expect(result.reason).not.toBe("executive_action_not_honored");
+  });
+
   it("responde un saludo simple sin tocar Core", () => {
     const result = planTurnBlocks({
       turnInput: turnInput("hola"),

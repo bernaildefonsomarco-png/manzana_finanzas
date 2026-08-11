@@ -13,10 +13,15 @@ import type {
   AgentRuntimeRequest,
   AgentRuntimeResponse,
 } from "@/agents/runtime";
-import { ConversationalExecutiveAgent } from "./conversational-executive-agent";
+import {
+  ConversationalExecutiveAgent,
+  quarantineActionIntents,
+} from "./conversational-executive-agent";
 import {
   buildKnownEvidenceRefs,
   compileExecutiveEvidenceAndPolicy,
+  rejectedExecutiveActionSurfaces,
+  withExecutiveSurfaces,
 } from "./evidence-and-policy-compiler";
 import { LocalFixtureConversationalExecutiveAgentRuntime } from "./local-fixture-runtime";
 import type {
@@ -642,6 +647,184 @@ describe("evidence-and-policy-compiler: extensiones de W-16 fase 3", () => {
 
     expect(compilation.issues.map((issue) => issue.code)).not.toContain(
       "world_knowledge_promoted",
+    );
+  });
+});
+
+/**
+ * `WEB-D297`: el reproche del compilador es sobre **como se dice** la
+ * respuesta; lo que la persona pidio hacer no deja de ser cierto porque el copy
+ * cite mal una evidencia. Estos tests fijan la frontera exacta entre las dos
+ * cosas, que es lo unico que separa "no se hizo y se dijo" de "no se hizo y
+ * nadie se entero".
+ */
+describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion", () => {
+  const REDACTION_ISSUE = {
+    code: "claim_without_known_evidence" as const,
+    path: "response_composition.grounded_claims[0].evidence_refs",
+    message: "el claim cita evidencia desconocida",
+  };
+
+  function outputConLasCincoIntenciones() {
+    return {
+      memory_control: { intent: "forget", target: "Acme" },
+      structure_proposal: { intent: "create", entity: "caja" },
+      light_action: { intent: "descartar_recordatorio" },
+      profile_signal: { intent: "observed" },
+      preference_change: { intent: "pausar_recordatorios" },
+    } as unknown as ConversationalExecutiveOutput;
+  }
+
+  it("un reproche a la redaccion no toca ninguna de las cinco", () => {
+    const issues = withExecutiveSurfaces([REDACTION_ISSUE]);
+    const { output, dropped } = quarantineActionIntents(
+      outputConLasCincoIntenciones(),
+      issues,
+    );
+
+    expect(dropped).toEqual([]);
+    expect(output.memory_control).not.toBeNull();
+    expect(output.structure_proposal).not.toBeNull();
+    expect(output.light_action).not.toBeNull();
+    expect(output.profile_signal).not.toBeNull();
+    expect(output.preference_change).not.toBeNull();
+  });
+
+  it("un reproche a un modulo de accion cierra ese, y solo ese", () => {
+    const issues = withExecutiveSurfaces([
+      REDACTION_ISSUE,
+      {
+        code: "command_outside_catalog",
+        path: "light_action.target_id",
+        message: "el objetivo no existe",
+      },
+    ]);
+    const { output, dropped } = quarantineActionIntents(
+      outputConLasCincoIntenciones(),
+      issues,
+    );
+
+    expect(dropped).toEqual(["light_action"]);
+    expect(output.light_action).toBeNull();
+    expect(output.memory_control).not.toBeNull();
+    expect(output.preference_change).not.toBeNull();
+  });
+
+  it("una ruta que el mapa no sabe clasificar cierra las cinco: la duda cierra", () => {
+    const issues = withExecutiveSurfaces([
+      {
+        code: "command_outside_catalog",
+        path: "modulo_que_todavia_no_existe.campo",
+        message: "regla nueva sin superficie declarada",
+      },
+    ]);
+
+    expect(issues[0]?.surface).toBe("unknown");
+    const { output, dropped } = quarantineActionIntents(
+      outputConLasCincoIntenciones(),
+      issues,
+    );
+
+    expect(dropped).toHaveLength(5);
+    expect(output.memory_control).toBeNull();
+    expect(output.light_action).toBeNull();
+  });
+
+  it("un desacuerdo sobre que turno es este cierra las cinco", () => {
+    const issues = withExecutiveSurfaces([
+      {
+        code: "interpretation_plan_mismatch",
+        path: "turn_interpretation.goal",
+        message: "el modelo no se pone de acuerdo consigo mismo",
+      },
+    ]);
+
+    expect(rejectedExecutiveActionSurfaces(issues)).toHaveLength(5);
+  });
+
+  it("solo se anuncia lo que la persona si pidio: un modulo vacio no es un descarte", () => {
+    const issues = withExecutiveSurfaces([
+      {
+        code: "command_outside_catalog",
+        path: "modulo_que_todavia_no_existe.campo",
+        message: "regla nueva sin superficie declarada",
+      },
+    ]);
+    const { dropped } = quarantineActionIntents(
+      {
+        memory_control: null,
+        structure_proposal: null,
+        light_action: { intent: "descartar_recordatorio" },
+        profile_signal: null,
+        preference_change: null,
+      } as unknown as ConversationalExecutiveOutput,
+      issues,
+    );
+
+    expect(dropped).toEqual(["light_action"]);
+  });
+
+  it("sin reproches, la salida vuelve intacta y sin copiarse", () => {
+    const original = outputConLasCincoIntenciones();
+    const { output, dropped } = quarantineActionIntents(original, []);
+
+    expect(output).toBe(original);
+    expect(dropped).toEqual([]);
+  });
+
+  it("el segundo rechazo devuelve el veredicto en vez de perder el turno entero", async () => {
+    const local = new LocalFixtureConversationalExecutiveAgentRuntime();
+    const runtime: AgentRuntime = {
+      async run<TContext, TOutput>(
+        request: AgentRuntimeRequest<TContext>,
+      ): Promise<AgentRuntimeResponse<TOutput>> {
+        const result = await local.run<TContext, TOutput>(request);
+        const output = structuredClone(result.output) as TOutput & {
+          response_composition: {
+            grounded_claims: Array<{ evidence_refs: string[] }>;
+          };
+          light_action: unknown;
+        };
+        // Las dos pasadas fallan igual: es el caso que antes lanzaba.
+        output.response_composition.grounded_claims[0]!.evidence_refs = [
+          "tool:invented:fact:0",
+        ];
+        output.light_action = {
+          intent: "descartar_recordatorio",
+          target_id: "22222222-2222-4222-8222-222222222222",
+          value: "",
+          postpone_days: null,
+          confidence: 0.9,
+          ambiguities: [],
+        };
+        return { ...result, output };
+      },
+    };
+
+    const result = await new ConversationalExecutiveAgent(runtime).run(
+      contextPack(),
+      "trace-doble-rechazo",
+      async () => ({
+        tool_name: "query_movements",
+        status: "called",
+        facts: ["movement_count=5"],
+        warnings: [],
+        data: { movements: [] },
+      }),
+    );
+
+    expect(result.compilation.accepted).toBe(false);
+    expect(result.compilation.dropped_action_intents).toEqual([]);
+    // La orden sigue ahi para que el motor la pueda atender...
+    expect(result.output.light_action).toMatchObject({
+      intent: "descartar_recordatorio",
+    });
+    // ...y queda dicho que la respuesta compuesta no se puede usar.
+    expect(result.safety.policy_flags).toContain(
+      "evidence_and_policy_compiler_rejected",
+    );
+    expect(result.safety.policy_flags).not.toContain(
+      "evidence_and_policy_compiler_accepted",
     );
   });
 });

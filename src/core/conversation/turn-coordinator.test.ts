@@ -65,10 +65,43 @@ describe("TurnCoordinator", () => {
     expect(fixture.calls()).toEqual({ executive: 1, legacy: 1 });
     expect(result.result.runtime.provider).toBe("legacy-test");
     expect(result.executive).toBeNull();
+    // Un fallo entero no entendio nada: no hay intencion que rescatar ni que
+    // anunciar. Rescatar aqui seria inventarse un pedido.
+    expect(result.actionIntent.light_action).toBeNull();
+    expect(result.droppedActionIntents).toEqual([]);
+    expect(result.executiveRan).toBe(false);
+  });
+
+  it("una composicion rechazada no da autoridad de respuesta pero conserva la intencion", async () => {
+    const fixture = coordinatorFixture({ compositionRejected: true });
+    const result = await fixture.coordinator.coordinate({
+      mode: "active",
+      executiveContext: fixture.context,
+      traceId: "trace-active-rejected",
+      workingSet: null,
+      executeReadOnlyTool: async () => {
+        throw new Error("no aplica");
+      },
+    });
+
+    // El plan y la respuesta degradan igual que cuando el ejecutivo falla
+    // entero: mismo planner legado, ni una llamada de modelo mas.
+    expect(fixture.calls()).toEqual({ executive: 1, legacy: 1 });
+    expect(result.result.runtime.provider).toBe("legacy-test");
+    // Nadie puede mostrar un texto que no paso validacion...
+    expect(result.executive).toBeNull();
+    // ...pero lo que la persona pidio hacer sigue vivo y con una sola fuente.
+    expect(result.actionIntent.light_action).toMatchObject({
+      intent: "descartar_recordatorio",
+    });
+    expect(result.executiveRan).toBe(true);
   });
 });
 
-function coordinatorFixture(options?: { executiveShouldThrow?: boolean }) {
+function coordinatorFixture(options?: {
+  executiveShouldThrow?: boolean;
+  compositionRejected?: boolean;
+}) {
   const planningContext = buildSafePlanningContext({
     userId: "00000000-0000-4000-8000-000000000001",
     timezone: "America/Lima",
@@ -106,13 +139,31 @@ function coordinatorFixture(options?: { executiveShouldThrow?: boolean }) {
   const executiveResult = {
     output: {
       orchestration_plan: plan,
+      memory_control: null,
+      structure_proposal: null,
+      light_action: { intent: "descartar_recordatorio" },
+      profile_signal: null,
+      preference_change: null,
     },
     runtime: {
       provider: "executive-test",
       model_name: "executive",
       latency_ms: 10,
     },
-    compilation: { accepted: true, issues: [], dropped_action_intents: [] },
+    compilation: options?.compositionRejected
+      ? {
+          accepted: false,
+          issues: [
+            {
+              code: "claim_without_known_evidence",
+              path: "response_composition.grounded_claims[0].evidence_refs",
+              surface: "response_composition",
+              message: "el copy cito evidencia desconocida",
+            },
+          ],
+          dropped_action_intents: [],
+        }
+      : { accepted: true, issues: [], dropped_action_intents: [] },
     tool_calls: [],
     tool_results: [],
     safety: {
