@@ -31,6 +31,7 @@ import {
   PREFERENCE_CANCEL_COMMAND_ID,
   type PreferenceProposal,
 } from "@/core/preferences/preference-proposal";
+import type { ExecutiveActionSurface } from "@/agents/conversational-executive-agent";
 import { buildDashboardDeepLink } from "@/shared/app-links";
 import type { PendingItem } from "@/shared/types/domain";
 
@@ -91,6 +92,16 @@ export type TurnResponsePlannerInput = {
    * la constancia que el usuario tiene de lo que autorizo (`40` §3).
    */
   preferenceText?: string;
+  /**
+   * `WEB-D297`/`ERR-ASI-01`: modulos de accion que el ejecutivo si entendio y
+   * que este turno **no** va a hacer, porque la validacion reprocho ese mismo
+   * modulo.
+   *
+   * Sale como `limite` con via manual, exactamente igual que cuando no hay
+   * modelo: la persona pidio algo, no ocurrio, y una respuesta amable que no lo
+   * mencione es peor que un error visible.
+   */
+  unhonoredActionIntents?: ExecutiveActionSurface[];
   conversationAnswer?: ConversationalAnswer;
   supplementalConversationAnswer?: ConversationalAnswer;
   conversationTurnState?: ConversationTurnState;
@@ -208,6 +219,7 @@ type ProductResponseReason =
   | "structure_failed"
   | "memory_needs_confirmation"
   | "memory_control_answered"
+  | "executive_action_not_honored"
   | "light_action_answered"
   | "profile_confirmation_answered"
   | "preference_needs_confirmation"
@@ -328,6 +340,64 @@ function buildMemoryControlResponse(
     intent: "direct_response",
     shape: "texto",
     text,
+  };
+}
+
+/**
+ * `WEB-D297`/`ERR-ASI-01`: lo que este turno le dice a la persona cuando
+ * entendio su pedido y no lo va a hacer.
+ *
+ * Mismo contrato que la falta de modelo: una frase que admite el limite y la
+ * via manual concreta para hacerlo a mano. Nunca se compone "por si acaso" —
+ * solo cuando el veredicto reprocho ese modulo en particular.
+ *
+ * `profile_signal` no esta en el mapa a proposito: no es un pedido de la
+ * persona sino algo que el motor creyo notar sobre ella. Anunciar que no se
+ * guardo seria contarle lo que el motor iba a deducir a sus espaldas, y `20c`
+ * §9 ya dice que un hecho que no se usa es coste de privacidad sin beneficio.
+ */
+const UNHONORED_ACTION_NOTICES: Partial<
+  Record<
+    ExecutiveActionSurface,
+    { text: string; view: Parameters<typeof buildDashboardDeepLink>[0] }
+  >
+> = {
+  memory_control: {
+    text: "Entendí que querías cambiar algo de lo que recuerdo de ti, pero no pude hacerlo ahora mismo. No cambié nada.",
+    view: "settings",
+  },
+  preference_change: {
+    text: "Entendí que querías cambiar tus avisos, pero no pude hacerlo ahora mismo. No cambié nada.",
+    view: "settings",
+  },
+  structure_proposal: {
+    text: "Entendí que querías cambiar una caja, meta o presupuesto, pero no pude prepararlo ahora mismo. No cambié nada.",
+    view: "money",
+  },
+  light_action: {
+    text: "Entendí lo que me pediste, pero no pude hacerlo ahora mismo. No cambié nada.",
+    view: "upcoming",
+  },
+};
+
+function buildUnhonoredActionResponse(
+  input: TurnResponsePlannerInput,
+): ProductResponse | null {
+  const notices = (input.unhonoredActionIntents ?? [])
+    .map((surface) => UNHONORED_ACTION_NOTICES[surface])
+    .filter((notice) => notice !== undefined);
+  const first = notices[0];
+  if (!first) return null;
+
+  return {
+    reason: "executive_action_not_honored",
+    intent: "direct_response",
+    shape: "limite",
+    text:
+      notices.length === 1
+        ? first.text
+        : "Entendí que me pedías más de un cambio y no pude hacer ninguno ahora mismo. No cambié nada.",
+    manualPath: buildDashboardDeepLink(notices.length === 1 ? first.view : "home"),
   };
 }
 
@@ -536,6 +606,12 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
   // puede quedar detras de nada (`RUL-MEM-16`).
   const memoryResponse = buildMemoryControlResponse(input);
   if (memoryResponse) return memoryResponse;
+
+  // `WEB-D297`: va aqui arriba porque solo se arma cuando ninguna otra via tenia
+  // nada que decir sobre esa accion, y porque decir "no lo hice" tarde equivale
+  // a no decirlo.
+  const unhonoredResponse = buildUnhonoredActionResponse(input);
+  if (unhonoredResponse) return unhonoredResponse;
 
   // `RUL-LIG-01`: la accion ligera ya se ejecuto antes de llegar aqui, asi que
   // su texto manda sobre cualquier respuesta conversacional que se hubiera

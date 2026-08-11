@@ -27,15 +27,44 @@ import {
   type ConversationalExecutiveOutput,
   type ExecutiveToolCallInput,
 } from "./types";
-import { compileExecutiveEvidenceAndPolicy } from "./evidence-and-policy-compiler";
+import {
+  compileExecutiveEvidenceAndPolicy,
+  rejectedExecutiveActionSurfaces,
+  withExecutiveSurfaces,
+  type ExecutiveActionSurface,
+  type ExecutivePolicyIssue,
+} from "./evidence-and-policy-compiler";
+import { logger } from "@/shared/telemetry/logger";
 
 export type ConversationalExecutiveToolExecutor = (
   toolName: ConversationToolName,
   input: ExecutiveToolCallInput
 ) => Promise<ConversationToolResult>;
 
+/**
+ * `WEB-D297`: el veredicto de validacion viaja **con** el resultado en vez de
+ * desaparecer dentro de una excepcion.
+ *
+ * `accepted: false` significa exactamente una cosa: la respuesta compuesta por
+ * el ejecutivo no se puede usar. No significa que el turno no entendio nada.
+ * Lo que la persona pidio hacer sigue en `output`, salvo los modulos que el
+ * propio veredicto reprocho, que ya vienen en `null` (ver
+ * `rejectedExecutiveActionSurfaces`).
+ */
+export type ExecutiveCompilationVerdict = {
+  accepted: boolean;
+  issues: ExecutivePolicyIssue[];
+  /**
+   * Modulos de accion que el ejecutivo si trajo y este turno **no** va a
+   * honrar. No es telemetria: es la lista de cosas que hay que decirle a la
+   * persona que no se hicieron.
+   */
+  dropped_action_intents: ExecutiveActionSurface[];
+};
+
 export type ConversationalExecutiveRunResult = {
   output: ConversationalExecutiveOutput;
+  compilation: ExecutiveCompilationVerdict;
   runtime: {
     provider: string;
     model_name?: string;
@@ -70,6 +99,7 @@ export class ConversationalExecutiveAgent {
     let accumulatedCost = 0;
     let hasCost = false;
     const accumulatedToolCalls: ToolCallSummary[] = [];
+    let lastRejection: RejectedAttempt | null = null;
 
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const toolResults: ConversationToolResult[] = [];
@@ -105,41 +135,33 @@ export class ConversationalExecutiveAgent {
         hasCost = true;
       }
 
-      try {
-        const output = ConversationalExecutiveOutputSchema.parse(
-          response.output,
-        );
-        validateExecutiveConsistency({
-          contextPack,
-          output,
-          toolResults,
-          traceId,
-        });
-        const compilation = compileExecutiveEvidenceAndPolicy({
-          contextPack,
-          output,
-          toolResults,
-        });
-        if (!compilation.accepted) {
-          throw new AgentRuntimeError(
-            "RUNTIME_INVALID_RESPONSE",
-            `EvidenceAndPolicyCompiler rechazo la salida: ${compilation.issues
-              .map((issue) => issue.message)
-              .join(" ")}`,
-            {
-              provider: getAgentRuntimeProvider(
-                "conversational_executive_agent",
-              ),
-              cause: {
-                trace_id: traceId,
-                issues: compilation.issues,
-              },
-            },
-          );
-        }
+      // Una salida que ni siquiera valida contra el esquema no tiene intencion
+      // que rescatar: no es "lo dijo mal", es que no dijo nada tipado. Sigue
+      // saliendo por excepcion y sin reintento, igual que antes de `WEB-D297`.
+      const output = ConversationalExecutiveOutputSchema.parse(response.output);
 
+      // `WEB-D297`: coherencia y evidencia se validan juntas y con la misma
+      // forma. Antes la coherencia lanzaba primero y la evidencia despues, y
+      // ese orden hacia que el turno perdiera cosas distintas segun cual
+      // fallara; ahora hay un solo veredicto con una sola lista de reproches,
+      // cada uno con el modulo al que apunta.
+      const issues: ExecutivePolicyIssue[] = [
+        ...validateExecutiveConsistency({ contextPack, output, toolResults }),
+        ...compileExecutiveEvidenceAndPolicy({
+          contextPack,
+          output,
+          toolResults,
+        }).issues,
+      ];
+
+      if (issues.length === 0) {
         return {
           output,
+          compilation: {
+            accepted: true,
+            issues: [],
+            dropped_action_intents: [],
+          },
           runtime: {
             ...response.runtime,
             latency_ms: accumulatedLatencyMs,
@@ -163,35 +185,134 @@ export class ConversationalExecutiveAgent {
             ],
           },
         };
-      } catch (error) {
-        if (
-          attempt === 1 &&
-          error instanceof AgentRuntimeError &&
-          error.code === "RUNTIME_INVALID_RESPONSE"
-        ) {
-          const feedback = extractValidationFeedback(error);
-          attemptContext = {
-            ...withoutConversationHistory(contextPack),
-            validation_feedback: {
-              attempt: 2,
-              issue_codes: feedback.issueCodes,
-              instructions: feedback.instructions,
-            },
-          };
-          continue;
-        }
-        throw error;
+      }
+
+      lastRejection = { output, issues, response, toolResults };
+      if (attempt === 1) {
+        const feedback = feedbackFromIssues(issues);
+        attemptContext = {
+          ...withoutConversationHistory(contextPack),
+          validation_feedback: {
+            attempt: 2,
+            issue_codes: feedback.issueCodes,
+            instructions: feedback.instructions,
+          },
+        };
       }
     }
 
-    throw new AgentRuntimeError(
-      "RUNTIME_INVALID_RESPONSE",
-      "ConversationalExecutiveAgent no produjo una salida valida.",
-      {
-        provider: getAgentRuntimeProvider("conversational_executive_agent"),
-      },
+    if (!lastRejection) {
+      throw new AgentRuntimeError(
+        "RUNTIME_INVALID_RESPONSE",
+        "ConversationalExecutiveAgent no produjo una salida valida.",
+        {
+          provider: getAgentRuntimeProvider("conversational_executive_agent"),
+        },
+      );
+    }
+
+    // `WEB-D297`: segundo rechazo. Hasta aqui esto lanzaba, el coordinador lo
+    // atrapaba y el turno se quedaba sin ejecutivo: las cinco ramas de accion
+    // recibian `null` y la orden que la persona acababa de dar desaparecia sin
+    // que nadie se lo dijera. El rechazo es sobre **como se dice** la
+    // respuesta; lo que se pidio hacer no deja de ser cierto porque el copy
+    // cite mal una evidencia.
+    //
+    // Asi que la respuesta se descarta —el turno la compone por la via
+    // degradada, como siempre— y la intencion sobrevive, salvo la que el propio
+    // veredicto reprocha, que sale en `dropped_action_intents` para que el
+    // turno pueda decir que no se hizo.
+    const { output: honoredOutput, dropped } = quarantineActionIntents(
+      lastRejection.output,
+      lastRejection.issues,
     );
+    logger.warn("conversational_executive.compilation_rejected", {
+      trace_id: traceId,
+      issue_codes: lastRejection.issues.map((issue) => issue.code),
+      rejected_surfaces: [
+        ...new Set(lastRejection.issues.map((issue) => issue.surface)),
+      ],
+      dropped_action_intents: dropped,
+    });
+
+    return {
+      output: honoredOutput,
+      compilation: {
+        accepted: false,
+        issues: lastRejection.issues,
+        dropped_action_intents: dropped,
+      },
+      runtime: {
+        ...lastRejection.response.runtime,
+        latency_ms: accumulatedLatencyMs,
+        ...(hasCost ? { cost_estimate: accumulatedCost } : {}),
+      },
+      tool_calls: accumulatedToolCalls,
+      tool_results: lastRejection.toolResults,
+      safety: {
+        ...lastRejection.response.safety,
+        policy_flags: [
+          ...new Set([
+            ...lastRejection.response.safety.policy_flags,
+            "single_semantic_turn_authority",
+            "typed_internal_modules",
+            "evidence_and_policy_compiler_rejected",
+            "executive_response_discarded",
+            "no_direct_financial_write",
+            "structured_regeneration_applied",
+          ]),
+        ],
+      },
+    };
   }
+}
+
+type RejectedAttempt = {
+  output: ConversationalExecutiveOutput;
+  issues: ExecutivePolicyIssue[];
+  response: {
+    runtime: ConversationalExecutiveRunResult["runtime"];
+    safety: ConversationalExecutiveRunResult["safety"];
+  };
+  toolResults: ConversationToolResult[];
+};
+
+/**
+ * `WEB-D297`: deja en `null` los modulos de accion que el veredicto reprocha,
+ * para que nadie aguas abajo pueda leer una intencion que este turno decidio no
+ * honrar. La salida y la lista de descartes salen del mismo sitio: no hay dos
+ * fuentes que mantener sincronizadas.
+ */
+export function quarantineActionIntents(
+  output: ConversationalExecutiveOutput,
+  issues: ExecutivePolicyIssue[],
+): {
+  output: ConversationalExecutiveOutput;
+  dropped: ExecutiveActionSurface[];
+} {
+  const rejected = new Set(rejectedExecutiveActionSurfaces(issues));
+  if (rejected.size === 0) return { output, dropped: [] };
+
+  const dropped = [...rejected].filter((surface) => output[surface] !== null);
+  return {
+    output: {
+      ...output,
+      memory_control: rejected.has("memory_control")
+        ? null
+        : output.memory_control,
+      structure_proposal: rejected.has("structure_proposal")
+        ? null
+        : output.structure_proposal,
+      light_action: rejected.has("light_action") ? null : output.light_action,
+      profile_signal: rejected.has("profile_signal")
+        ? null
+        : output.profile_signal,
+      preference_change: rejected.has("preference_change")
+        ? null
+        : output.preference_change,
+    },
+    dropped,
+  };
 }
 
 /**
@@ -208,50 +329,43 @@ function withoutConversationHistory(
   return rest;
 }
 
-function extractValidationFeedback(error: AgentRuntimeError): {
+function feedbackFromIssues(issues: ExecutivePolicyIssue[]): {
   issueCodes: string[];
   instructions: string[];
 } {
-  const cause =
-    error.details.cause &&
-    typeof error.details.cause === "object" &&
-    "issues" in error.details.cause
-      ? (error.details.cause as { issues?: unknown }).issues
-      : null;
-  if (!Array.isArray(cause)) {
-    return {
-      issueCodes: ["runtime_invalid_response"],
-      instructions: [error.message],
-    };
-  }
-
-  const issueCodes = cause.map((issue) =>
-    issue && typeof issue === "object" && "code" in issue
-      ? String((issue as { code: unknown }).code)
-      : "consistency_error",
-  );
-  const instructions = cause.map((issue) =>
-    issue && typeof issue === "object" && "message" in issue
-      ? String((issue as { message: unknown }).message)
-      : String(issue),
-  );
-  return { issueCodes, instructions };
+  return {
+    issueCodes: issues.map((issue) => issue.code),
+    instructions: issues.map((issue) => issue.message),
+  };
 }
 
+/**
+ * `WEB-D297`: la coherencia entre modulos devuelve incidencias en vez de
+ * lanzar. El cambio no relaja nada —las mismas cinco comprobaciones, los
+ * mismos rechazos— pero ahora cada una dice a que modulo apunta, y eso es lo
+ * que permite distinguir "no se puede decir asi" de "no se puede hacer".
+ *
+ * Los desacuerdos entre `turn_interpretation` y el plan salen anclados a
+ * `turn_interpretation` a proposito: si el modelo se contradice sobre que turno
+ * es este, tampoco se le cree lo que dice que la persona pidio hacer.
+ */
 function validateExecutiveConsistency(input: {
   contextPack: ConversationalExecutiveContextPack;
   output: ConversationalExecutiveOutput;
   toolResults: ConversationToolResult[];
-  traceId: string;
-}) {
+}): ExecutivePolicyIssue[] {
   const { output } = input;
-  const issues: string[] = [];
+  const issues: Array<Omit<ExecutivePolicyIssue, "surface">> = [];
 
   if (
     output.turn_interpretation.goal !== output.orchestration_plan.goal ||
     output.turn_interpretation.workflow !== output.orchestration_plan.workflow
   ) {
-    issues.push("turn_interpretation y orchestration_plan no coinciden.");
+    issues.push({
+      code: "interpretation_plan_mismatch",
+      path: "turn_interpretation.goal",
+      message: "turn_interpretation y orchestration_plan no coinciden.",
+    });
   }
 
   if (
@@ -259,7 +373,11 @@ function validateExecutiveConsistency(input: {
     JSON.stringify(output.turn_interpretation.semantic_query) !==
       JSON.stringify(output.orchestration_plan.semantic_query)
   ) {
-    issues.push("semantic_query difiere entre interpretacion y plan.");
+    issues.push({
+      code: "semantic_query_mismatch",
+      path: "turn_interpretation.semantic_query",
+      message: "semantic_query difiere entre interpretacion y plan.",
+    });
   }
 
   const allowedMovementIds = new Set([
@@ -274,17 +392,21 @@ function validateExecutiveConsistency(input: {
       (movementId) => !allowedMovementIds.has(movementId)
     );
   if (inventedMovementIds.length > 0) {
-    issues.push(
-      `reference_resolution invento IDs: ${inventedMovementIds.join(",")}.`
-    );
+    issues.push({
+      code: "reference_ids_invented",
+      path: "reference_resolution.candidate_movement_ids",
+      message: `reference_resolution invento IDs: ${inventedMovementIds.join(",")}.`,
+    });
   }
 
   const selectedTools = new Set(output.orchestration_plan.selected_tools);
   for (const request of output.tool_requests) {
     if (!selectedTools.has(request.tool_name)) {
-      issues.push(
-        `tool_request ${request.tool_name} no esta autorizada por el plan.`
-      );
+      issues.push({
+        code: "tool_request_not_planned",
+        path: `tool_requests.${request.request_id}`,
+        message: `tool_request ${request.tool_name} no esta autorizada por el plan.`,
+      });
     }
   }
 
@@ -302,24 +424,18 @@ function validateExecutiveConsistency(input: {
     output.orchestration_plan.workflow === "conversation_read_only" ||
     output.orchestration_plan.workflow === "support"
   ) {
-    issues.push(...groundingIssues);
-  }
-
-  if (issues.length > 0) {
-    throw new AgentRuntimeError(
-      "RUNTIME_INVALID_RESPONSE",
-      `ConversationalExecutiveAgent devolvio modulos inconsistentes: ${issues.join(
-        " "
-      )}`,
-      {
-        provider: getAgentRuntimeProvider("conversational_executive_agent"),
-        cause: {
-          trace_id: input.traceId,
-          issues,
-        },
-      }
+    // Un fallo de grounding es un reproche a la redaccion, no a la orden: por
+    // eso queda anclado a `response_composition` y no arrastra las acciones.
+    issues.push(
+      ...groundingIssues.map((message) => ({
+        code: "grounding_without_evidence" as const,
+        path: "response_composition.response_text",
+        message,
+      })),
     );
   }
+
+  return withExecutiveSurfaces(issues);
 }
 
 // `20b` S5.2: la forma de "consultar_datos_abiertos" — solo lo que el

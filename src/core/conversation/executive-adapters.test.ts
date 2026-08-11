@@ -136,6 +136,7 @@ function executiveTrace(): ConversationalExecutiveTrace {
         model_name: "model-test",
         latency_ms: 100,
       },
+      compilation: { accepted: true, issues: [], dropped_action_intents: [] },
       tool_calls: [],
       tool_results: [],
       safety: {

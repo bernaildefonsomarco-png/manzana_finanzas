@@ -300,6 +300,7 @@ function buildOrchestrator(lightAction: {
       model_name: "executive",
       latency_ms: 5,
     },
+    compilation: { accepted: true, issues: [], dropped_action_intents: [] },
     tool_calls: [],
     tool_results: [],
     safety: { policy_flags: [], redaction_applied: false },

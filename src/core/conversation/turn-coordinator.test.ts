@@ -112,6 +112,7 @@ function coordinatorFixture(options?: { executiveShouldThrow?: boolean }) {
       model_name: "executive",
       latency_ms: 10,
     },
+    compilation: { accepted: true, issues: [], dropped_action_intents: [] },
     tool_calls: [],
     tool_results: [],
     safety: {

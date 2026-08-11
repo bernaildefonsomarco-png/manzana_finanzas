@@ -248,6 +248,10 @@ export type TurnOrchestrationResult = {
     // `23` §5b.1 / `AC-RT-13`: llego una confirmacion para una propuesta que ya
     // habia caducado (vencida, de otro hilo o sin sello). No se ejecuto nada.
     | "accepted_with_correction_lapsed"
+    // `WEB-D297`/`ERR-ASI-01`: el ejecutivo entendio que la persona pedia una
+    // accion, pero la validacion reprocho ese mismo modulo y el turno no la va a
+    // hacer. No cambio nada, y callarlo dejaria a la persona creyendo que si.
+    | "accepted_with_action_not_honored"
     // `RUL-ESTR-01`: crear o modificar una caja, meta o presupuesto conversando.
     | "accepted_with_structure_confirmation"
     | "accepted_with_structure_applied"
@@ -755,7 +759,7 @@ export class FinancialOrchestrator {
       threadKey,
       traceId: input.traceId,
       conversationTurnState: effectiveConversationTurnState,
-      executive: initialOrchestrationPlanning?.executive ?? null,
+      planning: initialOrchestrationPlanning,
       previousWorkingSet: activeMemoryState?.working_set ?? null,
     });
     if (memoryControlTurn) return memoryControlTurn;
@@ -791,7 +795,7 @@ export class FinancialOrchestrator {
       threadKey,
       traceId: input.traceId,
       conversationTurnState: effectiveConversationTurnState,
-      executive: initialOrchestrationPlanning?.executive ?? null,
+      planning: initialOrchestrationPlanning,
       previousWorkingSet: activeMemoryState?.working_set ?? null,
     });
     if (lightActionTurn) return lightActionTurn;
@@ -807,7 +811,7 @@ export class FinancialOrchestrator {
       threadKey,
       traceId: input.traceId,
       conversationTurnState: effectiveConversationTurnState,
-      executive: initialOrchestrationPlanning?.executive ?? null,
+      planning: initialOrchestrationPlanning,
       previousWorkingSet: activeMemoryState?.working_set ?? null,
     });
     if (preferenceProposalTurn) return preferenceProposalTurn;
@@ -822,10 +826,23 @@ export class FinancialOrchestrator {
       threadKey,
       traceId: input.traceId,
       conversationTurnState: effectiveConversationTurnState,
-      executive: initialOrchestrationPlanning?.executive ?? null,
+      planning: initialOrchestrationPlanning,
       previousWorkingSet: activeMemoryState?.working_set ?? null,
     });
     if (structureProposalTurn) return structureProposalTurn;
+
+    // `WEB-D297`: si alguna de las cinco intenciones llego reprochada por la
+    // validacion, ninguna rama de arriba la pudo atender. El turno lo dice aqui
+    // en vez de seguir hacia una respuesta amable que no la menciona: una accion
+    // que la persona cree hecha y no se hizo es el peor final posible.
+    const unhonoredActionTurn = await this.reportUnhonoredActionIntents({
+      externalEvent,
+      turnInput,
+      traceId: input.traceId,
+      conversationTurnState: effectiveConversationTurnState,
+      planning: initialOrchestrationPlanning,
+    });
+    if (unhonoredActionTurn) return unhonoredActionTurn;
 
     const plannedFinancialResolution =
       initialOrchestrationPlanning?.compiled.financialResolution ?? null;
@@ -1329,7 +1346,7 @@ export class FinancialOrchestrator {
         blocks: plan.blocks,
         externalEvent,
         traceId: input.traceId,
-        executive: executiveTrace,
+        planning: orchestrationPlanning,
         dataContextPack,
         activeMemoryState,
       });
@@ -1731,14 +1748,14 @@ export class FinancialOrchestrator {
     threadKey: string;
     traceId: string;
     conversationTurnState: ConversationTurnState;
-    executive: OrchestrationPlanningTrace["executive"];
+    planning: OrchestrationPlanningTrace | null;
     previousWorkingSet: ConversationWorkingSet | null;
   }): Promise<TurnOrchestrationResult | null> {
     const userId = params.externalEvent.user_id;
     if (!userId) return null;
 
     const command = compileMemoryControlRequest(
-      params.executive?.result.output.memory_control ?? null,
+      params.planning?.actionIntent.memory_control ?? null,
     );
     if (!command) return null;
 
@@ -1762,7 +1779,7 @@ export class FinancialOrchestrator {
         conversationTurnState: params.conversationTurnState,
         result,
         previousWorkingSet: params.previousWorkingSet,
-        skipEnhancement: params.executive != null,
+        skipEnhancement: params.planning?.executiveRan ?? false,
       });
     } catch (error) {
       // El turno no se queda mudo: cae al camino normal, donde el ejecutivo ya
@@ -1774,6 +1791,76 @@ export class FinancialOrchestrator {
       });
       return null;
     }
+  }
+
+  /**
+   * `WEB-D297`/`ERR-ASI-01`: cierra el turno diciendo que una accion entendida
+   * no se hizo.
+   *
+   * Solo se activa cuando la validacion reprocho **ese mismo** modulo de accion.
+   * Un rechazo sobre la redaccion no llega hasta aqui: en ese caso la intencion
+   * sobrevive intacta y la rama de arriba ya la atendio. Por eso este camino no
+   * puede tapar una accion que si ocurrio.
+   *
+   * El texto va verbatim (`skipEnhancement`) por la misma razon que el de
+   * `ERR-ASI-01`: admitir un limite y dar la via manual es justo lo que un
+   * reescritor amable tiende a suavizar hasta que deja de decirse.
+   */
+  private async reportUnhonoredActionIntents(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    planning: OrchestrationPlanningTrace | null;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    const dropped = params.planning?.droppedActionIntents ?? [];
+    if (dropped.length === 0) return null;
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId,
+      conversationTurnState: params.conversationTurnState,
+      unhonoredActionIntents: dropped,
+    });
+    // `profile_signal` no compone aviso (ver `UNHONORED_ACTION_NOTICES`): si era
+    // lo unico reprochado, no hay nada que decirle a la persona y el turno sigue
+    // su camino normal.
+    if (plan.reason !== "executive_action_not_honored") return null;
+
+    logger.warn("orchestrator.executive_action_not_honored", {
+      trace_id: params.traceId,
+      external_event_id: params.externalEvent.id,
+      dropped_action_intents: dropped,
+    });
+
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: true,
+    });
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: "accepted_with_action_not_honored",
+        agent_runtime_required: false,
+        unhonored_action_intents: dropped,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: "accepted_with_action_not_honored",
+    };
   }
 
   /**
@@ -1793,14 +1880,14 @@ export class FinancialOrchestrator {
     threadKey: string;
     traceId: string;
     conversationTurnState: ConversationTurnState;
-    executive: OrchestrationPlanningTrace["executive"];
+    planning: OrchestrationPlanningTrace | null;
     previousWorkingSet: ConversationWorkingSet | null;
   }): Promise<TurnOrchestrationResult | null> {
     const userId = params.externalEvent.user_id;
     if (!userId) return null;
 
     const command = compileLightActionRequest(
-      params.executive?.result.output.light_action ?? null,
+      params.planning?.actionIntent.light_action ?? null,
     );
     if (!command) return null;
 
@@ -2077,14 +2164,14 @@ export class FinancialOrchestrator {
     threadKey: string;
     traceId: string;
     conversationTurnState: ConversationTurnState;
-    executive: OrchestrationPlanningTrace["executive"];
+    planning: OrchestrationPlanningTrace | null;
     previousWorkingSet: ConversationWorkingSet | null;
   }): Promise<TurnOrchestrationResult | null> {
     const userId = params.externalEvent.user_id;
     if (!userId) return null;
 
     const command = compilePreferenceRequest(
-      params.executive?.result.output.preference_change ?? null,
+      params.planning?.actionIntent.preference_change ?? null,
     );
     if (!command) return null;
 
@@ -2105,7 +2192,7 @@ export class FinancialOrchestrator {
       proposal,
       preferenceAction: proposal.command,
       orchestratorReason: "accepted_with_preference_confirmation",
-      skipEnhancement: params.executive != null,
+      skipEnhancement: params.planning?.executiveRan ?? false,
       remember: {
         channel: params.channel,
         threadKey: params.threadKey,
@@ -2357,7 +2444,7 @@ export class FinancialOrchestrator {
     blocks: Block[];
     externalEvent: ExternalEventLog;
     traceId: string;
-    executive: OrchestrationPlanningTrace["executive"];
+    planning: OrchestrationPlanningTrace | null;
     dataContextPack: DataContextPack;
     activeMemoryState: ConversationMemoryState | null;
   }): Promise<Block[]> {
@@ -2365,7 +2452,7 @@ export class FinancialOrchestrator {
     if (!userId) return params.blocks;
 
     try {
-      const signal = params.executive?.result.output.profile_signal ?? null;
+      const signal = params.planning?.actionIntent.profile_signal ?? null;
       const draft = compileProfileSignal(signal, {
         // `AC-PERF-10`: la sensibilidad sale del catalogo real del turno, no del
         // modelo. Una categoria que el modelo nombra y que no esta en el
@@ -2674,14 +2761,14 @@ export class FinancialOrchestrator {
     threadKey: string;
     traceId: string;
     conversationTurnState: ConversationTurnState;
-    executive: OrchestrationPlanningTrace["executive"];
+    planning: OrchestrationPlanningTrace | null;
     previousWorkingSet: ConversationWorkingSet | null;
   }): Promise<TurnOrchestrationResult | null> {
     const userId = params.externalEvent.user_id;
     if (!userId) return null;
 
     const compiled = compileStructureProposal({
-      request: params.executive?.result.output.structure_proposal ?? null,
+      request: params.planning?.actionIntent.structure_proposal ?? null,
       userText: params.text,
       now: params.externalEvent.received_at,
     });
@@ -2701,7 +2788,7 @@ export class FinancialOrchestrator {
       externalEventId: params.externalEvent.id,
       traceId: params.traceId,
       conversationTurnState: params.conversationTurnState,
-      skipEnhancement: params.executive != null,
+      skipEnhancement: params.planning?.executiveRan ?? false,
     });
 
     const isProposal = compiled.kind === "proposal";

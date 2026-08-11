@@ -5,42 +5,163 @@ import type {
   ConversationalExecutiveOutput,
 } from "./types";
 
+export type ExecutivePolicyIssueCode =
+  | "amount_without_evidence"
+  | "date_without_evidence"
+  | "category_outside_context"
+  | "category_without_evidence"
+  | "reference_outside_focus"
+  | "tool_declared_not_executed"
+  | "tool_used_not_executed"
+  | "claim_without_known_evidence"
+  | "claim_source_tool_not_executed"
+  | "missing_grounded_claims"
+  | "premature_write_claim"
+  | "invalid_composition_stage"
+  | "debt_action_without_specialized_hint"
+  | "command_outside_catalog"
+  | "figure_without_assumptions"
+  | "world_knowledge_promoted"
+  | "focus_expired"
+  // `WEB-D297`: la coherencia entre modulos dejo de lanzar por su cuenta y
+  // entrega incidencias con la misma forma que las de evidencia. Un fallo de
+  // grounding es tan "esta mal dicho" como un claim sin evidencia, y hasta
+  // ahora salia por otra puerta que tiraba el turno entero.
+  | "interpretation_plan_mismatch"
+  | "semantic_query_mismatch"
+  | "reference_ids_invented"
+  | "tool_request_not_planned"
+  | "grounding_without_evidence";
+
+/**
+ * `WEB-D297`: los cinco modulos por los que el ejecutivo dice **que pidio hacer
+ * la persona**, separados de los modulos que dicen **como se le contesta**.
+ *
+ * La distincion no es cosmetica: hasta ahora un solo reproche sobre la
+ * redaccion —un claim citando evidencia desconocida, por ejemplo— tiraba la
+ * salida entera, y con ella la orden de olvidar un recuerdo o de pausar los
+ * avisos que la persona acababa de dar. El turno contestaba amable y la accion
+ * no se hacia ni se mencionaba. En una app de dinero ese es el peor modo de
+ * fallo: peor que un error visible.
+ */
+export const EXECUTIVE_ACTION_SURFACES = [
+  "memory_control",
+  "structure_proposal",
+  "light_action",
+  "profile_signal",
+  "preference_change",
+] as const;
+
+export type ExecutiveActionSurface = (typeof EXECUTIVE_ACTION_SURFACES)[number];
+
+/**
+ * A que modulo de la salida apunta una incidencia. `unknown` es el caso que
+ * importa: una ruta que este mapa no sabe clasificar **no** se asume inocua.
+ */
+export type ExecutiveOutputSurface =
+  | ExecutiveActionSurface
+  | "turn_interpretation"
+  | "reference_resolution"
+  | "tool_requests"
+  | "financial_proposals"
+  | "correction_proposal"
+  | "response_composition"
+  | "orchestration_plan"
+  | "findings"
+  | "unknown";
+
+const KNOWN_SURFACES = new Set<string>([
+  ...EXECUTIVE_ACTION_SURFACES,
+  "turn_interpretation",
+  "reference_resolution",
+  "tool_requests",
+  "financial_proposals",
+  "correction_proposal",
+  "response_composition",
+  "orchestration_plan",
+  "findings",
+]);
+
+/**
+ * Superficies que ponen en duda **la lectura del turno entera**, no un modulo
+ * suelto. Si el modelo no se pone de acuerdo consigo mismo sobre que turno es
+ * este, tampoco se le cree lo que dice que la persona pidio hacer.
+ */
+const TURN_WIDE_SURFACES = new Set<ExecutiveOutputSurface>([
+  "turn_interpretation",
+  "unknown",
+]);
+
 export type ExecutivePolicyIssue = {
-  code:
-    | "amount_without_evidence"
-    | "date_without_evidence"
-    | "category_outside_context"
-    | "category_without_evidence"
-    | "reference_outside_focus"
-    | "tool_declared_not_executed"
-    | "tool_used_not_executed"
-    | "claim_without_known_evidence"
-    | "claim_source_tool_not_executed"
-    | "missing_grounded_claims"
-    | "premature_write_claim"
-    | "invalid_composition_stage"
-    | "debt_action_without_specialized_hint"
-    | "command_outside_catalog"
-    | "figure_without_assumptions"
-    | "world_knowledge_promoted"
-    | "focus_expired";
+  code: ExecutivePolicyIssueCode;
   path: string;
+  /** Derivada de `path`, nunca declarada a mano: una sola fuente de verdad. */
+  surface: ExecutiveOutputSurface;
   message: string;
 };
+
+/** Incidencia tal como la escriben las reglas: la superficie se deriva luego. */
+type RawPolicyIssue = Omit<ExecutivePolicyIssue, "surface">;
 
 export type ExecutivePolicyCompilation = {
   accepted: boolean;
   issues: ExecutivePolicyIssue[];
+  /** Los modulos que quedaron reprochados, sin repetir. */
+  rejected_surfaces: ExecutiveOutputSurface[];
   executed_tools: string[];
   known_evidence_refs: string[];
 };
+
+/**
+ * `WEB-D297`: el primer segmento de `path` es el modulo. Todo lo que no
+ * reconozcamos cae en `unknown`, que aguas arriba se trata como si reprochara
+ * el turno entero: una regla nueva del compilador no puede colar una accion
+ * por olvidarse de actualizar este mapa.
+ */
+export function executiveSurfaceFromPath(path: string): ExecutiveOutputSurface {
+  const head = path.split(/[.[]/, 1)[0]?.trim() ?? "";
+  return KNOWN_SURFACES.has(head)
+    ? (head as ExecutiveOutputSurface)
+    : "unknown";
+}
+
+/** Anota cada incidencia con el modulo al que apunta. */
+export function withExecutiveSurfaces(
+  issues: RawPolicyIssue[],
+): ExecutivePolicyIssue[] {
+  return issues.map((issue) => ({
+    ...issue,
+    surface: executiveSurfaceFromPath(issue.path),
+  }));
+}
+
+/**
+ * `WEB-D297`: de los cinco modulos de accion, cuales **no** se pueden honrar
+ * con estas incidencias encima.
+ *
+ * Una intencion sobrevive si, y solo si, ninguna incidencia apunta a su propio
+ * modulo y ninguna pone en duda la lectura del turno entera. Es deliberadamente
+ * fail-closed: la duda cierra la accion, no la abre.
+ */
+export function rejectedExecutiveActionSurfaces(
+  issues: ExecutivePolicyIssue[],
+): ExecutiveActionSurface[] {
+  if (issues.length === 0) return [];
+  if (issues.some((issue) => TURN_WIDE_SURFACES.has(issue.surface))) {
+    return [...EXECUTIVE_ACTION_SURFACES];
+  }
+  const reproached = new Set(issues.map((issue) => issue.surface));
+  return EXECUTIVE_ACTION_SURFACES.filter((surface) =>
+    reproached.has(surface),
+  );
+}
 
 export function compileExecutiveEvidenceAndPolicy(input: {
   contextPack: ConversationalExecutiveContextPack;
   output: ConversationalExecutiveOutput;
   toolResults: ConversationToolResult[];
 }): ExecutivePolicyCompilation {
-  const issues: ExecutivePolicyIssue[] = [];
+  const issues: RawPolicyIssue[] = [];
   const executedTools = new Set(
     input.toolResults
       .filter((result) => result.status === "called")
@@ -265,9 +386,13 @@ export function compileExecutiveEvidenceAndPolicy(input: {
     }
   }
 
+  const surfacedIssues = withExecutiveSurfaces(issues);
   return {
-    accepted: issues.length === 0,
-    issues,
+    accepted: surfacedIssues.length === 0,
+    issues: surfacedIssues,
+    rejected_surfaces: [
+      ...new Set(surfacedIssues.map((issue) => issue.surface)),
+    ],
     executed_tools: [...executedTools],
     known_evidence_refs: knownEvidenceRefs,
   };
