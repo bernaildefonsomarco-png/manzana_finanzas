@@ -180,6 +180,19 @@ import {
   type StructureResolutionResult,
 } from "@/core/structure";
 import {
+  compileDebtAction,
+  describeUnavailableDebtAction,
+  isDebtActionCommandText,
+  lapsedDebtActionResolution,
+  maybeResolveDebtAction,
+  readStoredDebtActionProposal,
+  resolveAwaitingDebtAction,
+  buildDebtActionCommandText,
+  type DebtActionDebtContext,
+  type DebtActionResolutionResult,
+} from "@/core/debts";
+import { listDebts } from "@/data/repositories/debts.repository";
+import {
   applyDedupPreflight,
   assessRiskSignals,
   calculateRecentAmountMedian,
@@ -268,6 +281,12 @@ export type TurnOrchestrationResult = {
     // hacerla bien. Se pregunta; no se adivina ni se deja caer.
     | "accepted_with_action_clarification"
     // `RUL-ESTR-01`: crear o modificar una caja, meta o presupuesto conversando.
+    | "accepted_with_debt_action_confirmation"
+    | "accepted_with_debt_action_applied"
+    | "accepted_with_debt_action_cancelled"
+    | "accepted_with_debt_action_clarification"
+    | "accepted_with_debt_action_unavailable"
+    | "accepted_with_debt_action_lapsed"
     | "accepted_with_structure_confirmation"
     | "accepted_with_structure_applied"
     | "accepted_with_structure_cancelled"
@@ -488,6 +507,27 @@ export class FinancialOrchestrator {
     });
     if (preferenceTurn.handled) return preferenceTurn.result;
     activeMemoryState = preferenceTurn.activeMemoryState;
+
+    // `RUL-DEUDAS-13`: una propuesta de deuda ("¿La cierro como condonada?") se
+    // resuelve igual que una correccion o una estructura — con el boton
+    // `deuda:...` o con el "si" escrito del turno siguiente, mismo hilo y misma
+    // vigencia. Va delante de estructura porque son excluyentes: solo hay una
+    // propuesta viva por hilo, y esta rama solo se activa cuando la ultima
+    // accion recordada es justamente una propuesta de deuda.
+    const debtActionTurn = await this.resolveDebtActionTurn({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      activeMemoryState,
+      conversationTurnState: conversationTurn.turn_state,
+    });
+    if (debtActionTurn.handled) {
+      return debtActionTurn.result;
+    }
+    activeMemoryState = debtActionTurn.activeMemoryState;
 
     // `RUL-ESTR-03`: una propuesta de estructura ("¿Creo la caja Viaje?") se
     // resuelve exactamente igual que una correccion — con el boton `estr:...`
@@ -833,6 +873,25 @@ export class FinancialOrchestrator {
       previousWorkingSet: activeMemoryState?.working_set ?? null,
     });
     if (preferenceProposalTurn) return preferenceProposalTurn;
+
+    // `RUL-DEUDAS-13`: el ejecutivo entendio que este turno pide algo del ciclo
+    // de vida de una deuda. El turno no escribe nada aqui: propone y espera el
+    // "si", porque los cinco comandos ejecutables de `40` §7.11 son `tarjeta` o
+    // `riesgo`. Tambien es la rama que **dice el limite** cuando lo que se pidio
+    // es uno de los diferidos por `WEB-D205`.
+    const debtActionProposalTurn = await this.proposeDebtActionIfRequested({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      conversationTurnState: effectiveConversationTurnState,
+      planning: initialOrchestrationPlanning,
+      previousWorkingSet: activeMemoryState?.working_set ?? null,
+      dataContextPack: initialDataContextPack,
+    });
+    if (debtActionProposalTurn) return debtActionProposalTurn;
 
     // `RUL-ESTR-01`: el ejecutivo propuso crear o cambiar una caja, meta o
     // presupuesto. El turno no escribe nada aqui: propone y espera el "si".
@@ -1475,6 +1534,394 @@ export class FinancialOrchestrator {
    * `handled: false` con el estado conversacional actualizado cuando este
    * turno no tenia nada de estructura que resolver.
    */
+  /**
+   * `RUL-DEUDAS-13`: resuelve el tramo de deudas que **no** necesita juicio del
+   * modelo — confirmar, descartar o caducar una operacion ya propuesta.
+   *
+   * Es el gemelo de `resolveStructureTurn` y comparte su contrato al detalle,
+   * incluida la parte que mas cuesta: un boton pulsado trae su propia intencion
+   * y no caduca nada, porque el borrador que vive en el estado es justo el
+   * payload que ese mismo turno necesita ejecutar.
+   */
+  private async resolveDebtActionTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    activeMemoryState: ConversationMemoryState | null;
+    conversationTurnState: ConversationTurnState;
+  }): Promise<
+    | { handled: true; result: TurnOrchestrationResult }
+    | { handled: false; activeMemoryState: ConversationMemoryState | null }
+  > {
+    const userId = params.externalEvent.user_id;
+    if (!userId) {
+      return { handled: false, activeMemoryState: params.activeMemoryState };
+    }
+
+    let activeMemoryState = params.activeMemoryState;
+    const workingSet = activeMemoryState?.working_set ?? null;
+    const isCommand = isDebtActionCommandText(params.text);
+    const awaiting = resolveAwaitingDebtAction({
+      text: params.text,
+      workingSet,
+      threadKey: params.threadKey,
+      now: params.externalEvent.received_at,
+    });
+
+    const storedProposal =
+      awaiting.kind === "other_thread"
+        ? null
+        : readStoredDebtActionProposal(workingSet);
+
+    if (
+      !isCommand &&
+      (awaiting.kind === "lapsed_by_topic_change" ||
+        awaiting.kind === "lapsed_confirmation")
+    ) {
+      logger.warn("orchestrator.debt_action_proposal_lapsed", {
+        trace_id: params.traceId,
+        external_event_id: params.externalEvent.id,
+        lapse_kind: awaiting.kind,
+      });
+      const expiredState = await rememberExpiredCorrectionProposal({
+        client: this.client,
+        userId,
+        channel: params.channel,
+        threadKey: params.threadKey,
+        previousState: activeMemoryState,
+        now: params.externalEvent.received_at,
+      });
+      activeMemoryState = expiredState ?? activeMemoryState;
+    }
+
+    // `AC-RT-13`: una confirmacion que llego tarde se responde, no se ejecuta ni
+    // se descarta en silencio. En un cierre eso es la diferencia entre "no la
+    // cerre" y que la persona crea que su deuda ya no existe.
+    if (!isCommand && awaiting.kind === "lapsed_confirmation") {
+      const debtActionResolution = lapsedDebtActionResolution(awaiting.reason);
+      const result = await this.presentDebtActionTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        debtActionResolution,
+        orchestratorReason: "accepted_with_debt_action_lapsed",
+      });
+      return { handled: true, result };
+    }
+
+    const commandText = isCommand
+      ? params.text
+      : awaiting.kind === "confirmable"
+        ? awaiting.commandText
+        : null;
+
+    if (!commandText) return { handled: false, activeMemoryState };
+
+    const debtActionResolution = await maybeResolveDebtAction({
+      client: this.client,
+      userId,
+      text: commandText,
+      proposal: storedProposal,
+      traceId: params.traceId,
+      source: "orchestrator.debt_action_confirm",
+    });
+
+    if (debtActionResolution.kind === "not_debt_command") {
+      return { handled: false, activeMemoryState };
+    }
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] =
+      debtActionResolution.kind === "applied"
+        ? "accepted_with_debt_action_applied"
+        : debtActionResolution.kind === "cancelled"
+          ? "accepted_with_debt_action_cancelled"
+          : "accepted_with_debt_action_clarification";
+
+    const result = await this.presentDebtActionTurn({
+      externalEvent: params.externalEvent,
+      turnInput: params.turnInput,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      debtActionResolution,
+      orchestratorReason,
+      // Ejecutada o cancelada, la propuesta deja de existir: sin borrador, un
+      // "si" posterior no puede volver a cerrar la misma deuda.
+      remember: {
+        channel: params.channel,
+        threadKey: params.threadKey,
+        userId,
+        userMessage: params.text,
+        previous: workingSet,
+        now: params.externalEvent.received_at,
+      },
+    });
+
+    return { handled: true, result };
+  }
+
+  /**
+   * `RUL-DEUDAS-13`: convierte lo que el ejecutivo entendio en una propuesta, en
+   * una pregunta, o en un limite dicho con nombre propio.
+   *
+   * Los cuatro finales del turno estan cubiertos a proposito (`WEB-D298`): un
+   * `unavailable` que se dejara caer en silencio seria exactamente el bug que
+   * `ActionRequestOutcome` existe para impedir — la persona pidio sumar
+   * intereses, no ocurrio nada, y una respuesta amable que no lo mencione la
+   * deja creyendo que su saldo cambio.
+   */
+  private async proposeDebtActionIfRequested(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    planning: OrchestrationPlanningTrace | null;
+    previousWorkingSet: ConversationWorkingSet | null;
+    dataContextPack: DataContextPack;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    const request = params.planning?.actionIntent.debt_action ?? null;
+    if (!request || request.intent === "none") return null;
+
+    // Las deudas condonadas no viajan en el pack del turno —solo las vivas— y
+    // traerlas en cada turno seria una consulta de mas en el 99% de los casos.
+    // Se cargan solo cuando el turno pide reabrir, que es el unico comando que
+    // las necesita (`DEBT_OPERATION_PAID_CANNOT_REOPEN`: una pagada no vuelve).
+    let closedDebts: DebtActionDebtContext[] = [];
+    if (request.intent === "reabrir_deuda") {
+      try {
+        closedDebts = (
+          await listDebts(this.client, userId, ["cancelled"])
+        ).map((debt) => ({
+          id: debt.id,
+          name: debt.name,
+          direction: debt.direction,
+          status: debt.status,
+          current_balance: debt.current_balance,
+          currency: debt.currency,
+          related_person_id: debt.related_person_id,
+          related_person_name: debt.related_person?.display_name ?? null,
+          related_person_aliases: [],
+          installments: [],
+        }));
+      } catch (error) {
+        // Sin la lista no se puede resolver cual reabrir, pero el turno no puede
+        // callar por ello: se sigue con lista vacia y el compilador lo dice.
+        logger.warn("orchestrator.debt_action_closed_debts_unavailable", {
+          trace_id: params.traceId,
+          error,
+        });
+      }
+    }
+
+    const compiled = compileDebtAction({
+      request,
+      userText: params.text,
+      now: params.externalEvent.received_at,
+      debts: params.dataContextPack.active_debts ?? [],
+      closedDebts,
+      relatedPeople: (params.dataContextPack.related_people ?? []).map(
+        (persona) => ({
+          id: persona.id,
+          display_name: persona.display_name,
+          aliases: persona.aliases ?? [],
+        }),
+      ),
+    });
+
+    if (compiled.kind === "not_requested") return null;
+
+    const isProposal = compiled.kind === "ready";
+    const unavailableText =
+      compiled.kind === "unavailable"
+        ? describeUnavailableDebtAction(compiled.reason)
+        : null;
+
+    // `WEB-D298`: un `unavailable` sin texto propio no puede terminar el turno
+    // en silencio. Si el motivo no tiene via manual escrita, se degrada a una
+    // frase que al menos dice que no ocurrio.
+    const limiteText =
+      compiled.kind === "unavailable"
+        ? (unavailableText ??
+          "Entendí lo que me pediste sobre esa deuda, pero no lo puedo hacer desde aquí y no cambié nada. Hazlo desde la pantalla de la deuda.")
+        : null;
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId,
+      conversationTurnState: params.conversationTurnState,
+      ...(isProposal
+        ? { debtActionProposal: compiled.command }
+        : compiled.kind === "needs_clarification"
+          ? { debtActionQuestion: compiled.question }
+          : { debtActionUnavailableText: limiteText ?? undefined }),
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: params.planning?.executiveRan ?? false,
+    });
+
+    const resumen = isProposal
+      ? compiled.command.summary
+      : compiled.kind === "needs_clarification"
+        ? compiled.question
+        : (limiteText ?? "");
+
+    await rememberConversationOutcome({
+      client: this.client,
+      userId,
+      channel: params.channel,
+      threadKey: params.threadKey,
+      intent: "debt_action",
+      userMessage: params.text,
+      resultSummary: presented.text ?? resumen,
+      sourceRef: params.externalEvent.id,
+      topic: "debt",
+      goal: isProposal ? "confirm" : "help",
+      actionKind: isProposal ? "debt_action_proposed" : "clarification_requested",
+      // `awaiting_confirmation` es lo que sella hilo y vigencia: sin ese estado,
+      // el "si" del turno siguiente no encuentra nada que ejecutar.
+      actionStatus: isProposal ? "awaiting_confirmation" : "completed",
+      commandIds: isProposal
+        ? [buildDebtActionCommandText(compiled.command.proposal_id)]
+        : [],
+      unresolvedSlots:
+        compiled.kind === "needs_clarification" ? [compiled.question] : [],
+      debtActionProposal: isProposal ? compiled.command : null,
+      previous: params.previousWorkingSet,
+      now: params.externalEvent.received_at,
+    });
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] = isProposal
+      ? "accepted_with_debt_action_confirmation"
+      : compiled.kind === "unavailable"
+        ? "accepted_with_debt_action_unavailable"
+        : "accepted_with_debt_action_clarification";
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: orchestratorReason,
+        agent_runtime_required: false,
+        debt_action_kind: compiled.kind,
+        debt_action_intent: request.intent,
+        debt_action_operation: isProposal ? compiled.command.operation : null,
+        debt_action_unavailable_reason:
+          compiled.kind === "unavailable" ? compiled.reason : null,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: orchestratorReason,
+    };
+  }
+
+  /** Compone, presenta y registra un turno resuelto por la via de deudas. */
+  private async presentDebtActionTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    debtActionResolution: DebtActionResolutionResult;
+    orchestratorReason: TurnOrchestrationResult["reason"];
+    remember?: {
+      channel: Channel;
+      threadKey: string;
+      userId: string;
+      userMessage: string;
+      previous: ConversationWorkingSet | null;
+      now: string;
+    };
+  }): Promise<TurnOrchestrationResult> {
+    const resolution = params.debtActionResolution;
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId: params.externalEvent.user_id,
+      conversationTurnState: params.conversationTurnState,
+      debtActionResolution: resolution,
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: false,
+    });
+
+    const remember = params.remember;
+    if (
+      remember &&
+      (resolution.kind === "applied" || resolution.kind === "cancelled")
+    ) {
+      await rememberConversationOutcome({
+        client: this.client,
+        userId: remember.userId,
+        channel: remember.channel,
+        threadKey: remember.threadKey,
+        intent: "debt_action",
+        userMessage: remember.userMessage,
+        resultSummary: presented.text ?? resolution.summary,
+        sourceRef: params.externalEvent.id,
+        topic: "debt",
+        goal: "confirm",
+        actionKind:
+          resolution.kind === "applied"
+            ? "debt_action_applied"
+            : "debt_action_cancelled",
+        actionStatus:
+          resolution.kind === "applied" ? "completed" : "cancelled",
+        debtActionProposal: null,
+        previous: remember.previous,
+        now: remember.now,
+      });
+    }
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: params.orchestratorReason,
+        agent_runtime_required: false,
+        debt_action_resolution_kind: resolution.kind,
+        debt_action_resolution_reason: resolution.reason,
+        debt_action_resolution_operation:
+          "operation" in resolution ? resolution.operation : null,
+        debt_action_resolution_command:
+          "catalog_command" in resolution ? resolution.catalog_command : null,
+        debt_action_resolution_entity_id:
+          resolution.kind === "applied" ? resolution.entity_id : null,
+        debt_action_resolution_idempotent:
+          resolution.kind === "applied" ? resolution.idempotent : null,
+        debt_action_resolution_error_code:
+          resolution.kind === "failed" ? resolution.error_code : null,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: params.orchestratorReason,
+    };
+  }
+
   private async resolveStructureTurn(params: {
     externalEvent: ExternalEventLog;
     turnInput: TurnInput;

@@ -31,6 +31,12 @@ import {
   PREFERENCE_CANCEL_COMMAND_ID,
   type PreferenceProposal,
 } from "@/core/preferences/preference-proposal";
+import {
+  buildDebtActionCommandText,
+  DEBT_ACTION_CANCEL_COMMAND_ID,
+  type DebtActionProposal,
+} from "@/core/debts/debt-action-proposal";
+import type { DebtActionResolutionResult } from "@/core/debts/debt-action-resolution";
 import type { ExecutiveActionSurface } from "@/agents/conversational-executive-agent";
 import { buildDashboardDeepLink } from "@/shared/app-links";
 import type { PendingItem } from "@/shared/types/domain";
@@ -92,6 +98,26 @@ export type TurnResponsePlannerInput = {
    * la constancia que el usuario tiene de lo que autorizo (`40` §3).
    */
   preferenceText?: string;
+  /**
+   * `RUL-DEUDAS-13`: operacion de deuda que este turno propone. Sale como
+   * tarjeta con botones porque los cinco comandos ejecutables de `40` §7.11 son
+   * `tarjeta` o `riesgo`, y ninguno se ejecuta en el turno en que se pide.
+   */
+  debtActionProposal?: DebtActionProposal;
+  /**
+   * Pregunta del nucleo de deudas: cual deuda, cual cuota, con que motivo, y
+   * sobre todo la de `ERR-DEUDAS-06` —pagada o condonada—, que es la unica
+   * forma honesta de cerrar una deuda con saldo vivo.
+   */
+  debtActionQuestion?: string;
+  debtActionResolution?: DebtActionResolutionResult;
+  /**
+   * `WEB-D205`/`ERR-ASI-01`: la persona pidio un comando de deudas que existe en
+   * el catalogo y que este motor **no ejecuta** (interes, renegociacion,
+   * vincular caja). Va verbatim y sale como `limite` con via manual: callar
+   * seria dejarla creyendo que su saldo cambio.
+   */
+  debtActionUnavailableText?: string;
   /**
    * `WEB-D297`/`ERR-ASI-01`: modulos de accion que el ejecutivo si entendio y
    * que este turno **no** va a hacer, porque la validacion reprocho ese mismo
@@ -232,6 +258,12 @@ type ProductResponseReason =
   | "profile_confirmation_answered"
   | "preference_needs_confirmation"
   | "preference_answered"
+  | "debt_action_needs_confirmation"
+  | "debt_action_needs_clarification"
+  | "debt_action_applied"
+  | "debt_action_cancelled"
+  | "debt_action_failed"
+  | "debt_action_unavailable"
   | "ready_for_core_not_executed";
 
 type ProductResponse = {
@@ -605,6 +637,151 @@ function composeStructureFailedText(
   return `No pude ${verbo} ${resolution.entity ? `${entityArticle(resolution.entity)} ${que}` : "eso"} y no cambié nada. Puedes intentarlo otra vez o hacerlo desde la pantalla.`;
 }
 
+/**
+ * `RUL-DEUDAS-13`: todo lo que este turno puede decir sobre el ciclo de vida de
+ * una deuda.
+ *
+ * El orden importa y no es el mismo que en estructura. Primero lo que ya paso
+ * (aplicado, cancelado, fallido); despues **el limite** —lo que el motor no
+ * hace—, porque una persona que pidio sumar intereses tiene que oir que no
+ * ocurrio antes que ninguna otra cosa; luego la pregunta; y por ultimo la
+ * propuesta que espera confirmacion. Nunca se propone y se ejecuta en el mismo
+ * turno.
+ */
+function buildDebtActionResponse(
+  input: TurnResponsePlannerInput,
+): ProductResponse | null {
+  const resolution = input.debtActionResolution;
+
+  if (resolution?.kind === "applied") {
+    return {
+      reason: "debt_action_applied",
+      intent: "direct_response",
+      shape: "texto",
+      text: composeDebtActionAppliedText(resolution),
+    };
+  }
+
+  if (resolution?.kind === "cancelled") {
+    return {
+      reason: "debt_action_cancelled",
+      intent: "direct_response",
+      shape: "texto",
+      // Un descarte tiene que negar lo que se iba a hacer. "No hice nada" tras
+      // proponer una condonacion deja a la persona sin saber si su deuda sigue
+      // viva, que es justo el dato que le importa.
+      text: composeDebtActionCancelledText(resolution),
+    };
+  }
+
+  if (resolution?.kind === "failed") {
+    return {
+      reason: "debt_action_failed",
+      intent: "direct_response",
+      shape: "texto",
+      text: composeDebtActionFailedText(resolution),
+    };
+  }
+
+  const unavailable = input.debtActionUnavailableText?.trim();
+  if (unavailable) {
+    return {
+      reason: "debt_action_unavailable",
+      intent: "direct_response",
+      shape: "limite",
+      text: unavailable,
+      manualPath: buildDashboardDeepLink("debts"),
+    };
+  }
+
+  const question = input.debtActionQuestion?.trim();
+  if (question) {
+    return {
+      reason: "debt_action_needs_clarification",
+      intent: "direct_response",
+      shape: "pregunta",
+      text: question,
+      options: [],
+    };
+  }
+
+  const proposal = input.debtActionProposal;
+  if (proposal) {
+    const commandId = buildDebtActionCommandText(proposal.proposal_id);
+    return {
+      reason: "debt_action_needs_confirmation",
+      intent: "direct_response",
+      shape: "propuesta",
+      text: proposal.summary,
+      proposalCommandId: commandId,
+      options: [
+        { id: commandId, label: proposal.confirm_label },
+        { id: DEBT_ACTION_CANCEL_COMMAND_ID, label: "No, cancelar" },
+      ],
+    };
+  }
+
+  return null;
+}
+
+function composeDebtActionAppliedText(
+  resolution: Extract<DebtActionResolutionResult, { kind: "applied" }>,
+): string {
+  if (resolution.idempotent) {
+    return `Eso ya estaba hecho: ${resolution.summary}. No lo repetí.`;
+  }
+
+  if (resolution.operation === "close") {
+    // `RUL-DEUDAS-13`: el resumen del ejecutor ya distingue pagada de
+    // condonada, y en la condonada lleva la cifra que quedo sin pagar.
+    return `Listo. ${capitalizar(resolution.summary)}.`;
+  }
+  if (resolution.operation === "reopen") {
+    return `Listo. ${capitalizar(resolution.summary)}. Vuelve a contar como deuda viva.`;
+  }
+  if (resolution.operation === "reschedule_installment") {
+    return `Listo. Moví ${resolution.summary}. El importe no cambió.`;
+  }
+  if (resolution.operation === "skip_installment") {
+    return `Listo. Marqué ${resolution.summary}. Ojo: eso no reduce lo que debes.`;
+  }
+  return `Listo. Agregué a ${resolution.summary} a tus personas.`;
+}
+
+function composeDebtActionCancelledText(
+  resolution: Extract<DebtActionResolutionResult, { kind: "cancelled" }>,
+): string {
+  if (resolution.operation === "close") {
+    return "Listo, no la cerré. Tu deuda sigue igual que estaba.";
+  }
+  if (resolution.operation === "reopen") {
+    return "Listo, no la reabrí. Sigue cerrada.";
+  }
+  if (resolution.operation === "create_person") {
+    return "Listo, no agregué a nadie.";
+  }
+  return "Listo, no toqué esa cuota. Sigue con su fecha y su estado de siempre.";
+}
+
+function composeDebtActionFailedText(
+  resolution: Extract<DebtActionResolutionResult, { kind: "failed" }>,
+): string {
+  if (resolution.reason === "proposal_lapsed") {
+    return "Esa propuesta ya venció, así que no la ejecuté y tu deuda sigue igual. Si todavía la quieres, dímelo otra vez y la vuelvo a armar con las cifras de ahora.";
+  }
+
+  // El detalle del nucleo gana cuando el motivo es del usuario: dice el
+  // invariante concreto que se incumplio (saldo vivo, saldo cambiado, deuda
+  // pagada que no se reabre), y eso es accionable.
+  if (resolution.detail) return resolution.detail;
+
+  return "No pude hacerlo y no cambié nada de tu deuda. Puedes intentarlo otra vez o hacerlo desde la pantalla de la deuda.";
+}
+
+function capitalizar(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse | null {
   const execution = input.financialActionExecution;
   const pendingResolution = input.pendingResolution;
@@ -668,6 +845,14 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
   // esta al lado de la privacidad, y por delante de cualquier cosa financiera.
   const preferenceResponse = buildPreferenceResponse(input);
   if (preferenceResponse) return preferenceResponse;
+
+  // `RUL-DEUDAS-13`: el ciclo de vida de una deuda va delante de estructura y
+  // detras de preferencias. Delante de estructura porque un cierre escribe en el
+  // historial de dinero de la persona y una caja no; detras de preferencias por
+  // lo mismo que todo lo demas: decidir si te interrumpen esta al lado de la
+  // privacidad.
+  const debtActionResponse = buildDebtActionResponse(input);
+  if (debtActionResponse) return debtActionResponse;
 
   const structureResponse = buildStructureResponse(input);
   if (structureResponse) return structureResponse;
