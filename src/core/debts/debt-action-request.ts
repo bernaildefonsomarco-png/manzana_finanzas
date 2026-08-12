@@ -52,7 +52,11 @@ export type DebtActionIntent = (typeof DEBT_ACTION_INTENTS)[number];
 const NO_DISPONIBLES: Record<string, { reason: string; text: string }> = {
   registrar_interes: {
     reason: "web_d205_interest_adjustment_deferred",
-    text: "No puedo sumar intereses ni mora al saldo de una deuda: en esta versión el interés se guarda como nota descriptiva, no como un cambio de lo que debes. Calcularlo mal sería peor que no calcularlo. Si el saldo real ya cambió, regístralo tú desde la pantalla de la deuda y lo tomo desde ahí.",
+    // No se ofrece una via manual porque `RUL-DEUDAS-11` deja el ajuste por
+    // interes fuera de esta version **entera**, no solo de la conversacion:
+    // tampoco hay pantalla que suba el saldo. Mandar a alguien a un sitio
+    // donde no puede hacer nada es peor que decirle que no se puede.
+    text: "No puedo sumar intereses ni mora al saldo de una deuda, ni desde aquí ni desde la app: en esta versión el interés se guarda como nota descriptiva, no como un cambio de lo que debes. Calcularlo mal sería peor que no calcularlo. Si lo que cambió es cuánto falta de verdad, dime el monto y lo registramos como un pago o una devolución.",
   },
   renegociar_deuda: {
     reason: "web_d205_renegotiation_deferred",
@@ -60,7 +64,13 @@ const NO_DISPONIBLES: Record<string, { reason: string; text: string }> = {
   },
   vincular_caja_a_deuda: {
     reason: "no_executor_for_box_debt_link",
-    text: "No puedo vincular una caja a una deuda desde aquí todavía. Se hace desde la pantalla de la caja, eligiendo la deuda que respalda.",
+    // Verificado: `boxes.linked_debt_id` solo se LEE en todo el repositorio
+    // —la cobertura de cuotas en `debts.repository.ts`— y no hay un solo
+    // `update` de esa columna, ni en la API ni en pantalla. Prometer una via
+    // manual que no existe manda a la persona a buscar algo que no va a
+    // encontrar, y ademas nos hace quedar como si el limite fuera solo del
+    // asistente cuando es del producto.
+    text: "Todavía no se puede vincular una caja a una deuda, ni desde aquí ni desde la app. Lo que sí puedo hacer es apartar el dinero en una caja para esa deuda: dime cuánto y de qué cuenta sale.",
   },
 };
 
