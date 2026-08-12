@@ -27,13 +27,42 @@ describe("censo de cobertura del asistente sobre el catalogo de `40` §7", () =>
     expect(sinVia).toEqual([]);
   });
 
-  it("el asistente ejecuta 40 de los 99 comandos del catalogo", () => {
+  it("el asistente ejecuta 46 de los 99 comandos del catalogo", () => {
     // 30 antes de `RUL-LIG-01`, + las 6 acciones ligeras, + las 4 preferencias
-    // de aviso de `RUL-PREF-01`. El numero se afirma aqui a proposito: si
-    // alguien cablea o descablea un comando sin tocar el censo, este test lo
+    // de aviso de `RUL-PREF-01`, + los 6 de deudas de `RUL-DEUDAS-13`: los 5
+    // del ciclo de vida mas `registrar_devolucion`, que ya era ejecutable por el
+    // camino de pago y no estaba contado. El numero se afirma aqui a proposito:
+    // si alguien cablea o descablea un comando sin tocar el censo, este test lo
     // dice.
     expect(CATALOGO_GENERADO.censo.totalComandos).toBe(99);
-    expect(nombres.length).toBe(40);
+    expect(nombres.length).toBe(46);
+  });
+
+  it("los tres comandos de deudas diferidos NO estan en el censo", () => {
+    // `WEB-D205` (`RUL-DEUDAS-11`, `RUL-DEUDAS-12`) deja fuera de V1 el ajuste
+    // monetario por interes y la renegociacion, y `vincular_caja_a_deuda` no
+    // tiene ejecutor en ningun sitio del producto: `boxes.linked_debt_id` solo
+    // se lee. El asistente los reconoce **por su nombre** para poder decir que
+    // no puede, y eso no es ejecutarlos. Si alguien los diera por cableados sin
+    // escribir el ejecutor, este test lo dice.
+    expect(nombres).not.toContain("registrar_interes");
+    expect(nombres).not.toContain("renegociar_deuda");
+    expect(nombres).not.toContain("vincular_caja_a_deuda");
+  });
+
+  it("los seis de deudas llevan el nivel que dice el catalogo", () => {
+    // `RUL-DEUDAS-13` no elige el nivel: lo lee. `cerrar_deuda` es el unico de
+    // riesgo, y eso es lo que le exige mas confianza y la consecuencia
+    // deterministica antes de la pregunta. Si `40` reclasificara alguno, este
+    // test lo dice antes de que el asistente ejecute con el nivel equivocado.
+    expect(nivelesDeComando("cerrar_deuda")).toEqual(["riesgo"]);
+    expect(nivelesDeComando("reabrir_deuda")).toEqual(["tarjeta"]);
+    expect(nivelesDeComando("reprogramar_cuota")).toEqual(["tarjeta"]);
+    expect(nivelesDeComando("saltar_cuota")).toEqual(["tarjeta"]);
+    expect(nivelesDeComando("crear_persona")).toEqual(["tarjeta"]);
+    expect(nivelesDeComando("registrar_devolucion")).toEqual([
+      "tarjeta_editable",
+    ]);
   });
 
   it("las cuatro preferencias cableadas llevan el nivel que dice el catalogo", () => {

@@ -57,6 +57,50 @@ export const COMANDOS_EJECUTABLES_POR_EL_ASISTENTE: ComandoEjecutable[] = [
     nombre: "registrar_pago_deuda",
     via: "CommandDispatcher: DebtPaymentCommandHandler",
   },
+  // `registrar_devolucion` no tiene ejecutor propio ni le hace falta: es el
+  // **mismo** camino que `registrar_pago_deuda`, y lo que lo separa es la
+  // direccion de la deuda, no el comando. `planDebtPaymentAction` exige
+  // `devolucion_recibida` cuando la deuda es `they_owe_me`
+  // (`data-action-policy.ts`), y `buildDebtPaymentMovementCommand` emite ese
+  // mismo tipo de movimiento por la misma razon (`debt-payment-command.ts`).
+  // Entra al censo porque el camino conversacional existe y termina en una
+  // escritura real, que es la unica regla de esta lista; no entraba antes
+  // porque nadie habia mirado que ya estaba cubierto.
+  {
+    nombre: "registrar_devolucion",
+    via: "CommandDispatcher: DebtPaymentCommandHandler (deuda `they_owe_me` -> movimiento `devolucion_recibida`)",
+  },
+
+  // --- Ciclo de vida de deudas (`RUL-DEUDAS-13`, `debt-action-executor.ts`) --
+  //
+  // Los cuatro primeros van por `commit_debt_operation` (`057`), que trae su
+  // propia idempotencia con recibo; el quinto es de clasificacion y ya tenia
+  // despachador propio. Los cinco llevan tarjeta o riesgo, asi que entran por
+  // el ciclo propuesta -> confirmacion, nunca por ejecucion directa.
+  //
+  // Los cuatro que faltan de `40` §7.11 **no** entran, y no por descuido:
+  // `registrar_interes` y `renegociar_deuda` estan diferidos por `WEB-D205`
+  // (`RUL-DEUDAS-11`, `RUL-DEUDAS-12`) y `vincular_caja_a_deuda` no tiene
+  // ejecutor en ningun sitio del producto —`boxes.linked_debt_id` solo se lee—.
+  // Los tres se rechazan por su nombre con via manual, que no es lo mismo que
+  // ejecutarlos.
+  {
+    nombre: "cerrar_deuda",
+    via: "debt-action-executor: closeDebt (`paid` | `forgiven`, riesgo)",
+  },
+  { nombre: "reabrir_deuda", via: "debt-action-executor: reopenDebt (tarjeta)" },
+  {
+    nombre: "reprogramar_cuota",
+    via: "debt-action-executor: rescheduleDebtInstallment (tarjeta)",
+  },
+  {
+    nombre: "saltar_cuota",
+    via: "debt-action-executor: skipDebtInstallment (tarjeta)",
+  },
+  {
+    nombre: "crear_persona",
+    via: "debt-action-executor: ClassificationCommandDispatcher CreateRelatedPersonCommand (tarjeta)",
+  },
 
   // --- Correcciones (`16` §10.3, `correction-resolution.ts`) --------------
   {
