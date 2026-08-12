@@ -27,10 +27,16 @@ export function commandTextLabel(text: string): string | null {
   if (normalized === "mem:cancel") return "No, dejalo";
   // `RUL-PREF-03`: y lo mismo para la tarjeta de preferencia.
   if (normalized === "pref:cancel") return "No, dejalo asi";
+  // `RUL-DEUDAS-13`: y para la de deudas. Aqui importa mas que en las otras: sin
+  // esto, el historial que lee el modelo en el turno siguiente guardaria a la
+  // persona "diciendo" `deuda:<uuid>` justo despues de haber cerrado una deuda,
+  // y ese historial es lo que el modelo usa para entender que paso.
+  if (normalized === "deuda:cancel") return "No, cancelar";
 
   if (normalized.startsWith("estr:")) return "Si, confirmar";
   if (normalized.startsWith("mem:")) return "Si, confirmar";
   if (normalized.startsWith("pref:")) return "Si, confirmar";
+  if (normalized.startsWith("deuda:")) return "Si, confirmar";
 
   if (!normalized.startsWith("corr:")) return null;
 

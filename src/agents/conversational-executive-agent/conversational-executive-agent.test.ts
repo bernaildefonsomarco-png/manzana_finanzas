@@ -665,20 +665,21 @@ describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion",
     message: "el claim cita evidencia desconocida",
   };
 
-  function outputConLasCincoIntenciones() {
+  function outputConLasSeisIntenciones() {
     return {
       memory_control: { intent: "forget", target: "Acme" },
       structure_proposal: { intent: "create", entity: "caja" },
       light_action: { intent: "descartar_recordatorio" },
       profile_signal: { intent: "observed" },
       preference_change: { intent: "pausar_recordatorios" },
+      debt_action: { intent: "cerrar_deuda" },
     } as unknown as ConversationalExecutiveOutput;
   }
 
-  it("un reproche a la redaccion no toca ninguna de las cinco", () => {
+  it("un reproche a la redaccion no toca ninguna de las seis", () => {
     const issues = withExecutiveSurfaces([REDACTION_ISSUE]);
     const { output, dropped } = quarantineActionIntents(
-      outputConLasCincoIntenciones(),
+      outputConLasSeisIntenciones(),
       issues,
     );
 
@@ -688,6 +689,7 @@ describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion",
     expect(output.light_action).not.toBeNull();
     expect(output.profile_signal).not.toBeNull();
     expect(output.preference_change).not.toBeNull();
+    expect(output.debt_action).not.toBeNull();
   });
 
   it("un reproche a un modulo de accion cierra ese, y solo ese", () => {
@@ -700,7 +702,7 @@ describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion",
       },
     ]);
     const { output, dropped } = quarantineActionIntents(
-      outputConLasCincoIntenciones(),
+      outputConLasSeisIntenciones(),
       issues,
     );
 
@@ -710,7 +712,7 @@ describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion",
     expect(output.preference_change).not.toBeNull();
   });
 
-  it("una ruta que el mapa no sabe clasificar cierra las cinco: la duda cierra", () => {
+  it("una ruta que el mapa no sabe clasificar cierra las seis: la duda cierra", () => {
     const issues = withExecutiveSurfaces([
       {
         code: "command_outside_catalog",
@@ -721,16 +723,19 @@ describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion",
 
     expect(issues[0]?.surface).toBe("unknown");
     const { output, dropped } = quarantineActionIntents(
-      outputConLasCincoIntenciones(),
+      outputConLasSeisIntenciones(),
       issues,
     );
 
-    expect(dropped).toHaveLength(5);
+    // Seis desde `RUL-DEUDAS-13`: el ciclo de vida de una deuda es la sexta
+    // superficie de accion, y la duda la cierra como a las otras cinco.
+    expect(dropped).toHaveLength(6);
     expect(output.memory_control).toBeNull();
     expect(output.light_action).toBeNull();
+    expect(output.debt_action).toBeNull();
   });
 
-  it("un desacuerdo sobre que turno es este cierra las cinco", () => {
+  it("un desacuerdo sobre que turno es este cierra las seis", () => {
     const issues = withExecutiveSurfaces([
       {
         code: "interpretation_plan_mismatch",
@@ -739,7 +744,7 @@ describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion",
       },
     ]);
 
-    expect(rejectedExecutiveActionSurfaces(issues)).toHaveLength(5);
+    expect(rejectedExecutiveActionSurfaces(issues)).toHaveLength(6);
   });
 
   it("solo se anuncia lo que la persona si pidio: un modulo vacio no es un descarte", () => {
@@ -765,7 +770,7 @@ describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion",
   });
 
   it("sin reproches, la salida vuelve intacta y sin copiarse", () => {
-    const original = outputConLasCincoIntenciones();
+    const original = outputConLasSeisIntenciones();
     const { output, dropped } = quarantineActionIntents(original, []);
 
     expect(output).toBe(original);

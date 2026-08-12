@@ -33,6 +33,15 @@ describe("commandTextLabel", () => {
     expect(commandTextLabel("pref:cancel")).toBe("No, dejalo asi");
   });
 
+  it("RUL-DEUDAS-13: la tarjeta de deuda tampoco deja el asa cruda en el historial", () => {
+    // Sin esto, el turno siguiente le muestra al modelo a la persona "diciendo"
+    // `deuda:<uuid>` justo despues de dar una deuda por perdonada.
+    expect(commandTextLabel("deuda:66666666-6666-4666-8666-666666666666")).toBe(
+      "Si, confirmar",
+    );
+    expect(commandTextLabel("deuda:cancel")).toBe("No, cancelar");
+  });
+
   it("una correccion desconocida sigue siendo una confirmacion, no un identificador crudo", () => {
     expect(commandTextLabel("corr:futuro:mov-1")).toBe("Si, confirmar");
   });

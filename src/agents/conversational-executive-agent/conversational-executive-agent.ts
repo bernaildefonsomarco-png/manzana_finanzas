@@ -293,7 +293,12 @@ export function quarantineActionIntents(
   const rejected = new Set(rejectedExecutiveActionSurfaces(issues));
   if (rejected.size === 0) return { output, dropped: [] };
 
-  const dropped = [...rejected].filter((surface) => output[surface] !== null);
+  // `!= null` y no `!== null` a proposito: un estado o fixture escrito antes de
+  // que existiera un modulo trae el campo **ausente**, no en `null`, y con la
+  // comparacion estricta ese hueco se anunciaba como "lo pediste y no lo hice"
+  // sobre algo que la persona nunca pidio. Ausente y `null` significan lo mismo
+  // aqui: este turno no pedia ese modulo.
+  const dropped = [...rejected].filter((surface) => output[surface] != null);
   return {
     output: {
       ...output,
