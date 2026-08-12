@@ -310,6 +310,7 @@ export function quarantineActionIntents(
       preference_change: rejected.has("preference_change")
         ? null
         : output.preference_change,
+      debt_action: rejected.has("debt_action") ? null : output.debt_action,
     },
     dropped,
   };

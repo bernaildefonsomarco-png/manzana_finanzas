@@ -178,6 +178,11 @@ export async function rememberConversationOutcome(input: {
    * confirmacion. Pasar `null` limpia el que hubiera.
    */
   preferenceProposal?: Record<string, unknown> | null;
+  /**
+   * `RUL-DEUDAS-13`: borrador de la operacion de deuda que queda esperando
+   * confirmacion. Pasar `null` limpia el que hubiera.
+   */
+  debtActionProposal?: Record<string, unknown> | null;
   previous?: ConversationWorkingSet | null;
   now?: string;
 }) {
@@ -211,6 +216,7 @@ export async function rememberConversationOutcome(input: {
     structureProposal: input.structureProposal ?? null,
     memoryProposal: input.memoryProposal ?? null,
     preferenceProposal: input.preferenceProposal ?? null,
+    debtActionProposal: input.debtActionProposal ?? null,
     now,
   });
 
@@ -323,7 +329,8 @@ export function withExpiredCorrectionProposal(
     !lastAction ||
     (lastAction.kind !== "correction_proposed" &&
       lastAction.kind !== "structure_proposed" &&
-      lastAction.kind !== "memory_proposed") ||
+      lastAction.kind !== "memory_proposed" &&
+      lastAction.kind !== "debt_action_proposed") ||
     lastAction.status !== "awaiting_confirmation"
   ) {
     return workingSet;
@@ -345,6 +352,9 @@ export function withExpiredCorrectionProposal(
     // Y el borrador de memoria por lo mismo: caducado no puede quedar
     // ejecutable (`RUL-MEM-16`).
     memory_proposal: null,
+    // Y el de deuda igual: caducado no puede quedar ejecutable
+    // (`RUL-DEUDAS-13`).
+    debt_action_proposal: null,
     updated_at: now,
   };
 }
@@ -415,6 +425,8 @@ function buildConversationWorkingSet(input: {
   memoryProposal?: Record<string, unknown> | null;
   /** Borrador de cambio de preferencia vivo tras este turno (`RUL-PREF-03`). */
   preferenceProposal?: Record<string, unknown> | null;
+  /** Borrador de operacion de deuda vivo tras este turno (`RUL-DEUDAS-13`). */
+  debtActionProposal?: Record<string, unknown> | null;
   now?: string;
 }): ConversationWorkingSet {
   const now = input.now ?? new Date().toISOString();
@@ -468,6 +480,11 @@ function buildConversationWorkingSet(input: {
     // vivo, para que un "si" posterior no apague unos avisos que el usuario ya
     // no tiene en mente (`RUL-PREF-03`).
     preference_proposal: input.preferenceProposal ?? null,
+    // Misma regla para el borrador de deuda: cada turno declara si sigue vivo.
+    // Aqui la regla pesa mas que en las otras tres — un "si" suelto no puede
+    // encontrar un cierre pendiente y dar por perdonado un dinero que la
+    // persona ya no tiene en mente (`RUL-DEUDAS-13`).
+    debt_action_proposal: input.debtActionProposal ?? null,
     conversation_style: input.previous?.conversation_style ?? null,
     updated_at: now,
   };

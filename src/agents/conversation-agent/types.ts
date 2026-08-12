@@ -337,6 +337,14 @@ export const ConversationWorkingSetSchema = z.object({
         "preference_proposed",
         "preference_applied",
         "preference_cancelled",
+        // `RUL-DEUDAS-13`: cerrar, reabrir, mover o saltar una cuota y dar de
+        // alta a una persona son `tarjeta` o `riesgo` en el catalogo
+        // (`40` §7.11), asi que pasan por el mismo ciclo propuesta ->
+        // confirmacion que las tres anteriores. Ninguna se aplica en el turno en
+        // que se pide.
+        "debt_action_proposed",
+        "debt_action_applied",
+        "debt_action_cancelled",
         // `RUL-LIG-01`: los comandos de nivel `ninguna` del catalogo (`40` §7)
         // no tienen fase de propuesta: se aplican en el turno en que se piden,
         // asi que su ciclo tiene solo estos dos desenlaces.
@@ -421,6 +429,25 @@ export const ConversationWorkingSetSchema = z.object({
    * consentimiento.
    */
   preference_proposal: z
+    .record(z.string(), z.unknown())
+    .nullable()
+    .default(null)
+    .optional(),
+  /**
+   * `RUL-DEUDAS-13`: borrador de la operacion de deuda que espera confirmacion
+   * —cerrarla como pagada o como condonada, reabrirla, mover o saltar una cuota,
+   * dar de alta a una persona—. Mismo contrato que los tres anteriores: se
+   * guarda sin forma fuerte para que un estado escrito por una version anterior
+   * no rompa la lectura del hilo, y lo valida `DebtActionProposalSchema` al
+   * usarlo.
+   *
+   * Vive aqui y no en el `id` del boton por la razon general —el payload no
+   * viaja por el canal— y por una propia del dominio: el payload de un cierre
+   * lleva `reason: paid | forgiven`, y si viajara por el canal bastaria con
+   * devolver un `id` retocado para convertir una condonacion en un pago que
+   * nadie hizo.
+   */
+  debt_action_proposal: z
     .record(z.string(), z.unknown())
     .nullable()
     .default(null)

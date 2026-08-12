@@ -21,6 +21,7 @@ import {
 } from "@/agents/orchestration-planning-agent/types";
 import type { AgentConversationTurn } from "@/agents/runtime/types";
 import type { TurnWorkspace } from "@/core/conversation/turn-workspace";
+import { DEBT_ACTION_INTENTS } from "@/core/debts/debt-action-request";
 import { LIGHT_ACTION_INTENTS } from "@/core/light-actions/light-action-request";
 import { PREFERENCE_INTENTS } from "@/core/preferences/preference-request";
 import { SemanticQuerySchema } from "@/core/semantics/query";
@@ -338,6 +339,65 @@ export type PreferenceChangeRequest = z.infer<
   typeof PreferenceChangeRequestSchema
 >;
 
+/**
+ * `RUL-DEUDAS-13`: modulo por el que el ejecutivo dice que este turno pide una
+ * operacion del **ciclo de vida de una deuda** — cerrarla, reabrirla, mover o
+ * saltar una cuota, o dar de alta a una persona con la que se tienen deudas.
+ *
+ * Existe por la misma razon que `structure_proposal`, `memory_control`,
+ * `light_action`, `profile_signal` y `preference_change`, y se resuelve igual:
+ * **sin una pasada de modelo nueva**. El ejecutivo ya lee el turno entero una
+ * vez; pedirle un campo mas cuesta tokens, no latencia.
+ *
+ * Es deliberadamente plano y no un comando: el modelo describe lo que entendio y
+ * `compileDebtAction` lo convierte en un borrador tipado. El modelo no elige el
+ * nivel de confirmacion —ya lo decidio `40` §7.11: `cerrar_deuda` es `riesgo` y
+ * el resto `tarjeta`—, no lee saldos y no ejecuta nada.
+ *
+ * Y una diferencia propia del dominio, que es la razon de que `close_reason`
+ * exista como campo separado en vez de deducirse: **cerrar no es una operacion,
+ * son dos** (`RUL-DEUDAS-13`). El modelo solo transmite lo que la persona dijo;
+ * quien decide entre pagada y condonada es el nucleo, contra el saldo real, y
+ * cuando ninguna de las dos es la unica legal, pregunta.
+ */
+export const DebtActionRequestSchema = z.object({
+  intent: z.enum(DEBT_ACTION_INTENTS),
+  // `DEBT_ACTION_INTENTS` vive en el nucleo, con el compilador, y no aqui: el
+  // nombre de cada comando es de catalogo (`40` §7.11), no del contrato del
+  // modelo. Cuatro de sus valores existen solo para poder rechazarse por su
+  // nombre (`WEB-D205`), igual que `forget_all` en `memory_control`.
+  /**
+   * El `id` exacto de una deuda que el turno haya leido. Vacio cuando la persona
+   * la nombro sin id: el nucleo la resuelve contra las deudas reales, y un id
+   * que no exista entre ellas se descarta en vez de confiarse.
+   */
+  debt_id: z.string().trim().max(80),
+  /** El `id` exacto de la cuota, solo en `reprogramar_cuota` y `saltar_cuota`. */
+  installment_id: z.string().trim().max(80),
+  /**
+   * `RUL-DEUDAS-13`: lo que la persona dijo sobre **como** se cierra, si lo
+   * dijo. `sin_decidir` no es un fallo del modelo: es la respuesta correcta
+   * cuando la frase fue "cierra la de Marco", y lo que hace que el turno
+   * pregunte en vez de elegir por ella (`ERR-DEUDAS-06`).
+   */
+  close_reason: z.enum(["sin_decidir", "pagada", "condonada"]),
+  /** Solo `reprogramar_cuota`: la fecha nueva, en `YYYY-MM-DD`. */
+  due_date: z.string().trim().max(10),
+  /**
+   * Motivo con las palabras de la persona. Obligatorio en `saltar_cuota`
+   * (`RUL-DEUDAS-08`) y opcional en `reprogramar_cuota`.
+   */
+  reason: z.string().trim().max(180),
+  /** Solo `crear_persona`: como se llama. */
+  person_name: z.string().trim().max(60),
+  /** Solo `crear_persona`: la relacion, si la dijo ("mi hermano", "el casero"). */
+  person_relationship: z.string().trim().max(60),
+  confidence: z.number().min(0).max(1),
+  /** Dudas que impiden proponer. Con una sola, el turno pregunta. */
+  ambiguities: z.array(z.string().trim().min(1).max(240)).max(4),
+});
+export type DebtActionRequest = z.infer<typeof DebtActionRequestSchema>;
+
 export const GroundedClaimSchema = z.object({
   claim_id: z.string().trim().min(1).max(80),
   text: z.string().trim().min(1).max(320),
@@ -409,6 +469,10 @@ export const ConversationalExecutiveOutputSchema = z.object({
   // default para que un estado o fixture anterior siga validando. Ausencia es
   // "este turno no pide cambiar ninguna preferencia".
   preference_change: PreferenceChangeRequestSchema.nullable().default(null),
+  // `RUL-DEUDAS-13`: mismo contrato que los cinco anteriores — nullable con
+  // default para que un estado o fixture anterior siga validando. Ausencia es
+  // "este turno no pide nada del ciclo de vida de una deuda".
+  debt_action: DebtActionRequestSchema.nullable().default(null),
   response_composition: ResponseCompositionSchema,
   orchestration_plan: OrchestrationPlanSchema,
   findings: z.array(FindingSchema).max(1).default([]),

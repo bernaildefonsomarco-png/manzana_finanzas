@@ -40,6 +40,7 @@ export type ExecutiveActionIntent = Pick<
   | "light_action"
   | "profile_signal"
   | "preference_change"
+  | "debt_action"
 >;
 
 export const EMPTY_EXECUTIVE_ACTION_INTENT: ExecutiveActionIntent = {
@@ -48,6 +49,7 @@ export const EMPTY_EXECUTIVE_ACTION_INTENT: ExecutiveActionIntent = {
   light_action: null,
   profile_signal: null,
   preference_change: null,
+  debt_action: null,
 };
 
 export type CoordinatedTurnPlan = {
@@ -104,6 +106,7 @@ function requestedActionSurfaces(
   if (intent.light_action) surfaces.push("light_action");
   if (intent.profile_signal) surfaces.push("profile_signal");
   if (intent.preference_change) surfaces.push("preference_change");
+  if (intent.debt_action) surfaces.push("debt_action");
   return surfaces;
 }
 
@@ -235,6 +238,7 @@ function actionIntentFrom(
     light_action: output.light_action,
     profile_signal: output.profile_signal,
     preference_change: output.preference_change,
+    debt_action: output.debt_action,
   };
 }
 

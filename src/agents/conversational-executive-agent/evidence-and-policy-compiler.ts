@@ -50,6 +50,7 @@ export const EXECUTIVE_ACTION_SURFACES = [
   "light_action",
   "profile_signal",
   "preference_change",
+  "debt_action",
 ] as const;
 
 export type ExecutiveActionSurface = (typeof EXECUTIVE_ACTION_SURFACES)[number];
