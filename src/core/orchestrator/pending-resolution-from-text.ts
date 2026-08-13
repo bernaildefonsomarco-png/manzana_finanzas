@@ -524,13 +524,56 @@ export function isPendingListText(value: string): boolean {
   );
 }
 
-export function isConfirmationText(value: string): boolean {
+/**
+ * Afirmaciones sueltas sin ningun verbo: "si", "dale", "ok". No cargan
+ * contenido especifico de ninguna accion, asi que valen igual para confirmar
+ * un pendiente, una correccion o una propuesta de estructura.
+ */
+const GENERIC_AFFIRMATIONS = "si|sip|claro|dale|ok|okay|listo|va|dalee";
+
+/**
+ * Verbos de "ejecuta lo propuesto" que no describen una accion concreta
+ * (a diferencia de "eliminalo" o "cambialo"): valen para confirmar cualquier
+ * tipo de propuesta porque no afirman nada sobre CUAL accion se esta
+ * ejecutando, solo que se ejecute.
+ */
+const GENERIC_CONFIRMATION_VERBS = "confirmo|confirma|confirmar|hazlo|hazla|adelante";
+
+/**
+ * Verbos de accion correctiva/destructiva: "eliminalo", "cambialo". Estos SI
+ * describen una accion concreta, y esa accion solo coincide con lo que
+ * "confirmar" significa cuando la propuesta pendiente ES exactamente esa
+ * accion (una correccion o un comando de estructura ya armado). En la
+ * resolucion generica de pendientes (`getPendingResolutionAction`) "confirmar"
+ * significa aceptar la clasificacion propuesta, no borrar el registro, asi
+ * que ahi "eliminalo" leeria mejor como descarte que como confirmacion — por
+ * eso este vocabulario queda detras del parametro `includeCorrectiveVerbs` en
+ * vez de sumarse sin condiciones.
+ */
+const CORRECTIVE_CONFIRMATION_VERBS =
+  "eliminalo|borralo|cambialo|corrigelo|arreglalo";
+
+export interface ConfirmationTextOptions {
+  /**
+   * Suma el vocabulario de {@link CORRECTIVE_CONFIRMATION_VERBS}. Solo debe
+   * activarse cuando "confirmar" equivale a "ejecuta el comando puntual que
+   * ya se propuso" (correcciones): ahi el verbo que dice el usuario coincide
+   * con la accion que se va a ejecutar. `correction-resolution.ts` es hoy el
+   * unico llamador que lo activa.
+   */
+  includeCorrectiveVerbs?: boolean;
+}
+
+export function isConfirmationText(
+  value: string,
+  options: ConfirmationTextOptions = {}
+): boolean {
   const text = normalize(value);
   if (!text) return false;
 
   if (
     /\b(cancelar|cancela|descarta|descartar)\b/.test(text) ||
-    /\b(no|nunca)\s+(confirmes|confirmo|confirmar|registres|registrar|guardes|guardar|anotes|apuntes)\b/.test(
+    /\b(no|nunca)\s+(confirmes|confirmo|confirmar|registres|registrar|guardes|guardar|anotes|apuntes|elimines|borres|cambies|corrijas|arregles|hagas)\b/.test(
       text
     )
   ) {
@@ -544,6 +587,10 @@ export function isConfirmationText(value: string): boolean {
     return true;
   }
 
+  const confirmationVerbs = options.includeCorrectiveVerbs
+    ? `${GENERIC_CONFIRMATION_VERBS}|${CORRECTIVE_CONFIRMATION_VERBS}`
+    : GENERIC_CONFIRMATION_VERBS;
+
   return (
     text === "confirmo" ||
     text === "confirmar" ||
@@ -551,10 +598,11 @@ export function isConfirmationText(value: string): boolean {
     text === "registralo" ||
     text === "guardalo" ||
     text === "guardar" ||
-    text === "si" ||
-    /\b(si|ok|okay|dale|listo|va)\b.*\b(confirmo|confirma|confirmar)\b/.test(
-      text
-    ) ||
+    new RegExp(`^(${GENERIC_AFFIRMATIONS})$`).test(text) ||
+    new RegExp(
+      `\\b(${GENERIC_AFFIRMATIONS})\\b.*\\b(${confirmationVerbs})\\b`
+    ).test(text) ||
+    new RegExp(`^(${confirmationVerbs})\\b`).test(text) ||
     /\b(confirmo|confirma|confirmar)\s+(eso|todo|pendiente)\b/.test(text) ||
     /\b(registra|registre|registralo|guarda|guardalo|guardar|anota|apunta)\s+(eso|esto|este|esta|ese|esa|el|la|gasto|movimiento|pendiente|compra)\b/.test(
       text
@@ -585,6 +633,12 @@ export function isDiscardText(value: string): boolean {
     text === "descartar" ||
     text === "descarta" ||
     text === "descartalo" ||
+    // Negativas sueltas sin verbo especifico: "no", "mejor no", "dejalo".
+    // Genericas por la misma razon que las afirmaciones sueltas lo son, y de
+    // riesgo acotado: el propio gate de sistema marca "discard" como
+    // reversible (`assertSystemActionAllowed` en `resolveSinglePending`).
+    /^no\b/.test(text) ||
+    /\b(mejor no|dejalo|olvidalo|asi no)\b/.test(text) ||
     /\b(cancelar|cancela|descartar|descarta|descartalo)\s+(eso|pendiente)\b/.test(
       text
     ) ||

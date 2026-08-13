@@ -26,6 +26,38 @@ describe("pending resolution intent from text", () => {
     expect(isConfirmationText("si lo confirmo")).toBe(true);
   });
 
+  it("detecta afirmaciones sueltas genericas (unificadas con estructura)", () => {
+    expect(isConfirmationText("dale")).toBe(true);
+    expect(isConfirmationText("sip")).toBe(true);
+    expect(isConfirmationText("listo")).toBe(true);
+    expect(isConfirmationText("hazlo")).toBe(true);
+    expect(isConfirmationText("adelante")).toBe(true);
+  });
+
+  it("no suma verbos correctivos (eliminalo, cambialo) salvo que se pidan explicitamente", () => {
+    // La resolucion generica de pendientes NO activa `includeCorrectiveVerbs`:
+    // ahi "confirmar" significa aceptar una clasificacion, no borrar el
+    // registro, asi que "eliminalo" solo no cuenta como confirmacion.
+    expect(isConfirmationText("eliminalo")).toBe(false);
+    expect(getPendingResolutionAction("eliminalo")).toBeNull();
+
+    // Con la opcion activada (como hace `correction-resolution.ts`) si cuenta,
+    // incluida la frase exacta reportada en produccion.
+    expect(isConfirmationText("eliminalo", { includeCorrectiveVerbs: true })).toBe(
+      true,
+    );
+    expect(
+      isConfirmationText("dale eliminalo", { includeCorrectiveVerbs: true }),
+    ).toBe(true);
+  });
+
+  it("detecta negativas sueltas genericas para el descarte", () => {
+    expect(isDiscardText("no")).toBe(true);
+    expect(isDiscardText("mejor no")).toBe(true);
+    expect(isDiscardText("dejalo")).toBe(true);
+    expect(isDiscardText("olvidalo")).toBe(true);
+  });
+
   it("no confirma si el usuario niega o descarta", () => {
     expect(isConfirmationText("no confirmo")).toBe(false);
     expect(isConfirmationText("no lo registres")).toBe(false);

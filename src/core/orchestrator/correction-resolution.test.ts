@@ -127,6 +127,26 @@ describe("confirmacion escrita de una correccion propuesta", () => {
     );
   });
 
+  it("confirma 'dale eliminalo' en vez de caducar por cambio de tema (bug de produccion)", () => {
+    expect(resolve("dale eliminalo", proposedDeleteAction())).toBe(
+      `corr:delete:${MOVEMENT_ID}`,
+    );
+    expect(
+      resolveAwaitingCorrection({
+        text: "dale eliminalo",
+        workingSet: workingSet(proposedDeleteAction()),
+        threadKey: THREAD_KEY,
+        now: NOW,
+      }),
+    ).toMatchObject({ kind: "confirmable" });
+  });
+
+  it("confirma con una afirmacion suelta nueva ('dale' solo)", () => {
+    expect(resolve("dale", proposedDeleteAction())).toBe(
+      `corr:delete:${MOVEMENT_ID}`,
+    );
+  });
+
   it("cancela la correccion propuesta cuando el usuario la descarta", () => {
     expect(resolve("cancelar", proposedDeleteAction())).toBe(
       CORRECTION_CANCEL_COMMAND_ID,

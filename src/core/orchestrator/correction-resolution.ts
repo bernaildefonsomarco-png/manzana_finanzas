@@ -302,8 +302,15 @@ export function resolveAwaitingCorrection(params: {
 
   const commandIds = [...lastAction.command_ids];
   const storedThreadKey = lastAction.thread_key ?? null;
+  // `includeCorrectiveVerbs: true` porque aqui "confirmar" siempre significa
+  // "ejecuta el comando puntual ya propuesto" (`corr:delete:...`,
+  // `corr:amount:...`): el verbo que dice el usuario ("eliminalo",
+  // "cambialo") coincide exactamente con esa accion. Ver el comentario de
+  // `CORRECTIVE_CONFIRMATION_VERBS` en `pending-resolution-from-text.ts` para
+  // por que la resolucion generica de pendientes NO activa esta opcion.
   const answersTheProposal =
-    isConfirmationText(params.text) || isDiscardText(params.text);
+    isConfirmationText(params.text, { includeCorrectiveVerbs: true }) ||
+    isDiscardText(params.text);
 
   // Otra conversacion: este turno no la ejecuta ni la caduca.
   if (storedThreadKey && storedThreadKey !== params.threadKey) {
