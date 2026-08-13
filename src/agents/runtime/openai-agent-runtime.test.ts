@@ -784,6 +784,86 @@ describe("OpenAIAgentRuntime", () => {
     expect(capturedInput[1].content).toBe("mensaje 10");
     expect(capturedInput[20].content).toBe("mensaje 29");
   });
+
+  it("manda lo recuperado como contexto declarado, no como conversacion reciente", async () => {
+    let capturedInput: Array<{ role: string; content: string }> = [];
+    const runtime = new OpenAIAgentRuntime({
+      apiKey: "sk-test",
+      modelName: "model-test",
+      endpoint: "https://api.openai.test/v1/responses",
+      fetcher: async (_url, init) => {
+        capturedInput = JSON.parse(String(init?.body)).input;
+        return okConversationResponse();
+      },
+    });
+
+    await runtime.run({
+      ...conversationAgentRequest,
+      tools: [],
+      conversation_history: [
+        {
+          role: "user",
+          text: "la caja Viaje es para diciembre",
+          recalled: true,
+          said_at: "2026-07-01T10:00:00.000Z",
+        },
+        { role: "user", text: "cuanto llevo esta semana?" },
+        { role: "assistant", text: "Llevas S/120.00 esta semana." },
+      ],
+    });
+
+    // Lo recuperado va en un solo mensaje de sistema, antes de lo textual: si
+    // viajara como `user`, el modelo lo leeria como recien dicho.
+    expect(capturedInput.map((message) => message.role)).toEqual([
+      "system",
+      "system",
+      "user",
+      "assistant",
+      "user",
+    ]);
+    expect(capturedInput[1].content).toContain(
+      "La persona (2026-07-01T10:00:00.000Z): la caja Viaje es para diciembre"
+    );
+    expect(capturedInput[1].content).toContain("nunca como si se acabaran de");
+    expect(capturedInput[2].content).toBe("cuanto llevo esta semana?");
+  });
+
+  it("el tope de 20 mensajes recientes no lo consumen los recuperados", async () => {
+    let capturedInput: Array<{ role: string; content: string }> = [];
+    const runtime = new OpenAIAgentRuntime({
+      apiKey: "sk-test",
+      modelName: "model-test",
+      endpoint: "https://api.openai.test/v1/responses",
+      fetcher: async (_url, init) => {
+        capturedInput = JSON.parse(String(init?.body)).input;
+        return okConversationResponse();
+      },
+    });
+
+    await runtime.run({
+      ...conversationAgentRequest,
+      tools: [],
+      conversation_history: [
+        ...Array.from({ length: 8 }, (_unused, index) => ({
+          role: "user" as const,
+          text: `viejo ${index}`,
+          recalled: true,
+        })),
+        ...Array.from({ length: 20 }, (_unused, index) => ({
+          role: (index % 2 === 0 ? "user" : "assistant") as "user" | "assistant",
+          text: `mensaje ${index}`,
+        })),
+      ],
+    });
+
+    // system + el bloque recuperado + 20 recientes + el turno actual.
+    expect(capturedInput).toHaveLength(23);
+    expect(capturedInput[2].content).toBe("mensaje 0");
+    // Y de los recuperados se mandan seis, no los ocho: son para reconocer
+    // algo dicho, no para reconstruir el hilo.
+    expect(capturedInput[1].content).not.toContain("viejo 1");
+    expect(capturedInput[1].content).toContain("viejo 7");
+  });
 });
 
 function okConversationResponse(): Response {

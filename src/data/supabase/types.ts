@@ -143,6 +143,10 @@ export type Database = {
             | null
           content: Json
           created_at: string
+          embedding: string | null
+          embedding_generated_at: string | null
+          embedding_input_hash: string | null
+          embedding_model: string | null
           evidence_refs: string[]
           id: string
           idempotency_key: string
@@ -159,6 +163,10 @@ export type Database = {
             | null
           content?: Json
           created_at?: string
+          embedding?: string | null
+          embedding_generated_at?: string | null
+          embedding_input_hash?: string | null
+          embedding_model?: string | null
           evidence_refs?: string[]
           id?: string
           idempotency_key: string
@@ -175,6 +183,10 @@ export type Database = {
             | null
           content?: Json
           created_at?: string
+          embedding?: string | null
+          embedding_generated_at?: string | null
+          embedding_input_hash?: string | null
+          embedding_model?: string | null
           evidence_refs?: string[]
           id?: string
           idempotency_key?: string
@@ -5223,6 +5235,16 @@ export type Database = {
       run_budget_daily_lifecycle: {
         Args: { p_as_of: string; p_user_id?: string }
         Returns: Json
+      }
+      search_assistant_messages_semantic: {
+        Args: {
+          p_before?: string
+          p_limit?: number
+          p_query_embedding: string
+          p_thread_id: string
+          p_user_id: string
+        }
+        Returns: { id: string; similarity: number }[]
       }
       search_financial_memory_semantic: {
         Args: {

@@ -9,6 +9,7 @@ import {
   getExternalEventByIdempotencyKey,
   recordExternalEvent,
 } from "@/data/repositories/events.repository";
+import { rememberThreadTurnEmbeddings } from "@/data/repositories/assistant-message-recall.repository";
 import { FinancialOrchestrator } from "@/core/orchestrator/financial-orchestrator";
 import { buildWebPresentTurn } from "@/adapters/web/present-turn";
 import { getCurrentDegradation } from "@/core/degradation/current-grade";
@@ -189,6 +190,18 @@ export async function handleWebAssistantTurn(
     });
     throw error;
   }
+
+  // `077`: los dos mensajes de este turno se vectorizan **despues** de que la
+  // respuesta ya existe, para que un hilo largo pueda recuperarlos cuando
+  // salgan de la ventana reciente. Nunca antes: un embedding no puede meterse
+  // en el camino de la respuesta que la persona esta esperando. Y nunca es
+  // condicion de exito del turno — si falla, este turno queda sin vector y
+  // solo deja de ser recuperable hasta el proximo backfill.
+  await rememberThreadTurnEmbeddings(input.client, {
+    userId: input.userId,
+    threadId: input.threadId,
+    traceId: input.traceId,
+  });
 
   return { status: "accepted", externalEventId: externalEvent.id, duplicate: false };
 }

@@ -5112,6 +5112,9 @@ export class FinancialOrchestrator {
               userId: params.externalEvent.user_id!,
               threadId: readString(params.externalEvent.metadata.thread_id),
               excludeTraceId: params.traceId,
+              // `077`: lo que la persona acaba de escribir es contra lo que se
+              // busca parecido en el tramo del hilo que ya no viaja textual.
+              queryText: params.text,
             });
       const toolGateway = new ToolGateway(this.client);
       const conversationContext = await toolGateway.buildConversationContextPack({

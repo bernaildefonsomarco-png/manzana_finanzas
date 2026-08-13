@@ -304,22 +304,69 @@ const MAX_CONVERSATION_HISTORY_MESSAGES = 20;
 const MAX_CONVERSATION_HISTORY_CHARS = 1200;
 
 /**
+ * Cuantos fragmentos recuperados se mandan. Son pocos a proposito: sirven para
+ * reconocer algo ya dicho, no para reconstruir el hilo entero.
+ */
+const MAX_RECALLED_FRAGMENTS = 6;
+
+/**
  * Los turnos previos viajan como mensajes `user`/`assistant` reales, antes
  * del mensaje del turno actual. Sin esto el modelo recibe un formulario de
  * un solo turno y no tiene forma de saber que ya hablo con esta persona.
+ *
+ * Los fragmentos recuperados (`077`) no viajan asi: van en un solo mensaje de
+ * sistema, antes de la ventana reciente y declarados como lo que son. Mandarlos
+ * como mensajes normales le diria al modelo que se acaban de decir, y sobre esa
+ * mentira contestaria "como te dije recien" sobre algo de hace tres semanas.
  */
 function buildConversationHistoryMessages(
   history: AgentConversationTurn[] | undefined,
 ): Array<Record<string, unknown>> {
   if (!history || history.length === 0) return [];
 
-  return history
-    .filter((turn) => turn.text.trim().length > 0)
-    .slice(-MAX_CONVERSATION_HISTORY_MESSAGES)
-    .map((turn) => ({
+  const usable = history.filter((turn) => turn.text.trim().length > 0);
+  const recalled = usable
+    .filter((turn) => turn.recalled)
+    .slice(-MAX_RECALLED_FRAGMENTS);
+  const recent = usable
+    .filter((turn) => !turn.recalled)
+    .slice(-MAX_CONVERSATION_HISTORY_MESSAGES);
+
+  return [
+    ...buildRecalledFragmentsMessage(recalled),
+    ...recent.map((turn) => ({
       role: turn.role,
       content: truncateHistoryText(turn.text.trim()),
-    }));
+    })),
+  ];
+}
+
+function buildRecalledFragmentsMessage(
+  recalled: AgentConversationTurn[],
+): Array<Record<string, unknown>> {
+  if (recalled.length === 0) return [];
+
+  const fragments = recalled
+    .map((turn) => {
+      const who = turn.role === "user" ? "La persona" : "Tu";
+      const when = turn.said_at ? ` (${turn.said_at})` : "";
+      return `- ${who}${when}: ${truncateHistoryText(turn.text.trim())}`;
+    })
+    .join("\n");
+
+  return [
+    {
+      role: "system",
+      content:
+        "Fragmentos anteriores de esta misma conversacion, recuperados por " +
+        "parecido con lo que la persona acaba de escribir. Son viejos y no " +
+        "contiguos: quedaron fuera de los mensajes recientes que siguen. " +
+        "Uselos para reconocer lo ya hablado, nunca como si se acabaran de " +
+        "decir, y nunca como confirmacion vigente de nada — toda accion se " +
+        "confirma en el turno actual.\n" +
+        fragments,
+    },
+  ];
 }
 
 function truncateHistoryText(text: string): string {

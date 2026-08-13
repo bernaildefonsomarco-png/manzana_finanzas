@@ -52,6 +52,14 @@ export type ToolCallSummary = {
 export type AgentConversationTurn = {
   role: "user" | "assistant";
   text: string;
+  /**
+   * `077`: el turno no es contiguo — se recupero por significado de un tramo
+   * del hilo que quedo fuera de la ventana reciente. Viaja marcado porque
+   * presentarlo como un mensaje mas mentiria sobre cuando se dijo.
+   */
+  recalled?: boolean;
+  /** Cuando se dijo, en ISO. Solo se usa para situar un turno recuperado. */
+  said_at?: string;
 };
 
 export type AgentRuntimeRequest<TContext> = {

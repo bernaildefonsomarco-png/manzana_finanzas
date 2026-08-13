@@ -37,6 +37,41 @@ export type AssistantMessage = {
   created_at: string;
 };
 
+/**
+ * Columnas explicitas en vez de `*`: desde
+ * `077_assistant_message_semantic_recall.sql` la tabla tiene un `vector(1536)`
+ * que PostgREST serializa como texto. Traerlo al leer un hilo serian cientos de
+ * kilobytes por mensaje y por nada — el vector solo sirve dentro de Postgres,
+ * para ordenar.
+ */
+export const ASSISTANT_MESSAGE_COLUMNS =
+  "id,user_id,thread_id,role,content,evidence_refs,proposed_action,action_status,resulting_movement_id,trace_id,created_at";
+
+/**
+ * `13` §7.5: el contenido persistido son bloques neutrales de canal, no texto
+ * renderizado. Esto recupera lo legible de un mensaje — la misma regla que ya
+ * usa el presentador web para resumir un turno.
+ *
+ * Vive aqui, junto al tipo de la fila, porque lo necesitan tanto el historial
+ * que se le entrega al modelo como el vector semantico que lo indexa.
+ */
+export function readAssistantMessageText(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+
+  return content
+    .map((block) =>
+      block !== null &&
+      typeof block === "object" &&
+      "text" in block &&
+      typeof (block as { text: unknown }).text === "string"
+        ? (block as { text: string }).text.trim()
+        : null
+    )
+    .filter((text): text is string => Boolean(text))
+    .join("\n\n")
+    .trim();
+}
+
 export class AssistantRepositoryError extends Error {
   constructor(
     readonly code: "ASSISTANT_REPOSITORY_ERROR" | "THREAD_NOT_FOUND",
@@ -176,7 +211,7 @@ export async function listAssistantMessages(
 ): Promise<AssistantMessage[]> {
   let query = client
     .from("assistant_messages")
-    .select("*")
+    .select(ASSISTANT_MESSAGE_COLUMNS)
     .eq("user_id", userId)
     .eq("thread_id", threadId)
     .order("created_at", { ascending: true })
@@ -216,7 +251,7 @@ export async function listRecentAssistantMessages(
 ): Promise<AssistantMessage[]> {
   const { data, error } = await client
     .from("assistant_messages")
-    .select("*")
+    .select(ASSISTANT_MESSAGE_COLUMNS)
     .eq("user_id", userId)
     .eq("thread_id", threadId)
     .order("created_at", { ascending: false })

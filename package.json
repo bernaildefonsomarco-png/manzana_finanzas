@@ -16,6 +16,7 @@
     "test:presupuesto": "node scripts/gates/presupuesto-npm-test.mjs",
     "test:e2e": "playwright test",
     "memoria:backfill-embeddings": "npx --yes tsx scripts/backfill-financial-memory-embeddings.ts",
+    "asistente:backfill-embeddings": "npx --yes tsx scripts/backfill-assistant-message-embeddings.ts",
     "matriz:generar": "node scripts/matriz/generar.ts",
     "matriz:listar-g3": "node scripts/matriz/listar-g3.ts",
     "catalogo:generar": "node scripts/catalogo/generar.ts",
