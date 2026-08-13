@@ -4,8 +4,8 @@
  * Confirmar una propuesta manda `option.id`, que ya es el comando —
  * `corr:<accion>:<uuid>` para una correccion, `estr:<uuid>` para una
  * estructura, `mem:<uuid>` para una orden de memoria— porque es el mismo
- * payload que devuelve WhatsApp al pulsar y eso
- * deja un solo camino de resolucion para los dos canales. El costo era que la
+ * payload que devuelve un canal de mensajeria al pulsar, y eso deja un solo
+ * camino de resolucion para los dos canales. El costo era que la
  * conversacion mostraba al usuario diciendo
  * `estr:94411df8-74be-4365-9c9f-d84346a1c484`, que no es lo que hizo: pulso un
  * boton que decia "Si, crear meta".

@@ -92,10 +92,10 @@ export async function handleWebAssistantTurn(
   }
 
   // `external_event_log` solo concede acceso a `service_role` (`008`,
-  // `RLS` sin políticas para `authenticated`) — igual que el webhook de
-  // WhatsApp, que ya usa `createServiceClient` para esta misma tabla. El
-  // resto del turno sigue con `input.client` para no perder el alcance de
-  // RLS sobre los datos propios del usuario.
+  // `RLS` sin políticas para `authenticated`) — igual que el webhook del otro
+  // canal de mensajeria, que ya usa `createServiceClient` para esta misma
+  // tabla. El resto del turno sigue con `input.client` para no perder el
+  // alcance de RLS sobre los datos propios del usuario.
   const serviceClient = createServiceClient();
 
   const existing = await getExternalEventByIdempotencyKey(serviceClient, {
@@ -166,10 +166,10 @@ export async function handleWebAssistantTurn(
     : (plan, context) => rawPresentTurn(withoutActionBlocks(plan), context);
 
   // `FinancialOrchestrator` siempre corre con el cliente de servicio — el
-  // mismo contrato que ya usa el canal de WhatsApp
-  // (`whatsapp-orchestration-handler.ts`): el motor lee `external_event_log`
-  // internamente (solo `service_role`) y filtra por `user_id` en sus propias
-  // consultas, no depende de RLS del cliente que lo invoca.
+  // mismo contrato que ya usa el manejador de orquestacion del otro canal de
+  // mensajeria: el motor lee `external_event_log` internamente (solo
+  // `service_role`) y filtra por `user_id` en sus propias consultas, no
+  // depende de RLS del cliente que lo invoca.
   const orchestrator = new FinancialOrchestrator(serviceClient, {
     executeReadyDataActions: shouldExecuteReadyDataActionsForAssistant(),
     presentTurn,
