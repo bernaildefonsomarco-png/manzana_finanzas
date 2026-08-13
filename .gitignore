@@ -54,3 +54,7 @@ next-env.d.ts
 # matriz de trazabilidad: se genera, no se versiona (RUL-TRAZ-06)
 /scripts/matriz/matriz.generada.json
 .env*
+
+# Supabase CLI: estado local del stack y del enlace al proyecto.
+# `start-secrets/` son credenciales del Docker local y no tienen por que viajar.
+supabase/.temp/
