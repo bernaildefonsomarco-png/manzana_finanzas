@@ -18,6 +18,8 @@ import {
 } from "@/agents/orchestration-planning-agent/types";
 import { LIGHT_ACTION_INTENTS } from "@/core/light-actions/light-action-request";
 import { DEBT_ACTION_INTENTS } from "@/core/debts/debt-action-request";
+import { MONEY_ACTION_INTENTS } from "@/core/money-actions/money-action-request";
+import { MOVEMENT_ACTION_INTENTS } from "@/core/movement-actions/movement-action-request";
 import { PREFERENCE_INTENTS } from "@/core/preferences/preference-request";
 import { REMINDER_KINDS } from "@/shared/types/domain";
 import { AgentRuntimeError } from "./errors";
@@ -414,6 +416,11 @@ function buildSystemInstructions(agentName: AgentName): string {
       "En debt_action, debt_id e installment_id solo llevan identificadores exactos que hayas leido de una consulta de este turno; si la persona nombró la deuda sin id, dejalos vacios y el motor la resuelve contra sus deudas reales. reason es el motivo con las palabras de la persona y es obligatorio en saltar_cuota. due_date es YYYY-MM-DD y solo en reprogramar_cuota.",
       "En debt_action hay tres comandos que este motor NO ejecuta y que igual tienes que nombrar: registrar_interes ('súmale los intereses'), renegociar_deuda ('renegociemos la deuda del banco') y vincular_caja_a_deuda. Usalos como intent cuando sea eso lo que piden: el motor responde que no puede y da la via de pantalla. No los traduzcas a otro comando ni los conviertas en un pago, y no los dejes en none, porque entonces la persona se queda creyendo que le cambiaste el saldo.",
       "Nombrar a alguien no es pedir que se le dé de alta: 'pagué 200 a Marco' o 'la deuda de Marco' no son crear_persona. Usa crear_persona solo cuando pidan agregar a la persona. Y ninguna debt_action se ejecuta en este turno: todas llevan tarjeta y cerrar_deuda ademas es riesgo, asi que exige mas certeza. Nunca afirmes que ya cerraste o moviste nada; deja response_composition breve y neutra, que el texto que ve el usuario lo compone el motor.",
+      "money_action es la unica puerta por la que se mueve dinero real entre cuentas y cajas del propio usuario hablando: transferir ('pasa 200 de BCP a Interbank'), separar_en_caja ('aparta 100 en la caja Viaje'), devolver_a_libre ('devuelve 50 de la caja Emergencia') y mover_entre_cajas ('mueve 30 de Viaje a Emergencia'). En cualquier otro caso usa intent=none. Ajustar el saldo de una cuenta a mano NO es money_action: eso no tiene camino conversacional todavia, usa intent=none y deja que la persona lo haga desde la pantalla.",
+      "En money_action, from_account_id/to_account_id (transferir) y box_origin_id/box_destination_id (devolver_a_libre, separar_en_caja, mover_entre_cajas) llevan el id exacto de una cuenta o caja real del contexto de este turno (ya viene entero, no hace falta ninguna tool). Si la persona nombro la caja sin decir el id y solo hay una caja con ese nombre, puedes dejarlo vacio y el motor la resuelve por el nombre; pero en transferir y mover_entre_cajas, que mueven entre DOS cosas a la vez, nombrar sin id no basta para saber cual es origen y cual destino: si no tienes los dos ids exactos, declara la duda en ambiguities en vez de adivinar la direccion.",
+      "En money_action nunca inventes un id de cuenta o caja. amount es el monto tal como lo dijo la persona, mayor que cero. description es opcional, solo si la persona dio una nota. Ninguna money_action se ejecuta en este turno: las cuatro llevan tarjeta_editable y el usuario confirma en el siguiente. Nunca afirmes que ya transferiste, separaste, devolviste o moviste nada; deja response_composition breve y neutra, que el texto con el efecto en los saldos lo compone el motor.",
+      "movement_action es la unica puerta por la que se restaura un movimiento eliminado o se duplica uno existente hablando: restaurar_movimiento ('eso que borré, devuélvelo', 'restaura el ultimo que elimine') y duplicar_movimiento ('duplica ese gasto', 'repite el mismo pago de ayer'). En cualquier otro caso usa intent=none. Crear un movimiento nuevo desde cero NO es movement_action: eso va por financial_proposals como siempre; movement_action siempre parte de un movimiento que ya existe.",
+      "En movement_action, movement_id lleva el id exacto de un movimiento que hayas leido de una consulta de este turno; si la persona dijo 'el ultimo' o no dio id, dejalo vacio y el motor lo resuelve contra sus movimientos recientes. new_occurred_at (solo duplicar_movimiento) es YYYY-MM-DD si la persona pidio otra fecha, vacio si quiere 'ahora'. new_amount (solo duplicar_movimiento) es el monto nuevo si lo pidio cambiar, 0 si quiere el mismo monto del original. Ninguna movement_action se ejecuta en este turno: restaurar_movimiento lleva tarjeta y duplicar_movimiento tarjeta_editable, y las dos esperan confirmacion. Nunca afirmes que ya restauraste o duplicaste nada; deja response_composition breve y neutra.",
       "preference_change no es style_update ni memory_control. Como quieres que te responda va por orchestration_plan.style_update; olvidar un recuerdo va por memory_control; dejar de recibir avisos va por aqui. Y no es light_action: posponer o descartar un recordatorio concreto es light_action, silenciar el tipo entero es preference_change.",
       "Cada afirmacion factual de response_composition debe aparecer en grounded_claims. Usa evidence_refs con el formato exacto tool:<tool_name>:fact:<indice_base_0> o tool:<tool_name>:result, y source_tools solo con tools realmente ejecutadas.",
       "Los datos que vienen de active_capture_draft o de turn_workspace (un borrador o un estado ya evidenciado en un turno anterior) no son evidencia de tool: no inventes un evidence_ref de la forma context:... para ellos. Si necesitas mencionar ese dato en response_composition, usa claim_type=non_financial en ese grounded_claim (queda exento del chequeo de evidence_refs) o no lo declares como grounded_claim.",
@@ -1955,6 +1962,8 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       profile_signal: nullable(profileSignalJsonSchema()),
       preference_change: nullable(preferenceChangeJsonSchema()),
       debt_action: nullable(debtActionJsonSchema()),
+      money_action: nullable(moneyActionJsonSchema()),
+      movement_action: nullable(movementActionJsonSchema()),
       response_composition: responseComposition,
       orchestration_plan: orchestrationPlan,
       confidence: { type: "number", minimum: 0, maximum: 1 },
@@ -1972,6 +1981,8 @@ function conversationalExecutiveOutputJsonSchema(): JsonSchema {
       "profile_signal",
       "preference_change",
       "debt_action",
+      "money_action",
+      "movement_action",
       "response_composition",
       "orchestration_plan",
       "confidence",
@@ -2086,6 +2097,56 @@ function debtActionJsonSchema(): JsonSchema {
       "reason",
       "person_name",
       "person_relationship",
+      "confidence",
+      "ambiguities",
+    ],
+  );
+}
+
+/** `24` §9: movimiento de dinero entre cuentas y cajas, plano. */
+function moneyActionJsonSchema(): JsonSchema {
+  return objectSchema(
+    {
+      intent: { type: "string", enum: [...MONEY_ACTION_INTENTS] },
+      from_account_id: { type: "string", maxLength: 80 },
+      to_account_id: { type: "string", maxLength: 80 },
+      box_origin_id: { type: "string", maxLength: 80 },
+      box_destination_id: { type: "string", maxLength: 80 },
+      amount: { type: "number" },
+      description: { type: "string", maxLength: 180 },
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+      ambiguities: stringArraySchema(4, 240),
+    },
+    [
+      "intent",
+      "from_account_id",
+      "to_account_id",
+      "box_origin_id",
+      "box_destination_id",
+      "amount",
+      "description",
+      "confidence",
+      "ambiguities",
+    ],
+  );
+}
+
+/** `26` §14.2: restaurar o duplicar un movimiento, plano. */
+function movementActionJsonSchema(): JsonSchema {
+  return objectSchema(
+    {
+      intent: { type: "string", enum: [...MOVEMENT_ACTION_INTENTS] },
+      movement_id: { type: "string", maxLength: 80 },
+      new_occurred_at: { type: "string", maxLength: 10 },
+      new_amount: { type: "number" },
+      confidence: { type: "number", minimum: 0, maximum: 1 },
+      ambiguities: stringArraySchema(4, 240),
+    },
+    [
+      "intent",
+      "movement_id",
+      "new_occurred_at",
+      "new_amount",
       "confidence",
       "ambiguities",
     ],

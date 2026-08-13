@@ -183,6 +183,17 @@ export async function rememberConversationOutcome(input: {
    * confirmacion. Pasar `null` limpia el que hubiera.
    */
   debtActionProposal?: Record<string, unknown> | null;
+  /**
+   * `24` §9: borrador del movimiento de dinero (transferir, separar, devolver,
+   * mover entre cajas) que queda esperando confirmacion. Pasar `null` limpia
+   * el que hubiera.
+   */
+  moneyActionProposal?: Record<string, unknown> | null;
+  /**
+   * `26` §14.2: borrador de restaurar o duplicar un movimiento que queda
+   * esperando confirmacion. Pasar `null` limpia el que hubiera.
+   */
+  movementActionProposal?: Record<string, unknown> | null;
   previous?: ConversationWorkingSet | null;
   now?: string;
 }) {
@@ -217,6 +228,8 @@ export async function rememberConversationOutcome(input: {
     memoryProposal: input.memoryProposal ?? null,
     preferenceProposal: input.preferenceProposal ?? null,
     debtActionProposal: input.debtActionProposal ?? null,
+    moneyActionProposal: input.moneyActionProposal ?? null,
+    movementActionProposal: input.movementActionProposal ?? null,
     now,
   });
 
@@ -330,7 +343,9 @@ export function withExpiredCorrectionProposal(
     (lastAction.kind !== "correction_proposed" &&
       lastAction.kind !== "structure_proposed" &&
       lastAction.kind !== "memory_proposed" &&
-      lastAction.kind !== "debt_action_proposed") ||
+      lastAction.kind !== "debt_action_proposed" &&
+      lastAction.kind !== "money_action_proposed" &&
+      lastAction.kind !== "movement_action_proposed") ||
     lastAction.status !== "awaiting_confirmation"
   ) {
     return workingSet;
@@ -355,6 +370,10 @@ export function withExpiredCorrectionProposal(
     // Y el de deuda igual: caducado no puede quedar ejecutable
     // (`RUL-DEUDAS-13`).
     debt_action_proposal: null,
+    // Y dinero y movimientos igual: un "si" suelto no puede mover dinero real
+    // ni restaurar/duplicar un movimiento que la persona ya no tiene en mente.
+    money_action_proposal: null,
+    movement_action_proposal: null,
     updated_at: now,
   };
 }
@@ -427,6 +446,10 @@ function buildConversationWorkingSet(input: {
   preferenceProposal?: Record<string, unknown> | null;
   /** Borrador de operacion de deuda vivo tras este turno (`RUL-DEUDAS-13`). */
   debtActionProposal?: Record<string, unknown> | null;
+  /** Borrador de movimiento de dinero vivo tras este turno (`24` §9). */
+  moneyActionProposal?: Record<string, unknown> | null;
+  /** Borrador de restaurar/duplicar movimiento vivo tras este turno (`26` §14.2). */
+  movementActionProposal?: Record<string, unknown> | null;
   now?: string;
 }): ConversationWorkingSet {
   const now = input.now ?? new Date().toISOString();
@@ -485,6 +508,11 @@ function buildConversationWorkingSet(input: {
     // encontrar un cierre pendiente y dar por perdonado un dinero que la
     // persona ya no tiene en mente (`RUL-DEUDAS-13`).
     debt_action_proposal: input.debtActionProposal ?? null,
+    // Mismas reglas para dinero y movimientos: cada turno declara si el
+    // borrador sigue vivo, para que un "si" posterior no mueva dinero real que
+    // la persona ya no tiene en mente.
+    money_action_proposal: input.moneyActionProposal ?? null,
+    movement_action_proposal: input.movementActionProposal ?? null,
     conversation_style: input.previous?.conversation_style ?? null,
     updated_at: now,
   };

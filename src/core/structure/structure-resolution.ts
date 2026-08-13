@@ -282,11 +282,18 @@ export async function maybeResolveStructure(params: {
 }
 
 /**
- * El vocabulario compartido de confirmacion (`isConfirmationText`) esta escrito
- * para pendientes y movimientos: acepta "si" a secas, "confirmo", "registralo".
- * Ante "¿Creo la caja Viaje?" la respuesta natural es otra —"si, crea la
- * caja", "dale, hazlo"— asi que aqui se le suman esas formas **sin tocar** el
- * matcher compartido, que ya gobierna pendientes y correcciones en produccion.
+ * El vocabulario generico de confirmacion (afirmaciones sueltas como "si" o
+ * "dale", y verbos sin accion propia como "hazlo" o "adelante") vive ahora en
+ * el matcher compartido (`isConfirmationText` en
+ * `pending-resolution-from-text.ts`): lo pidio "si, crea la caja" tanto como
+ * lo pide un "dale" que confirma una correccion, asi que subirlo evita que
+ * cada dominio reinvente la misma lista.
+ *
+ * Lo que queda aqui es estrictamente el vocabulario de dominio de estructura:
+ * los verbos de "crear"/"poner" no tienen sentido fuera de una propuesta de
+ * caja, meta o presupuesto, asi que no subieron al matcher compartido (que
+ * los volveria genericos para pendientes y correcciones sin que apliquen
+ * ahi).
  *
  * Sigue siendo una lista cerrada: cualquier otra cosa caduca la propuesta en
  * vez de ejecutarla.
@@ -299,27 +306,25 @@ export function isStructureConfirmationText(value: string): boolean {
   if (!text) return false;
 
   return (
-    /^(si|sip|claro|dale|ok|okay|listo|va|dalee)$/.test(text) ||
-    /^(si|claro|dale|ok|okay|listo|va)\b.*\b(crea|crear|creala|crealo|hazlo|hazla|ponlo|ponla|adelante|dale)\b/.test(
+    /^(si|sip|claro|dale|ok|okay|listo|va|dalee)\b.*\b(crea|crear|creala|crealo|ponlo|ponla)\b/.test(
       text,
-    ) ||
-    /^(hazlo|hazla|crea|creala|crealo|adelante)\b/.test(text)
+    ) || /^(crea|creala|crealo|ponlo|ponla)\b/.test(text)
   );
 }
 
-/** Hermana de `isStructureConfirmationText` para el descarte. */
+/**
+ * Hermana de `isStructureConfirmationText` para el descarte. Las negativas
+ * genericas ("no", "mejor no", "dejalo") tambien subieron al matcher
+ * compartido (`isDiscardText`); aqui solo queda "no crees/no la crees/no lo
+ * crees", que esta atada al verbo "crear" y por eso es de dominio.
+ */
 export function isStructureDiscardText(value: string): boolean {
   if (isDiscardText(value)) return true;
 
   const text = normalizeStructureAnswer(value);
   if (!text) return false;
 
-  return (
-    /^no\b/.test(text) ||
-    /\b(mejor no|dejalo|olvidalo|asi no|no crees|no la crees|no lo crees)\b/.test(
-      text,
-    )
-  );
+  return /\b(no crees|no la crees|no lo crees)\b/.test(text);
 }
 
 function normalizeStructureAnswer(value: string): string {

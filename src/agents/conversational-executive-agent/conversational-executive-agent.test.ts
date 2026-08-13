@@ -735,7 +735,10 @@ describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion",
     expect(output.debt_action).toBeNull();
   });
 
-  it("un desacuerdo sobre que turno es este cierra las seis", () => {
+  it("un desacuerdo sobre que turno es este cierra las ocho", () => {
+    // `24` S9 y `26` S14.2 sumaron `money_action` y `movement_action` a las
+    // seis superficies de accion originales: son ocho ahora, y un turno cuya
+    // propia lectura no se sostiene reprocha las ocho, no un subconjunto.
     const issues = withExecutiveSurfaces([
       {
         code: "interpretation_plan_mismatch",
@@ -744,7 +747,7 @@ describe("WEB-D297: la intencion de accion sobrevive a un rechazo de redaccion",
       },
     ]);
 
-    expect(rejectedExecutiveActionSurfaces(issues)).toHaveLength(6);
+    expect(rejectedExecutiveActionSurfaces(issues)).toHaveLength(8);
   });
 
   it("solo se anuncia lo que la persona si pidio: un modulo vacio no es un descarte", () => {

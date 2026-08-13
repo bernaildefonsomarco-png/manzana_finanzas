@@ -48,6 +48,8 @@ src/
     recurring/       # Recurring Engine: detección y ocurrencias
     budgets/        # Presupuestos/metas: periodos, avance, umbrales, rollover y ritmo
     structure/      # Escritura conversacional de cajas, metas y presupuestos (RUL-ESTR-01): comandos tipados, propuesta confirmable y ejecutor propio
+    money-actions/  # Dinero propio moviéndose hablando (24): transferir entre cuentas, separar en caja, devolver a libre y mover entre cajas — siempre con confirmación
+    movement-actions/ # Restaurar y duplicar un movimiento (26): borrador tipado, confirmación y ejecutor propio
     light-actions/  # Comandos de nivel `ninguna` del catálogo (RUL-LIG-01): se aplican en el mismo turno, sin tarjeta, y dicen siempre cómo se deshacen
     preferences/    # Preferencias de aviso conversando (RUL-PREF-01): pausar, silenciar, horario silencioso y consentimiento de correo, siempre con tarjeta
     projections/    # Proyección y simulación deterministas, mediana/IQR en Lima

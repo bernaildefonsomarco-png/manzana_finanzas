@@ -27,15 +27,18 @@ describe("censo de cobertura del asistente sobre el catalogo de `40` §7", () =>
     expect(sinVia).toEqual([]);
   });
 
-  it("el asistente ejecuta 46 de los 99 comandos del catalogo", () => {
+  it("el asistente ejecuta 52 de los 99 comandos del catalogo", () => {
     // 30 antes de `RUL-LIG-01`, + las 6 acciones ligeras, + las 4 preferencias
     // de aviso de `RUL-PREF-01`, + los 6 de deudas de `RUL-DEUDAS-13`: los 5
     // del ciclo de vida mas `registrar_devolucion`, que ya era ejecutable por el
-    // camino de pago y no estaba contado. El numero se afirma aqui a proposito:
-    // si alguien cablea o descablea un comando sin tocar el censo, este test lo
-    // dice.
+    // camino de pago y no estaba contado, + los 4 de dinero entre cuentas y
+    // cajas de `24` §9 (`transferir`, `separar_en_caja`, `devolver_a_libre`,
+    // `mover_entre_cajas`) + los 2 de movimientos de `26` §14.2
+    // (`restaurar_movimiento`, `duplicar_movimiento`). El numero se afirma aqui
+    // a proposito: si alguien cablea o descablea un comando sin tocar el
+    // censo, este test lo dice.
     expect(CATALOGO_GENERADO.censo.totalComandos).toBe(99);
-    expect(nombres.length).toBe(46);
+    expect(nombres.length).toBe(52);
   });
 
   it("los tres comandos de deudas diferidos NO estan en el censo", () => {

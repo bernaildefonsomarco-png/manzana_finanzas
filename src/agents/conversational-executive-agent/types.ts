@@ -23,6 +23,8 @@ import type { AgentConversationTurn } from "@/agents/runtime/types";
 import type { TurnWorkspace } from "@/core/conversation/turn-workspace";
 import { DEBT_ACTION_INTENTS } from "@/core/debts/debt-action-request";
 import { LIGHT_ACTION_INTENTS } from "@/core/light-actions/light-action-request";
+import { MONEY_ACTION_INTENTS } from "@/core/money-actions/money-action-request";
+import { MOVEMENT_ACTION_INTENTS } from "@/core/movement-actions/movement-action-request";
 import { PREFERENCE_INTENTS } from "@/core/preferences/preference-request";
 import { SemanticQuerySchema } from "@/core/semantics/query";
 
@@ -398,6 +400,53 @@ export const DebtActionRequestSchema = z.object({
 });
 export type DebtActionRequest = z.infer<typeof DebtActionRequestSchema>;
 
+/**
+ * `24` §9 (`ACT-CUENTAS-10` a `13`): modulo por el que el ejecutivo dice que
+ * este turno pide mover dinero real entre cuentas o cajas del propio usuario
+ * — transferir, separar en una caja, devolver a libre, o mover entre dos
+ * cajas. Mismo contrato que `debt_action`: plano, sin comandos, resuelto por
+ * `compileMoneyAction` sin una pasada de modelo nueva.
+ *
+ * `from_account_id`/`to_account_id` son de `transferir`; `box_origin_id` es
+ * de `devolver_a_libre` y `mover_entre_cajas`; `box_destination_id` es de
+ * `separar_en_caja` y `mover_entre_cajas`. Cuentas y cajas ya viajan enteras
+ * en el contexto del turno (`DataContextPack.accounts`/`.boxes`), asi que a
+ * diferencia de `debt_id` no hay resolucion por texto para las operaciones de
+ * dos lados: `transferir` y `mover_entre_cajas` exigen el id exacto o el
+ * nucleo pregunta.
+ */
+export const MoneyActionRequestSchema = z.object({
+  intent: z.enum(MONEY_ACTION_INTENTS),
+  from_account_id: z.string().trim().max(80),
+  to_account_id: z.string().trim().max(80),
+  box_origin_id: z.string().trim().max(80),
+  box_destination_id: z.string().trim().max(80),
+  amount: z.number(),
+  /** Descripcion opcional que la persona haya dado, tal cual la dijo. */
+  description: z.string().trim().max(180),
+  confidence: z.number().min(0).max(1),
+  ambiguities: z.array(z.string().trim().min(1).max(240)).max(4),
+});
+export type MoneyActionRequest = z.infer<typeof MoneyActionRequestSchema>;
+
+/**
+ * `26` §14.2: modulo por el que el ejecutivo dice que este turno pide
+ * restaurar un movimiento eliminado o duplicar uno existente. Mismo contrato
+ * que `debt_action` y `money_action`.
+ */
+export const MovementActionRequestSchema = z.object({
+  intent: z.enum(MOVEMENT_ACTION_INTENTS),
+  /** El id exacto del movimiento, si lo leyo de una consulta de este turno. */
+  movement_id: z.string().trim().max(80),
+  /** Solo `duplicar_movimiento`: fecha nueva en `YYYY-MM-DD`, vacio es "ahora". */
+  new_occurred_at: z.string().trim().max(10),
+  /** Solo `duplicar_movimiento`: monto nuevo; `0` es "el mismo del original". */
+  new_amount: z.number(),
+  confidence: z.number().min(0).max(1),
+  ambiguities: z.array(z.string().trim().min(1).max(240)).max(4),
+});
+export type MovementActionRequest = z.infer<typeof MovementActionRequestSchema>;
+
 export const GroundedClaimSchema = z.object({
   claim_id: z.string().trim().min(1).max(80),
   text: z.string().trim().min(1).max(320),
@@ -473,6 +522,13 @@ export const ConversationalExecutiveOutputSchema = z.object({
   // default para que un estado o fixture anterior siga validando. Ausencia es
   // "este turno no pide nada del ciclo de vida de una deuda".
   debt_action: DebtActionRequestSchema.nullable().default(null),
+  // `24` §9: mismo contrato — nullable con default para que un estado o
+  // fixture anterior siga validando. Ausencia es "este turno no mueve dinero
+  // entre cuentas ni cajas".
+  money_action: MoneyActionRequestSchema.nullable().default(null),
+  // `26` §14.2: mismo contrato. Ausencia es "este turno no pide restaurar ni
+  // duplicar un movimiento".
+  movement_action: MovementActionRequestSchema.nullable().default(null),
   response_composition: ResponseCompositionSchema,
   orchestration_plan: OrchestrationPlanSchema,
   findings: z.array(FindingSchema).max(1).default([]),

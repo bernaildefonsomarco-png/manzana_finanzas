@@ -37,6 +37,18 @@ import {
   type DebtActionProposal,
 } from "@/core/debts/debt-action-proposal";
 import type { DebtActionResolutionResult } from "@/core/debts/debt-action-resolution";
+import {
+  buildMoneyActionCommandText,
+  MONEY_ACTION_CANCEL_COMMAND_ID,
+  type MoneyActionProposal,
+} from "@/core/money-actions/money-action-proposal";
+import type { MoneyActionResolutionResult } from "@/core/money-actions/money-action-resolution";
+import {
+  buildMovementActionCommandText,
+  MOVEMENT_ACTION_CANCEL_COMMAND_ID,
+  type MovementActionProposal,
+} from "@/core/movement-actions/movement-action-proposal";
+import type { MovementActionResolutionResult } from "@/core/movement-actions/movement-action-resolution";
 import type { ExecutiveActionSurface } from "@/agents/conversational-executive-agent";
 import { buildDashboardDeepLink } from "@/shared/app-links";
 import type { PendingItem } from "@/shared/types/domain";
@@ -118,6 +130,32 @@ export type TurnResponsePlannerInput = {
    * seria dejarla creyendo que su saldo cambio.
    */
   debtActionUnavailableText?: string;
+  /**
+   * `24` §9: movimiento de dinero (transferir, separar, devolver, mover entre
+   * cajas) que este turno propone. Sale como tarjeta con botones porque las
+   * cuatro son `tarjeta_editable` en el catalogo (`40` §7.1).
+   */
+  moneyActionProposal?: MoneyActionProposal;
+  /** Pregunta del nucleo de dinero: cual cuenta o caja, o cuanto mover. */
+  moneyActionQuestion?: string;
+  moneyActionResolution?: MoneyActionResolutionResult;
+  /**
+   * `26` §14.2: restaurar o duplicar un movimiento que este turno propone.
+   * Sale como tarjeta con botones (`tarjeta` para restaurar,
+   * `tarjeta_editable` para duplicar).
+   */
+  movementActionProposal?: MovementActionProposal;
+  /** Pregunta del nucleo de movimientos: cual movimiento, o para que fecha. */
+  movementActionQuestion?: string;
+  movementActionResolution?: MovementActionResolutionResult;
+  /**
+   * Salida puramente defensiva: el borrador de dinero o de movimiento no paso
+   * su propio esquema al construirse (`draft()` en `money-action-request.ts` /
+   * `movement-action-request.ts`). No deberia ocurrir en produccion, pero si
+   * ocurre no puede quedar en silencio (`WEB-D298`).
+   */
+  moneyActionUnavailableText?: string;
+  movementActionUnavailableText?: string;
   /**
    * `WEB-D297`/`ERR-ASI-01`: modulos de accion que el ejecutivo si entendio y
    * que este turno **no** va a hacer, porque la validacion reprocho ese mismo
@@ -264,6 +302,18 @@ type ProductResponseReason =
   | "debt_action_cancelled"
   | "debt_action_failed"
   | "debt_action_unavailable"
+  | "money_action_needs_confirmation"
+  | "money_action_needs_clarification"
+  | "money_action_applied"
+  | "money_action_cancelled"
+  | "money_action_failed"
+  | "money_action_unavailable"
+  | "movement_action_needs_confirmation"
+  | "movement_action_needs_clarification"
+  | "movement_action_applied"
+  | "movement_action_cancelled"
+  | "movement_action_failed"
+  | "movement_action_unavailable"
   | "ready_for_core_not_executed";
 
 type ProductResponse = {
@@ -782,6 +832,216 @@ function capitalizar(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+/**
+ * `24` §9: todo lo que este turno puede decir sobre mover dinero entre
+ * cuentas y cajas. Mismo orden que `buildDebtActionResponse`: lo que ya paso,
+ * luego la pregunta, luego la propuesta que espera confirmacion. No hay rama
+ * de limite/`unavailable`: los cuatro comandos de este dominio se ejecutan
+ * todos, a diferencia de deudas.
+ */
+function buildMoneyActionResponse(
+  input: TurnResponsePlannerInput,
+): ProductResponse | null {
+  const resolution = input.moneyActionResolution;
+
+  if (resolution?.kind === "applied") {
+    return {
+      reason: "money_action_applied",
+      intent: "direct_response",
+      shape: "texto",
+      text: composeMoneyActionAppliedText(resolution),
+    };
+  }
+
+  if (resolution?.kind === "cancelled") {
+    return {
+      reason: "money_action_cancelled",
+      intent: "direct_response",
+      shape: "texto",
+      text: "Listo, no moví nada. Tus saldos siguen igual.",
+    };
+  }
+
+  if (resolution?.kind === "failed") {
+    return {
+      reason: "money_action_failed",
+      intent: "direct_response",
+      shape: "texto",
+      text: composeMoneyActionFailedText(resolution),
+    };
+  }
+
+  const unavailable = input.moneyActionUnavailableText?.trim();
+  if (unavailable) {
+    return {
+      reason: "money_action_unavailable",
+      intent: "direct_response",
+      shape: "limite",
+      text: unavailable,
+      manualPath: buildDashboardDeepLink("money"),
+    };
+  }
+
+  const question = input.moneyActionQuestion?.trim();
+  if (question) {
+    return {
+      reason: "money_action_needs_clarification",
+      intent: "direct_response",
+      shape: "pregunta",
+      text: question,
+      options: [],
+    };
+  }
+
+  const proposal = input.moneyActionProposal;
+  if (proposal) {
+    const commandId = buildMoneyActionCommandText(proposal.proposal_id);
+    return {
+      reason: "money_action_needs_confirmation",
+      intent: "direct_response",
+      shape: "propuesta",
+      text: proposal.summary,
+      proposalCommandId: commandId,
+      options: [
+        { id: commandId, label: proposal.confirm_label },
+        { id: MONEY_ACTION_CANCEL_COMMAND_ID, label: "No, cancelar" },
+      ],
+    };
+  }
+
+  return null;
+}
+
+function composeMoneyActionAppliedText(
+  resolution: Extract<MoneyActionResolutionResult, { kind: "applied" }>,
+): string {
+  if (resolution.idempotent) {
+    return `Eso ya estaba hecho: ${resolution.summary}. No lo repetí.`;
+  }
+  if (resolution.operation === "transfer") {
+    return `Listo. Transferí ${resolution.summary}.`;
+  }
+  if (resolution.operation === "separate_to_box") {
+    return `Listo. Separé ${resolution.summary}.`;
+  }
+  if (resolution.operation === "release_from_box") {
+    return `Listo. Devolví ${resolution.summary}.`;
+  }
+  return `Listo. Moví ${resolution.summary}.`;
+}
+
+function composeMoneyActionFailedText(
+  resolution: Extract<MoneyActionResolutionResult, { kind: "failed" }>,
+): string {
+  if (resolution.reason === "proposal_lapsed") {
+    return "Esa propuesta ya venció, así que no la ejecuté y tus saldos siguen igual. Si todavía la quieres, dímelo otra vez y la vuelvo a armar con las cifras de ahora.";
+  }
+  if (resolution.detail) return resolution.detail;
+  return "No pude hacerlo y no cambié nada de tus saldos. Puedes intentarlo otra vez o hacerlo desde la pantalla de tu dinero.";
+}
+
+/**
+ * `26` §14.2: todo lo que este turno puede decir sobre restaurar o duplicar
+ * un movimiento. Mismo orden que `buildMoneyActionResponse`.
+ */
+function buildMovementActionResponse(
+  input: TurnResponsePlannerInput,
+): ProductResponse | null {
+  const resolution = input.movementActionResolution;
+
+  if (resolution?.kind === "applied") {
+    return {
+      reason: "movement_action_applied",
+      intent: "direct_response",
+      shape: "texto",
+      text: composeMovementActionAppliedText(resolution),
+    };
+  }
+
+  if (resolution?.kind === "cancelled") {
+    return {
+      reason: "movement_action_cancelled",
+      intent: "direct_response",
+      shape: "texto",
+      text:
+        resolution.operation === "restore"
+          ? "Listo, no lo restauré. Sigue eliminado."
+          : "Listo, no lo dupliqué.",
+    };
+  }
+
+  if (resolution?.kind === "failed") {
+    return {
+      reason: "movement_action_failed",
+      intent: "direct_response",
+      shape: "texto",
+      text: composeMovementActionFailedText(resolution),
+    };
+  }
+
+  const unavailable = input.movementActionUnavailableText?.trim();
+  if (unavailable) {
+    return {
+      reason: "movement_action_unavailable",
+      intent: "direct_response",
+      shape: "limite",
+      text: unavailable,
+      manualPath: buildDashboardDeepLink("movements"),
+    };
+  }
+
+  const question = input.movementActionQuestion?.trim();
+  if (question) {
+    return {
+      reason: "movement_action_needs_clarification",
+      intent: "direct_response",
+      shape: "pregunta",
+      text: question,
+      options: [],
+    };
+  }
+
+  const proposal = input.movementActionProposal;
+  if (proposal) {
+    const commandId = buildMovementActionCommandText(proposal.proposal_id);
+    return {
+      reason: "movement_action_needs_confirmation",
+      intent: "direct_response",
+      shape: "propuesta",
+      text: proposal.summary,
+      proposalCommandId: commandId,
+      options: [
+        { id: commandId, label: proposal.confirm_label },
+        { id: MOVEMENT_ACTION_CANCEL_COMMAND_ID, label: "No, cancelar" },
+      ],
+    };
+  }
+
+  return null;
+}
+
+function composeMovementActionAppliedText(
+  resolution: Extract<MovementActionResolutionResult, { kind: "applied" }>,
+): string {
+  if (resolution.idempotent) {
+    return `Eso ya estaba hecho: ${resolution.summary}. No lo repetí.`;
+  }
+  if (resolution.operation === "restore") {
+    return `Listo. Restauré ${resolution.summary}. Vuelve a contar en tus saldos.`;
+  }
+  return `Listo. Duplicué ${resolution.summary}.`;
+}
+
+function composeMovementActionFailedText(
+  resolution: Extract<MovementActionResolutionResult, { kind: "failed" }>,
+): string {
+  if (resolution.reason === "proposal_lapsed") {
+    return "Esa propuesta ya venció, así que no hice nada. Si todavía lo quieres, dímelo otra vez.";
+  }
+  if (resolution.detail) return resolution.detail;
+  return "No pude hacerlo y no cambié nada de tus movimientos. Puedes intentarlo otra vez o hacerlo desde la pantalla de movimientos.";
+}
+
 function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse | null {
   const execution = input.financialActionExecution;
   const pendingResolution = input.pendingResolution;
@@ -853,6 +1113,20 @@ function buildProductResponse(input: TurnResponsePlannerInput): ProductResponse 
   // privacidad.
   const debtActionResponse = buildDebtActionResponse(input);
   if (debtActionResponse) return debtActionResponse;
+
+  // `24` §9: dinero entre cuentas y cajas va justo detras del ciclo de vida de
+  // una deuda y delante de estructura, por la misma razon que decide el orden
+  // de deudas: escribe en el historial de dinero real de la persona, y una
+  // caja o un presupuesto no.
+  const moneyActionResponse = buildMoneyActionResponse(input);
+  if (moneyActionResponse) return moneyActionResponse;
+
+  // `26` §14.2: restaurar o duplicar un movimiento va justo detras de dinero.
+  // Los dos tocan movimientos reales (uno los revive, el otro crea uno nuevo);
+  // la diferencia con dinero es que este no mueve saldo entre cuentas/cajas,
+  // asi que va inmediatamente despues en la misma familia de "toca dinero".
+  const movementActionResponse = buildMovementActionResponse(input);
+  if (movementActionResponse) return movementActionResponse;
 
   const structureResponse = buildStructureResponse(input);
   if (structureResponse) return structureResponse;

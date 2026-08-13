@@ -203,6 +203,80 @@ export async function listRecentMovementsForDataContext(
   }
 }
 
+/**
+ * Movimientos eliminados recientes (`status = 'deleted'`), para
+ * `restaurar_movimiento` (`26` §14.2). No viven en
+ * `listRecentMovementsForDataContext` porque esa lista es la de "lo que el
+ * usuario tiene hoy" y se pide en todos los turnos; esta se carga solo cuando
+ * el turno pide restaurar algo, mismo patron que `closedDebts` en
+ * `debt-action-request.ts`.
+ */
+export async function listRecentlyDeletedMovementsForDataContext(
+  client: Client,
+  userId: string,
+  options: { limit?: number } = {},
+): Promise<DataContextRecentMovement[]> {
+  try {
+    const limit = Math.min(Math.max(options.limit ?? 10, 1), 20);
+    const { data, error } = await client
+      .from("movements")
+      .select(
+        [
+          "id",
+          "type",
+          "amount",
+          "currency",
+          "description",
+          "merchant",
+          "category_id",
+          "subcategory_id",
+          "related_person_id",
+          "occurred_at",
+          "account_origin_id",
+          "account_destination_id",
+          "status",
+          "source",
+        ].join(","),
+      )
+      .eq("user_id", userId)
+      .eq("status", "deleted")
+      .not("deleted_at", "is", null)
+      .order("deleted_at", { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+    const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: String(row.id),
+      type: String(row.type),
+      amount: Number(row.amount),
+      currency: row.currency === "USD" ? "USD" : "PEN",
+      description: typeof row.description === "string" ? row.description : null,
+      merchant: typeof row.merchant === "string" ? row.merchant : null,
+      category_id: (row.category_id as CategoryId | null) ?? null,
+      subcategory_id:
+        typeof row.subcategory_id === "string" ? row.subcategory_id : null,
+      related_person_id:
+        typeof row.related_person_id === "string" ? row.related_person_id : null,
+      occurred_at: String(row.occurred_at),
+      account_origin_id:
+        typeof row.account_origin_id === "string" ? row.account_origin_id : null,
+      account_destination_id:
+        typeof row.account_destination_id === "string"
+          ? row.account_destination_id
+          : null,
+      status: String(row.status),
+      source: String(row.source),
+    }));
+  } catch (error) {
+    logger.warn("data_context.recently_deleted_movements_failed", {
+      error,
+      user_id: userId,
+    });
+    return [];
+  }
+}
+
 export async function listRecentCorrectionsForDataContext(
   client: Client,
   userId: string,

@@ -316,6 +316,10 @@ export function quarantineActionIntents(
         ? null
         : output.preference_change,
       debt_action: rejected.has("debt_action") ? null : output.debt_action,
+      money_action: rejected.has("money_action") ? null : output.money_action,
+      movement_action: rejected.has("movement_action")
+        ? null
+        : output.movement_action,
     },
     dropped,
   };

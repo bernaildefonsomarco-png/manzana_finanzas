@@ -102,6 +102,41 @@ export const COMANDOS_EJECUTABLES_POR_EL_ASISTENTE: ComandoEjecutable[] = [
     via: "debt-action-executor: ClassificationCommandDispatcher CreateRelatedPersonCommand (tarjeta)",
   },
 
+  // --- Dinero entre cuentas y cajas (`24` §9, `money-action-executor.ts`) --
+  //
+  // Los cuatro pasan por el mismo `CommandDispatcher: CreateMovementCommand`
+  // que `crear_movimiento`, armando el `MovementInput` con las funciones
+  // puras de `money-action-movements.ts` —las MISMAS que usa la ruta HTTP
+  // `api/v1/money/actions`, para que las dos vias no diverjan (`40` §2, `C-03`
+  // es el error historico que este reuso evita). Los cuatro son
+  // `tarjeta_editable`, asi que entran por el ciclo propuesta -> confirmacion.
+  {
+    nombre: "transferir",
+    via: "money-action-executor: CommandDispatcher CreateMovementCommand (transferencia, tarjeta_editable)",
+  },
+  {
+    nombre: "separar_en_caja",
+    via: "money-action-executor: CommandDispatcher CreateMovementCommand (asignacion_interna, tarjeta_editable)",
+  },
+  {
+    nombre: "devolver_a_libre",
+    via: "money-action-executor: CommandDispatcher CreateMovementCommand (asignacion_interna, tarjeta_editable)",
+  },
+  {
+    nombre: "mover_entre_cajas",
+    via: "money-action-executor: CommandDispatcher CreateMovementCommand (asignacion_interna, tarjeta_editable)",
+  },
+
+  // --- Movimientos (`26` §14.2, `movement-action-executor.ts`) ------------
+  {
+    nombre: "restaurar_movimiento",
+    via: "movement-action-executor: CommandDispatcher RestoreMovementCommand (tarjeta)",
+  },
+  {
+    nombre: "duplicar_movimiento",
+    via: "movement-action-executor: CommandDispatcher CreateMovementCommand (tarjeta_editable)",
+  },
+
   // --- Correcciones (`16` §10.3, `correction-resolution.ts`) --------------
   {
     nombre: "editar_movimiento",

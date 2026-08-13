@@ -85,12 +85,14 @@ import {
 import {
   getActiveAccounts,
   getActiveBoxes,
+  getFreeBalanceForAccount,
 } from "@/data/repositories/accounts.repository";
 import { getAllCategories } from "@/data/repositories/categories.repository";
 import { getClassificationCatalog } from "@/data/repositories/classification.repository";
 import {
   listActiveDebtsForDataContext,
   listRecentCorrectionsForDataContext,
+  listRecentlyDeletedMovementsForDataContext,
   listRecentMovementsForDataContext,
 } from "@/data/repositories/data-context.repository";
 import { DebtPaymentCommandHandler } from "@/core/debts/debt-payment-command";
@@ -193,6 +195,29 @@ import {
 } from "@/core/debts";
 import { listDebts } from "@/data/repositories/debts.repository";
 import {
+  compileMoneyAction,
+  isMoneyActionCommandText,
+  lapsedMoneyActionResolution,
+  maybeResolveMoneyAction,
+  readStoredMoneyActionProposal,
+  resolveAwaitingMoneyAction,
+  buildMoneyActionCommandText,
+  type MoneyActionAccountContext,
+  type MoneyActionBoxContext,
+  type MoneyActionResolutionResult,
+} from "@/core/money-actions";
+import {
+  compileMovementAction,
+  isMovementActionCommandText,
+  lapsedMovementActionResolution,
+  maybeResolveMovementAction,
+  readStoredMovementActionProposal,
+  resolveAwaitingMovementAction,
+  buildMovementActionCommandText,
+  type MovementActionContext,
+  type MovementActionResolutionResult,
+} from "@/core/movement-actions";
+import {
   applyDedupPreflight,
   assessRiskSignals,
   calculateRecentAmountMedian,
@@ -287,6 +312,20 @@ export type TurnOrchestrationResult = {
     | "accepted_with_debt_action_clarification"
     | "accepted_with_debt_action_unavailable"
     | "accepted_with_debt_action_lapsed"
+    // `24` §9: transferir, separar, devolver y mover entre cajas conversando.
+    | "accepted_with_money_action_confirmation"
+    | "accepted_with_money_action_applied"
+    | "accepted_with_money_action_cancelled"
+    | "accepted_with_money_action_clarification"
+    | "accepted_with_money_action_unavailable"
+    | "accepted_with_money_action_lapsed"
+    // `26` §14.2: restaurar y duplicar un movimiento conversando.
+    | "accepted_with_movement_action_confirmation"
+    | "accepted_with_movement_action_applied"
+    | "accepted_with_movement_action_cancelled"
+    | "accepted_with_movement_action_clarification"
+    | "accepted_with_movement_action_unavailable"
+    | "accepted_with_movement_action_lapsed"
     | "accepted_with_structure_confirmation"
     | "accepted_with_structure_applied"
     | "accepted_with_structure_cancelled"
@@ -528,6 +567,42 @@ export class FinancialOrchestrator {
       return debtActionTurn.result;
     }
     activeMemoryState = debtActionTurn.activeMemoryState;
+
+    // `24` §9: una propuesta de dinero ("¿Transfiero S/100 de BCP a Yape?") se
+    // resuelve igual que una de deudas — con el boton `dinero:...` o con el
+    // "si" del turno siguiente, mismo hilo y misma vigencia. Va justo detras de
+    // deudas por la misma excluyente: solo hay una propuesta viva por hilo.
+    const moneyActionTurn = await this.resolveMoneyActionTurn({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      activeMemoryState,
+      conversationTurnState: conversationTurn.turn_state,
+    });
+    if (moneyActionTurn.handled) {
+      return moneyActionTurn.result;
+    }
+    activeMemoryState = moneyActionTurn.activeMemoryState;
+
+    // `26` §14.2: una propuesta de restaurar/duplicar un movimiento se resuelve
+    // igual que una de dinero. Va justo detras por la misma razon.
+    const movementActionTurn = await this.resolveMovementActionTurn({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      activeMemoryState,
+      conversationTurnState: conversationTurn.turn_state,
+    });
+    if (movementActionTurn.handled) {
+      return movementActionTurn.result;
+    }
+    activeMemoryState = movementActionTurn.activeMemoryState;
 
     // `RUL-ESTR-03`: una propuesta de estructura ("¿Creo la caja Viaje?") se
     // resuelve exactamente igual que una correccion — con el boton `estr:...`
@@ -892,6 +967,41 @@ export class FinancialOrchestrator {
       dataContextPack: initialDataContextPack,
     });
     if (debtActionProposalTurn) return debtActionProposalTurn;
+
+    // `24` §9: el ejecutivo entendio que este turno pide mover dinero real
+    // entre cuentas o cajas. El turno no escribe nada aqui: propone y espera
+    // el "si", porque los cuatro comandos de `40` §7.1 son `tarjeta_editable`.
+    // Va justo detras de deudas por la misma excluyente que en la resolucion.
+    const moneyActionProposalTurn = await this.proposeMoneyActionIfRequested({
+      externalEvent,
+      turnInput,
+      text,
+      channel,
+      threadKey,
+      traceId: input.traceId,
+      conversationTurnState: effectiveConversationTurnState,
+      planning: initialOrchestrationPlanning,
+      previousWorkingSet: activeMemoryState?.working_set ?? null,
+      dataContextPack: initialDataContextPack,
+    });
+    if (moneyActionProposalTurn) return moneyActionProposalTurn;
+
+    // `26` §14.2: el ejecutivo entendio que este turno pide restaurar o
+    // duplicar un movimiento. Va justo detras de dinero.
+    const movementActionProposalTurn =
+      await this.proposeMovementActionIfRequested({
+        externalEvent,
+        turnInput,
+        text,
+        channel,
+        threadKey,
+        traceId: input.traceId,
+        conversationTurnState: effectiveConversationTurnState,
+        planning: initialOrchestrationPlanning,
+        previousWorkingSet: activeMemoryState?.working_set ?? null,
+        dataContextPack: initialDataContextPack,
+      });
+    if (movementActionProposalTurn) return movementActionProposalTurn;
 
     // `RUL-ESTR-01`: el ejecutivo propuso crear o cambiar una caja, meta o
     // presupuesto. El turno no escribe nada aqui: propone y espera el "si".
@@ -1910,6 +2020,732 @@ export class FinancialOrchestrator {
         debt_action_resolution_idempotent:
           resolution.kind === "applied" ? resolution.idempotent : null,
         debt_action_resolution_error_code:
+          resolution.kind === "failed" ? resolution.error_code : null,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: params.orchestratorReason,
+    };
+  }
+
+  private async resolveMoneyActionTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    activeMemoryState: ConversationMemoryState | null;
+    conversationTurnState: ConversationTurnState;
+  }): Promise<
+    | { handled: true; result: TurnOrchestrationResult }
+    | { handled: false; activeMemoryState: ConversationMemoryState | null }
+  > {
+    const userId = params.externalEvent.user_id;
+    if (!userId) {
+      return { handled: false, activeMemoryState: params.activeMemoryState };
+    }
+
+    let activeMemoryState = params.activeMemoryState;
+    const workingSet = activeMemoryState?.working_set ?? null;
+    const isCommand = isMoneyActionCommandText(params.text);
+    const awaiting = resolveAwaitingMoneyAction({
+      text: params.text,
+      workingSet,
+      threadKey: params.threadKey,
+      now: params.externalEvent.received_at,
+    });
+
+    const storedProposal =
+      awaiting.kind === "other_thread"
+        ? null
+        : readStoredMoneyActionProposal(workingSet);
+
+    if (
+      !isCommand &&
+      (awaiting.kind === "lapsed_by_topic_change" ||
+        awaiting.kind === "lapsed_confirmation")
+    ) {
+      logger.warn("orchestrator.money_action_proposal_lapsed", {
+        trace_id: params.traceId,
+        external_event_id: params.externalEvent.id,
+        lapse_kind: awaiting.kind,
+      });
+      const expiredState = await rememberExpiredCorrectionProposal({
+        client: this.client,
+        userId,
+        channel: params.channel,
+        threadKey: params.threadKey,
+        previousState: activeMemoryState,
+        now: params.externalEvent.received_at,
+      });
+      activeMemoryState = expiredState ?? activeMemoryState;
+    }
+
+    if (!isCommand && awaiting.kind === "lapsed_confirmation") {
+      const moneyActionResolution = lapsedMoneyActionResolution(awaiting.reason);
+      const result = await this.presentMoneyActionTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        moneyActionResolution,
+        orchestratorReason: "accepted_with_money_action_lapsed",
+      });
+      return { handled: true, result };
+    }
+
+    const commandText = isCommand
+      ? params.text
+      : awaiting.kind === "confirmable"
+        ? awaiting.commandText
+        : null;
+
+    if (!commandText) return { handled: false, activeMemoryState };
+
+    const moneyActionResolution = await maybeResolveMoneyAction({
+      client: this.client,
+      userId,
+      text: commandText,
+      proposal: storedProposal,
+      movementSource: toMovementSource(params.channel),
+      traceId: params.traceId,
+      source: "orchestrator.money_action_confirm",
+    });
+
+    if (moneyActionResolution.kind === "not_money_action_command") {
+      return { handled: false, activeMemoryState };
+    }
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] =
+      moneyActionResolution.kind === "applied"
+        ? "accepted_with_money_action_applied"
+        : moneyActionResolution.kind === "cancelled"
+          ? "accepted_with_money_action_cancelled"
+          : "accepted_with_money_action_clarification";
+
+    const result = await this.presentMoneyActionTurn({
+      externalEvent: params.externalEvent,
+      turnInput: params.turnInput,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      moneyActionResolution,
+      orchestratorReason,
+      remember: {
+        channel: params.channel,
+        threadKey: params.threadKey,
+        userId,
+        userMessage: params.text,
+        previous: workingSet,
+        now: params.externalEvent.received_at,
+      },
+    });
+
+    return { handled: true, result };
+  }
+
+  /**
+   * `24` §9: convierte lo que el ejecutivo entendio sobre dinero en una
+   * propuesta o en una pregunta. Mismo contrato que
+   * `proposeDebtActionIfRequested`: los desenlaces terminales estan cubiertos
+   * a proposito (`WEB-D298`), aunque este dominio no tiene comandos diferidos
+   * —los cuatro se ejecutan— asi que `unavailable` solo puede salir de un
+   * borrador que no paso su propio esquema, algo puramente defensivo.
+   */
+  private async proposeMoneyActionIfRequested(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    planning: OrchestrationPlanningTrace | null;
+    previousWorkingSet: ConversationWorkingSet | null;
+    dataContextPack: DataContextPack;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    const request = params.planning?.actionIntent.money_action ?? null;
+    if (!request || request.intent === "none") return null;
+
+    const accounts: MoneyActionAccountContext[] = (
+      params.dataContextPack.accounts ?? []
+    ).map((account) => ({
+      id: account.id,
+      name: account.name,
+      currency: account.currency,
+    }));
+    const boxes: MoneyActionBoxContext[] = (params.dataContextPack.boxes ?? []).map(
+      (box) => ({
+        id: box.id,
+        account_id: box.account_id,
+        name: box.name,
+        current_balance: box.current_balance,
+      }),
+    );
+
+    // El libre de una cuenta no viaja en `DataContextPack` (cambia con cada
+    // movimiento) y solo hace falta para el "efecto previo" de `transferir` y
+    // `separar_en_caja`: se carga aqui, fuera de `compileMoneyAction`, mismo
+    // patron que `closedDebts` en `proposeDebtActionIfRequested`. Si la carga
+    // falla, la propuesta sigue sin el numero en vez de caerse entera.
+    const freeBalanceByAccountId: Record<string, number> = {};
+    try {
+      if (request.intent === "transferir") {
+        const accountId = request.from_account_id.trim();
+        if (accounts.some((account) => account.id === accountId)) {
+          freeBalanceByAccountId[accountId] = await getFreeBalanceForAccount(
+            this.client,
+            userId,
+            accountId,
+          );
+        }
+      } else if (request.intent === "separar_en_caja") {
+        const box = boxes.find(
+          (candidate) => candidate.id === request.box_destination_id.trim(),
+        );
+        if (box) {
+          freeBalanceByAccountId[box.account_id] = await getFreeBalanceForAccount(
+            this.client,
+            userId,
+            box.account_id,
+          );
+        }
+      }
+    } catch (error) {
+      logger.warn("orchestrator.money_action_free_balance_unavailable", {
+        trace_id: params.traceId,
+        error,
+      });
+    }
+
+    const compiled = compileMoneyAction({
+      request,
+      userText: params.text,
+      now: params.externalEvent.received_at,
+      accounts,
+      boxes,
+      freeBalanceByAccountId,
+    });
+
+    if (compiled.kind === "not_requested") return null;
+
+    const isProposal = compiled.kind === "ready";
+    const limiteText =
+      compiled.kind === "unavailable"
+        ? "Entendí lo que pedías sobre tu dinero, pero no lo pude preparar ahora mismo. No cambié nada."
+        : null;
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId,
+      conversationTurnState: params.conversationTurnState,
+      ...(isProposal
+        ? { moneyActionProposal: compiled.command }
+        : compiled.kind === "needs_clarification"
+          ? { moneyActionQuestion: compiled.question }
+          : { moneyActionUnavailableText: limiteText ?? undefined }),
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: params.planning?.executiveRan ?? false,
+    });
+
+    const resumen = isProposal
+      ? compiled.command.summary
+      : compiled.kind === "needs_clarification"
+        ? compiled.question
+        : (limiteText ?? "");
+
+    await rememberConversationOutcome({
+      client: this.client,
+      userId,
+      channel: params.channel,
+      threadKey: params.threadKey,
+      intent: "money_action",
+      userMessage: params.text,
+      resultSummary: presented.text ?? resumen,
+      sourceRef: params.externalEvent.id,
+      topic: "balance",
+      goal: isProposal ? "confirm" : "help",
+      actionKind: isProposal ? "money_action_proposed" : "clarification_requested",
+      actionStatus: isProposal ? "awaiting_confirmation" : "completed",
+      commandIds: isProposal
+        ? [buildMoneyActionCommandText(compiled.command.proposal_id)]
+        : [],
+      unresolvedSlots:
+        compiled.kind === "needs_clarification" ? [compiled.question] : [],
+      moneyActionProposal: isProposal ? compiled.command : null,
+      previous: params.previousWorkingSet,
+      now: params.externalEvent.received_at,
+    });
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] = isProposal
+      ? "accepted_with_money_action_confirmation"
+      : compiled.kind === "unavailable"
+        ? "accepted_with_money_action_unavailable"
+        : "accepted_with_money_action_clarification";
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: orchestratorReason,
+        agent_runtime_required: false,
+        money_action_kind: compiled.kind,
+        money_action_intent: request.intent,
+        money_action_operation: isProposal ? compiled.command.operation : null,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: orchestratorReason,
+    };
+  }
+
+  /** Compone, presenta y registra un turno resuelto por la via de dinero. */
+  private async presentMoneyActionTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    moneyActionResolution: MoneyActionResolutionResult;
+    orchestratorReason: TurnOrchestrationResult["reason"];
+    remember?: {
+      channel: Channel;
+      threadKey: string;
+      userId: string;
+      userMessage: string;
+      previous: ConversationWorkingSet | null;
+      now: string;
+    };
+  }): Promise<TurnOrchestrationResult> {
+    const resolution = params.moneyActionResolution;
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId: params.externalEvent.user_id,
+      conversationTurnState: params.conversationTurnState,
+      moneyActionResolution: resolution,
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: false,
+    });
+
+    const remember = params.remember;
+    if (
+      remember &&
+      (resolution.kind === "applied" || resolution.kind === "cancelled")
+    ) {
+      await rememberConversationOutcome({
+        client: this.client,
+        userId: remember.userId,
+        channel: remember.channel,
+        threadKey: remember.threadKey,
+        intent: "money_action",
+        userMessage: remember.userMessage,
+        resultSummary: presented.text ?? resolution.summary,
+        sourceRef: params.externalEvent.id,
+        topic: "balance",
+        goal: "confirm",
+        actionKind:
+          resolution.kind === "applied"
+            ? "money_action_applied"
+            : "money_action_cancelled",
+        actionStatus: resolution.kind === "applied" ? "completed" : "cancelled",
+        moneyActionProposal: null,
+        previous: remember.previous,
+        now: remember.now,
+      });
+    }
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: params.orchestratorReason,
+        agent_runtime_required: false,
+        money_action_resolution_kind: resolution.kind,
+        money_action_resolution_reason: resolution.reason,
+        money_action_resolution_operation:
+          "operation" in resolution ? resolution.operation : null,
+        money_action_resolution_entity_id:
+          resolution.kind === "applied" ? resolution.entity_id : null,
+        money_action_resolution_idempotent:
+          resolution.kind === "applied" ? resolution.idempotent : null,
+        money_action_resolution_error_code:
+          resolution.kind === "failed" ? resolution.error_code : null,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: params.orchestratorReason,
+    };
+  }
+
+  private async resolveMovementActionTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    activeMemoryState: ConversationMemoryState | null;
+    conversationTurnState: ConversationTurnState;
+  }): Promise<
+    | { handled: true; result: TurnOrchestrationResult }
+    | { handled: false; activeMemoryState: ConversationMemoryState | null }
+  > {
+    const userId = params.externalEvent.user_id;
+    if (!userId) {
+      return { handled: false, activeMemoryState: params.activeMemoryState };
+    }
+
+    let activeMemoryState = params.activeMemoryState;
+    const workingSet = activeMemoryState?.working_set ?? null;
+    const isCommand = isMovementActionCommandText(params.text);
+    const awaiting = resolveAwaitingMovementAction({
+      text: params.text,
+      workingSet,
+      threadKey: params.threadKey,
+      now: params.externalEvent.received_at,
+    });
+
+    const storedProposal =
+      awaiting.kind === "other_thread"
+        ? null
+        : readStoredMovementActionProposal(workingSet);
+
+    if (
+      !isCommand &&
+      (awaiting.kind === "lapsed_by_topic_change" ||
+        awaiting.kind === "lapsed_confirmation")
+    ) {
+      logger.warn("orchestrator.movement_action_proposal_lapsed", {
+        trace_id: params.traceId,
+        external_event_id: params.externalEvent.id,
+        lapse_kind: awaiting.kind,
+      });
+      const expiredState = await rememberExpiredCorrectionProposal({
+        client: this.client,
+        userId,
+        channel: params.channel,
+        threadKey: params.threadKey,
+        previousState: activeMemoryState,
+        now: params.externalEvent.received_at,
+      });
+      activeMemoryState = expiredState ?? activeMemoryState;
+    }
+
+    if (!isCommand && awaiting.kind === "lapsed_confirmation") {
+      const movementActionResolution = lapsedMovementActionResolution(
+        awaiting.reason,
+      );
+      const result = await this.presentMovementActionTurn({
+        externalEvent: params.externalEvent,
+        turnInput: params.turnInput,
+        traceId: params.traceId,
+        conversationTurnState: params.conversationTurnState,
+        movementActionResolution,
+        orchestratorReason: "accepted_with_movement_action_lapsed",
+      });
+      return { handled: true, result };
+    }
+
+    const commandText = isCommand
+      ? params.text
+      : awaiting.kind === "confirmable"
+        ? awaiting.commandText
+        : null;
+
+    if (!commandText) return { handled: false, activeMemoryState };
+
+    const movementActionResolution = await maybeResolveMovementAction({
+      client: this.client,
+      userId,
+      text: commandText,
+      proposal: storedProposal,
+      movementSource: toMovementSource(params.channel),
+      traceId: params.traceId,
+      source: "orchestrator.movement_action_confirm",
+    });
+
+    if (movementActionResolution.kind === "not_movement_action_command") {
+      return { handled: false, activeMemoryState };
+    }
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] =
+      movementActionResolution.kind === "applied"
+        ? "accepted_with_movement_action_applied"
+        : movementActionResolution.kind === "cancelled"
+          ? "accepted_with_movement_action_cancelled"
+          : "accepted_with_movement_action_clarification";
+
+    const result = await this.presentMovementActionTurn({
+      externalEvent: params.externalEvent,
+      turnInput: params.turnInput,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      movementActionResolution,
+      orchestratorReason,
+      remember: {
+        channel: params.channel,
+        threadKey: params.threadKey,
+        userId,
+        userMessage: params.text,
+        previous: workingSet,
+        now: params.externalEvent.received_at,
+      },
+    });
+
+    return { handled: true, result };
+  }
+
+  /**
+   * `26` §14.2: convierte lo que el ejecutivo entendio sobre movimientos en
+   * una propuesta o en una pregunta. `deletedMovements` solo se carga cuando
+   * el turno pide restaurar (mismo patron que `closedDebts`): la mayoria de
+   * los turnos no tocan movimientos eliminados.
+   */
+  private async proposeMovementActionIfRequested(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    text: string;
+    channel: Channel;
+    threadKey: string;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    planning: OrchestrationPlanningTrace | null;
+    previousWorkingSet: ConversationWorkingSet | null;
+    dataContextPack: DataContextPack;
+  }): Promise<TurnOrchestrationResult | null> {
+    const userId = params.externalEvent.user_id;
+    if (!userId) return null;
+
+    const request = params.planning?.actionIntent.movement_action ?? null;
+    if (!request || request.intent === "none") return null;
+
+    const movements: MovementActionContext[] = (
+      params.dataContextPack.recent_movements ?? []
+    ).map((movement) => ({
+      id: movement.id,
+      type: movement.type,
+      amount: movement.amount,
+      currency: movement.currency,
+      description: movement.description,
+      merchant: movement.merchant,
+      occurred_at: movement.occurred_at,
+    }));
+
+    let deletedMovements: MovementActionContext[] = [];
+    if (request.intent === "restaurar_movimiento") {
+      try {
+        deletedMovements = (
+          await listRecentlyDeletedMovementsForDataContext(this.client, userId)
+        ).map((movement) => ({
+          id: movement.id,
+          type: movement.type,
+          amount: movement.amount,
+          currency: movement.currency,
+          description: movement.description,
+          merchant: movement.merchant,
+          occurred_at: movement.occurred_at,
+        }));
+      } catch (error) {
+        logger.warn("orchestrator.movement_action_deleted_movements_unavailable", {
+          trace_id: params.traceId,
+          error,
+        });
+      }
+    }
+
+    const compiled = compileMovementAction({
+      request,
+      userText: params.text,
+      now: params.externalEvent.received_at,
+      movements,
+      deletedMovements,
+    });
+
+    if (compiled.kind === "not_requested") return null;
+
+    const isProposal = compiled.kind === "ready";
+    const limiteText =
+      compiled.kind === "unavailable"
+        ? "Entendí lo que pedías sobre ese movimiento, pero no lo pude preparar ahora mismo. No cambié nada."
+        : null;
+
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId,
+      conversationTurnState: params.conversationTurnState,
+      ...(isProposal
+        ? { movementActionProposal: compiled.command }
+        : compiled.kind === "needs_clarification"
+          ? { movementActionQuestion: compiled.question }
+          : { movementActionUnavailableText: limiteText ?? undefined }),
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: params.planning?.executiveRan ?? false,
+    });
+
+    const resumen = isProposal
+      ? compiled.command.summary
+      : compiled.kind === "needs_clarification"
+        ? compiled.question
+        : (limiteText ?? "");
+
+    await rememberConversationOutcome({
+      client: this.client,
+      userId,
+      channel: params.channel,
+      threadKey: params.threadKey,
+      intent: "movement_action",
+      userMessage: params.text,
+      resultSummary: presented.text ?? resumen,
+      sourceRef: params.externalEvent.id,
+      topic: "movement",
+      goal: isProposal ? "confirm" : "help",
+      actionKind: isProposal
+        ? "movement_action_proposed"
+        : "clarification_requested",
+      actionStatus: isProposal ? "awaiting_confirmation" : "completed",
+      commandIds: isProposal
+        ? [buildMovementActionCommandText(compiled.command.proposal_id)]
+        : [],
+      unresolvedSlots:
+        compiled.kind === "needs_clarification" ? [compiled.question] : [],
+      movementActionProposal: isProposal ? compiled.command : null,
+      previous: params.previousWorkingSet,
+      now: params.externalEvent.received_at,
+    });
+
+    const orchestratorReason: TurnOrchestrationResult["reason"] = isProposal
+      ? "accepted_with_movement_action_confirmation"
+      : compiled.kind === "unavailable"
+        ? "accepted_with_movement_action_unavailable"
+        : "accepted_with_movement_action_clarification";
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: orchestratorReason,
+        agent_runtime_required: false,
+        movement_action_kind: compiled.kind,
+        movement_action_intent: request.intent,
+        movement_action_operation: isProposal ? compiled.command.operation : null,
+        ...presentedTurnMetadata(plan, presented),
+      },
+    });
+
+    return {
+      externalEventId: params.externalEvent.id,
+      status: "accepted",
+      reason: orchestratorReason,
+    };
+  }
+
+  /** Compone, presenta y registra un turno resuelto por la via de movimientos. */
+  private async presentMovementActionTurn(params: {
+    externalEvent: ExternalEventLog;
+    turnInput: TurnInput;
+    traceId: string;
+    conversationTurnState: ConversationTurnState;
+    movementActionResolution: MovementActionResolutionResult;
+    orchestratorReason: TurnOrchestrationResult["reason"];
+    remember?: {
+      channel: Channel;
+      threadKey: string;
+      userId: string;
+      userMessage: string;
+      previous: ConversationWorkingSet | null;
+      now: string;
+    };
+  }): Promise<TurnOrchestrationResult> {
+    const resolution = params.movementActionResolution;
+    const plan = planTurnBlocks({
+      turnInput: params.turnInput,
+      userId: params.externalEvent.user_id,
+      conversationTurnState: params.conversationTurnState,
+      movementActionResolution: resolution,
+    });
+    const presented = await this.presentTurn(plan, {
+      turnInput: params.turnInput,
+      externalEventId: params.externalEvent.id,
+      traceId: params.traceId,
+      conversationTurnState: params.conversationTurnState,
+      skipEnhancement: false,
+    });
+
+    const remember = params.remember;
+    if (
+      remember &&
+      (resolution.kind === "applied" || resolution.kind === "cancelled")
+    ) {
+      await rememberConversationOutcome({
+        client: this.client,
+        userId: remember.userId,
+        channel: remember.channel,
+        threadKey: remember.threadKey,
+        intent: "movement_action",
+        userMessage: remember.userMessage,
+        resultSummary: presented.text ?? resolution.summary,
+        sourceRef: params.externalEvent.id,
+        topic: "movement",
+        goal: "confirm",
+        actionKind:
+          resolution.kind === "applied"
+            ? "movement_action_applied"
+            : "movement_action_cancelled",
+        actionStatus: resolution.kind === "applied" ? "completed" : "cancelled",
+        movementActionProposal: null,
+        previous: remember.previous,
+        now: remember.now,
+      });
+    }
+
+    await updateExternalEventStatus(this.client, {
+      external_event_id: params.externalEvent.id,
+      status: "accepted",
+      metadata: {
+        orchestrator_status: "accepted",
+        orchestrator_reason: params.orchestratorReason,
+        agent_runtime_required: false,
+        movement_action_resolution_kind: resolution.kind,
+        movement_action_resolution_reason: resolution.reason,
+        movement_action_resolution_operation:
+          "operation" in resolution ? resolution.operation : null,
+        movement_action_resolution_entity_id:
+          resolution.kind === "applied" ? resolution.entity_id : null,
+        movement_action_resolution_idempotent:
+          resolution.kind === "applied" ? resolution.idempotent : null,
+        movement_action_resolution_error_code:
           resolution.kind === "failed" ? resolution.error_code : null,
         ...presentedTurnMetadata(plan, presented),
       },

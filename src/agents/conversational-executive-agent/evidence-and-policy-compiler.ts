@@ -51,6 +51,10 @@ export const EXECUTIVE_ACTION_SURFACES = [
   "profile_signal",
   "preference_change",
   "debt_action",
+  // `24` §9: transferir, separar, devolver y mover entre cajas.
+  "money_action",
+  // `26` §14.2: restaurar y duplicar un movimiento.
+  "movement_action",
 ] as const;
 
 export type ExecutiveActionSurface = (typeof EXECUTIVE_ACTION_SURFACES)[number];

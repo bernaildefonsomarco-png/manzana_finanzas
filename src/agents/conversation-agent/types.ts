@@ -345,6 +345,17 @@ export const ConversationWorkingSetSchema = z.object({
         "debt_action_proposed",
         "debt_action_applied",
         "debt_action_cancelled",
+        // `24` §9 (`ACT-CUENTAS-10` a `13`): transferir, separar, devolver y
+        // mover entre cajas son `tarjeta_editable` en el catalogo (`40` §7.1),
+        // asi que pasan por el mismo ciclo propuesta -> confirmacion.
+        "money_action_proposed",
+        "money_action_applied",
+        "money_action_cancelled",
+        // `26` §14.2: restaurar y duplicar un movimiento son `tarjeta` /
+        // `tarjeta_editable` en el catalogo (`40` §7.3), mismo ciclo.
+        "movement_action_proposed",
+        "movement_action_applied",
+        "movement_action_cancelled",
         // `RUL-LIG-01`: los comandos de nivel `ninguna` del catalogo (`40` §7)
         // no tienen fase de propuesta: se aplican en el turno en que se piden,
         // asi que su ciclo tiene solo estos dos desenlaces.
@@ -448,6 +459,27 @@ export const ConversationWorkingSetSchema = z.object({
    * nadie hizo.
    */
   debt_action_proposal: z
+    .record(z.string(), z.unknown())
+    .nullable()
+    .default(null)
+    .optional(),
+  /**
+   * `24` §9: borrador del movimiento de dinero (transferir, separar, devolver,
+   * mover entre cajas) que espera confirmacion. Mismo contrato que
+   * `debt_action_proposal`: forma debil aqui, `MoneyActionProposalSchema` la
+   * valida al usarla.
+   */
+  money_action_proposal: z
+    .record(z.string(), z.unknown())
+    .nullable()
+    .default(null)
+    .optional(),
+  /**
+   * `26` §14.2: borrador de restaurar o duplicar un movimiento que espera
+   * confirmacion. Mismo contrato que los anteriores;
+   * `MovementActionProposalSchema` lo valida al usarlo.
+   */
+  movement_action_proposal: z
     .record(z.string(), z.unknown())
     .nullable()
     .default(null)

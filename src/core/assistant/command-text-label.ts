@@ -32,11 +32,19 @@ export function commandTextLabel(text: string): string | null {
   // persona "diciendo" `deuda:<uuid>` justo despues de haber cerrado una deuda,
   // y ese historial es lo que el modelo usa para entender que paso.
   if (normalized === "deuda:cancel") return "No, cancelar";
+  // `24` §9: y para la de dinero (transferir, separar, devolver, mover entre
+  // cajas), mismo motivo que deuda — el historial no puede mostrar
+  // `dinero:<uuid>` justo despues de mover dinero real.
+  if (normalized === "dinero:cancel") return "No, cancelar";
+  // `26` §14.2: y para la de restaurar/duplicar un movimiento.
+  if (normalized === "mov:cancel") return "No, cancelar";
 
   if (normalized.startsWith("estr:")) return "Si, confirmar";
   if (normalized.startsWith("mem:")) return "Si, confirmar";
   if (normalized.startsWith("pref:")) return "Si, confirmar";
   if (normalized.startsWith("deuda:")) return "Si, confirmar";
+  if (normalized.startsWith("dinero:")) return "Si, confirmar";
+  if (normalized.startsWith("mov:")) return "Si, confirmar";
 
   if (!normalized.startsWith("corr:")) return null;
 
