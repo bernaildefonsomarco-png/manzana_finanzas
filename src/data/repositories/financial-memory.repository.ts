@@ -5,6 +5,7 @@ import {
 } from "@/agents/runtime/openai-embeddings";
 import type { Database, Json } from "@/data/supabase/types";
 import { logger } from "@/shared/telemetry/logger";
+import { createSemanticRecallAvailability } from "./semantic-recall-availability";
 
 type Client = SupabaseClient<Database>;
 
@@ -176,28 +177,18 @@ export async function searchConfirmedFinancialMemory(
  * Degradar aqui es seguro porque el ranking semantico no autoriza nada: el
  * consentimiento y el gobierno se evaluan igual con vector o sin el.
  */
-type SemanticRecallState = "unknown" | "present" | "absent";
-let semanticRecallState: SemanticRecallState = "unknown";
-let semanticRecallDisabledAt = 0;
-
-/**
- * El `absent` caduca. Sin esto, un proceso que arranco un minuto antes de que
- * la migracion se aplicara —o antes de que PostgREST recargara su cache de
- * esquema— se quedaria buscando por tokens hasta que lo reciclaran. Reintentar
- * cada tanto cuesta una llamada fallida; no reintentar cuesta que el usuario
- * siga sintiendo que no aprende de el.
- */
-const SEMANTIC_RECALL_RETRY_MS = 10 * 60 * 1000;
+const semanticRecall = createSemanticRecallAvailability({
+  functionName: "search_financial_memory_semantic",
+  migration: "070_financial_memory_semantic_recall.sql",
+});
 
 /** Solo para pruebas: vuelve a preguntar si la busqueda semantica existe. */
 export function resetFinancialMemorySemanticRecallCache(): void {
-  semanticRecallState = "unknown";
-  semanticRecallDisabledAt = 0;
+  semanticRecall.reset();
 }
 
 export function isFinancialMemorySemanticRecallAvailable(): boolean {
-  if (semanticRecallState !== "absent") return true;
-  return Date.now() - semanticRecallDisabledAt >= SEMANTIC_RECALL_RETRY_MS;
+  return semanticRecall.isAvailable();
 }
 
 /**
@@ -240,9 +231,7 @@ async function resolveSemanticRanking(
   );
 
   if (error) {
-    if (isMissingSemanticRecallError(error)) {
-      rememberSemanticRecallAbsent(error);
-    } else {
+    if (!semanticRecall.markAbsentIfMissing(error)) {
       logger.warn("financial_memory.semantic_ranking_failed", {
         error,
         user_id: input.userId,
@@ -251,8 +240,7 @@ async function resolveSemanticRanking(
     return null;
   }
 
-  semanticRecallState = "present";
-  semanticRecallDisabledAt = 0;
+  semanticRecall.markPresent();
   const ranked = (data ?? []).filter(
     (row) => Number(row.similarity) >= MIN_SEMANTIC_SIMILARITY,
   );
@@ -313,10 +301,7 @@ export async function rememberFinancialMemoryEmbedding(
       .select("id");
 
     if (error) {
-      if (isMissingSemanticRecallError(error)) {
-        rememberSemanticRecallAbsent(error);
-        return false;
-      }
+      if (semanticRecall.markAbsentIfMissing(error)) return false;
       throw error;
     }
     if (!data || data.length === 0) {
@@ -352,62 +337,6 @@ export function hashEmbeddingInput(text: string): string {
     hash = Math.imul(hash, 0x01000193) >>> 0;
   }
   return hash.toString(16).padStart(8, "0");
-}
-
-function rememberSemanticRecallAbsent(error: unknown): void {
-  if (semanticRecallState !== "absent") {
-    logger.warn("financial_memory.semantic_recall_unavailable", {
-      error,
-      migration: "070_financial_memory_semantic_recall.sql",
-    });
-  }
-  semanticRecallState = "absent";
-  semanticRecallDisabledAt = Date.now();
-}
-
-/**
- * `PGRST202` (la funcion no esta en la cache de esquema), `42883` (funcion
- * inexistente) y `42703`/`PGRST204` (la columna `embedding` no existe) son las
- * formas en que PostgREST responde cuando `070` todavia no corrio. Un falso
- * positivo solo degrada la recuperacion a tokens: nunca escribe de mas ni
- * expone un recuerdo que el gobierno no autorizaba.
- */
-function isMissingSemanticRecallError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const record = error as {
-    code?: unknown;
-    message?: unknown;
-    details?: unknown;
-    hint?: unknown;
-  };
-  const code = typeof record.code === "string" ? record.code : "";
-  if (
-    code === "PGRST202" ||
-    code === "PGRST204" ||
-    code === "42883" ||
-    code === "42703" ||
-    code === "42704"
-  ) {
-    return true;
-  }
-
-  const text = [record.message, record.details, record.hint]
-    .filter((value): value is string => typeof value === "string")
-    .join(" ")
-    .toLowerCase();
-  if (
-    !text.includes("search_financial_memory_semantic") &&
-    !text.includes("embedding") &&
-    !text.includes("vector")
-  ) {
-    return false;
-  }
-  return (
-    text.includes("does not exist") ||
-    text.includes("schema cache") ||
-    text.includes("could not find") ||
-    text.includes("unknown")
-  );
 }
 
 export type LearningPreferences = {
