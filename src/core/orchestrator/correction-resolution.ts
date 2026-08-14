@@ -17,6 +17,7 @@ import {
 } from "@/core/risk/system-action-gate";
 import { getAccountById } from "@/data/repositories/accounts.repository";
 import { getCategoryById } from "@/data/repositories/categories.repository";
+import { getCategoryLabel } from "@/shared/copy/category-copy";
 import {
   SupabaseFinancialCoreRepository,
   type RecentMovementForCorrection,
@@ -627,7 +628,7 @@ async function buildPatchForCommand(
     const category = await getCategoryById(client, command.category_id);
     return buildCategoryCorrectionPatch({
       categoryId: command.category_id,
-      categoryLabel: category?.label ?? humanizeCategoryId(command.category_id),
+      categoryLabel: category?.label ?? categoryLabelOf(command.category_id),
     });
   }
 
@@ -669,7 +670,7 @@ function buildAppliedSummary(
   }
 
   if (command.kind === "category") {
-    return `${movementLabel} a categoria ${humanizeCategoryId(command.category_id)}`;
+    return `${movementLabel} a categoria ${categoryLabelOf(command.category_id)}`;
   }
 
   if (command.kind === "account_origin" || command.kind === "account_destination") {
@@ -736,8 +737,19 @@ function humanize(value: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-function humanizeCategoryId(value: CategoryId): string {
-  return humanize(value.replace(/_/g, " "));
+/**
+ * La categoria se nombra siempre como la nombra el catalogo: "Vivienda /
+ * Hogar", no "Vivienda hogar". Antes esto suavizaba el slug a mano —cambiar
+ * los guiones bajos por espacios— y ese texto llegaba entero al usuario dentro
+ * del `summary` de la correccion aplicada, sin la tilde y sin la barra que si
+ * tiene la etiqueta real. `getCategoryLabel` replica literalmente el seed de
+ * `003_categories_tags.sql`, que es lo mismo que pinta la tarjeta.
+ *
+ * El `??` solo cubre lo que el tipo ya impide: `getCategoryLabel` devuelve
+ * `null` unicamente con una cadena vacia, y aqui entra un `CategoryId`.
+ */
+function categoryLabelOf(value: CategoryId): string {
+  return getCategoryLabel(value) ?? value;
 }
 
 function readString(value: unknown): string | null {

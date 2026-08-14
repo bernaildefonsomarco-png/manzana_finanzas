@@ -1,11 +1,25 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ConversationWorkingSet } from "@/agents/conversation-agent/types";
+import type { Database } from "@/data/supabase/types";
+import type { CategoryId, Movement } from "@/shared/types/domain";
 import {
   CORRECTION_CANCEL_COMMAND_ID,
+  maybeResolveCorrection,
   parseCorrectionCommandText,
   resolveAwaitingCorrection,
   resolveAwaitingCorrectionCommandText,
 } from "./correction-resolution";
+
+const mocks = vi.hoisted(() => ({
+  getMovementById: vi.fn(),
+}));
+
+vi.mock("@/data/repositories/movements.repository", () => ({
+  SupabaseFinancialCoreRepository: class {
+    getMovementById = mocks.getMovementById;
+  },
+}));
 
 const MOVEMENT_ID = "00000000-0000-4000-8000-000000000010";
 const ACCOUNT_ID = "00000000-0000-4000-8000-000000000021";
@@ -272,5 +286,93 @@ describe("la propuesta pendiente pertenece a un hilo y a un momento (`23` §5b.1
     expect(
       resolve("si", proposedDeleteAction({ status: "expired", command_ids: [] })),
     ).toBeNull();
+  });
+});
+
+const client = {} as SupabaseClient<Database>;
+const USER_ID = "00000000-0000-4000-8000-0000000000f1";
+
+function movement(overrides: Partial<Movement> = {}): Movement {
+  return {
+    id: MOVEMENT_ID,
+    user_id: USER_ID,
+    type: "gasto",
+    status: "confirmed",
+    amount: 45,
+    currency: "PEN",
+    occurred_at: "2026-08-09T15:00:00.000Z",
+    description: "comida de los gatos",
+    merchant: null,
+    category_id: "vivienda_hogar",
+    subcategory_id: null,
+    source: "dashboard_manual",
+    source_ref: null,
+    idempotency_key: "mov-1",
+    confidence: 1,
+    requires_review: false,
+    account_origin_id: null,
+    account_destination_id: null,
+    box_origin_id: null,
+    box_destination_id: null,
+    debt_id: null,
+    recurring_rule_id: null,
+    recurring_occurrence_id: null,
+    related_person_id: null,
+    affects_total_balance: true,
+    affects_account_balance: true,
+    created_at: "2026-08-09T15:00:00.000Z",
+    updated_at: "2026-08-09T15:00:00.000Z",
+    deleted_at: null,
+    metadata: {},
+    ...overrides,
+  };
+}
+
+/**
+ * Confirma una correccion de categoria que el movimiento ya tiene aplicada.
+ * Esa rama devuelve el mismo `summary` que la que escribe, y es la que llega
+ * al usuario, asi que es donde se comprueba como se nombra la categoria.
+ */
+async function resolveCategoryCorrection(categoryId: CategoryId) {
+  return maybeResolveCorrection({
+    client,
+    userId: USER_ID,
+    text: `corr:category:${MOVEMENT_ID}:${categoryId}`,
+    traceId: "00000000-0000-4000-8000-0000000000a1",
+  });
+}
+
+describe("la categoria se nombra como la nombra el catalogo", () => {
+  beforeEach(() => {
+    mocks.getMovementById.mockReset();
+  });
+
+  it("una categoria con barra y tilde llega entera al resumen, no como su id suavizado", async () => {
+    // El resumen viaja al usuario. Suavizar el id a mano —cambiar los guiones
+    // bajos por espacios— producia "Vivienda hogar": sin la tilde y sin la
+    // barra que si tiene la etiqueta real que siembra la base.
+    mocks.getMovementById.mockResolvedValue(
+      movement({ category_id: "vivienda_hogar" }),
+    );
+
+    const result = await resolveCategoryCorrection("vivienda_hogar");
+
+    expect(result.kind).toBe("applied");
+    if (result.kind !== "applied") return;
+    expect(result.summary).toBe(
+      "Comida de los gatos S/45.00 a categoria Vivienda / Hogar",
+    );
+  });
+
+  it("una categoria de una sola palabra conserva su acento", async () => {
+    mocks.getMovementById.mockResolvedValue(
+      movement({ category_id: "alimentacion", description: "menu del dia" }),
+    );
+
+    const result = await resolveCategoryCorrection("alimentacion");
+
+    expect(result.kind).toBe("applied");
+    if (result.kind !== "applied") return;
+    expect(result.summary).toContain("Alimentación");
   });
 });

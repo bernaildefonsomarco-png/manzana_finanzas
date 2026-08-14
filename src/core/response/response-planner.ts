@@ -51,6 +51,7 @@ import {
 import type { MovementActionResolutionResult } from "@/core/movement-actions/movement-action-resolution";
 import type { ExecutiveActionSurface } from "@/agents/conversational-executive-agent";
 import { buildDashboardDeepLink } from "@/shared/app-links";
+import { getCategoryLabel } from "@/shared/copy/category-copy";
 import type { PendingItem } from "@/shared/types/domain";
 
 export type TurnResponsePlannerInput = {
@@ -1699,7 +1700,9 @@ function composePendingUpdatedText(
     (account) => account.id === pending.proposed_action.account_destination_id
   );
   const movementType = readString(pending.proposed_action.movement_type);
-  const category = pending.normalized_summary.category_id;
+  // La frase dice la etiqueta visible, no el slug: `vivienda_hogar` no es algo
+  // que la persona haya escrito ni pueda reconocer.
+  const category = getCategoryLabel(pending.normalized_summary.category_id);
   const detail =
     movementType === "transferencia"
       ? `transferencia de ${origin?.name ?? "la cuenta elegida"} a ${
