@@ -83,7 +83,13 @@ export type CorrectionProposal = z.infer<typeof CorrectionProposalSchema>;
 /**
  * `RUL-ESTR-01`: modulo por el que el ejecutivo propone crear, modificar,
  * cerrar, pausar o reanudar una caja, una meta, un presupuesto, un pago
- * recurrente o una cuenta.
+ * recurrente, una cuenta o una subcategoria.
+ *
+ * `subcategoria` viaja por aqui y no por una superficie propia justamente para
+ * heredar lo que este modulo ya tiene: confirmacion, caducidad, "deshacer" y
+ * los avisos de `ERR-ASI-01`. La **categoria** no es un valor posible y no
+ * puede serlo: las 12 son fijas (`CATEGORY_IDS`). Cuando la persona pida una
+ * categoria nueva, el nucleo lo contesta con nombre propio en vez de callar.
  *
  * Es deliberadamente plano y no un comando: el modelo describe lo que entendio
  * y `compileStructureProposal` lo convierte en un borrador tipado, aplicando
@@ -98,7 +104,14 @@ export type CorrectionProposal = z.infer<typeof CorrectionProposalSchema>;
 export const StructureProposalRequestSchema = z.object({
   intent: z.enum(["none", "create", "update", "archive", "pause", "resume"]),
   entity: z
-    .enum(["caja", "meta", "presupuesto", "recurrente", "cuenta"])
+    .enum([
+      "caja",
+      "meta",
+      "presupuesto",
+      "recurrente",
+      "cuenta",
+      "subcategoria",
+    ])
     .nullable(),
   /** Lo que se le va a preguntar al usuario, en su idioma y con sus datos. */
   summary: z.string().trim().max(280),
@@ -126,6 +139,11 @@ export const StructureProposalRequestSchema = z.object({
   account_id: z.string().nullable(),
   box_id: z.string().nullable(),
   box_type: z.enum(["compromiso", "objetivo", "emergencia"]).nullable(),
+  /**
+   * En un presupuesto o un pago recurrente, de que categoria es. En una
+   * **subcategoria** es otra cosa: es la categoria de la que cuelga, y ahi no
+   * es opcional — una subcategoria suelta no existe en el dominio.
+   */
   category_id: z.string().nullable(),
   period_kind: z.enum(["semanal", "quincenal", "mensual"]).nullable(),
   budget_kind: z

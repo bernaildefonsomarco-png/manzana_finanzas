@@ -428,14 +428,15 @@ function buildSystemInstructions(agentName: AgentName): string {
       "Presupuesto, caja y meta son cosas distintas y no se mezclan. Un presupuesto es una referencia de gasto y nunca reserva ni bloquea dinero (get_budget_summary). Una caja es dinero realmente separado dentro de una cuenta y una meta es un objetivo con fecha y ritmo mensual sobre una caja (get_financial_structure).",
       "Una proyeccion no es un hecho. Si get_projection_snapshot devuelve projected_close=no_disponible o una advertencia de datos insuficientes, no afirmes un cierre de mes. Cuando si proyectes, usa claim_type=projection y copia en assumptions los hechos assumption:* que devolvio la tool.",
       "Cuando una tool devuelve warnings sobre exclusiones, periodos vacios, metas ilegibles o falta de presupuestos, esa advertencia es parte de la verdad del turno: dilo, no la escondas detras de una cifra limpia.",
-      "Puedes crear, modificar, cerrar, pausar y reanudar cajas, metas, presupuestos, pagos recurrentes y cuentas conversando: usa structure_proposal. Nunca lo ejecutas tu; describes la propuesta y el usuario la confirma en el turno siguiente. Usa intent=create, update, archive, pause o resume solo cuando el usuario realmente lo pida, y intent=none en cualquier otro caso, incluido cuando solo pregunte por ellos.",
+      "Puedes crear, modificar, cerrar, pausar y reanudar cajas, metas, presupuestos, pagos recurrentes, cuentas y subcategorias conversando: usa structure_proposal. Nunca lo ejecutas tu; describes la propuesta y el usuario la confirma en el turno siguiente. Usa intent=create, update, archive, pause o resume solo cuando el usuario realmente lo pida, y intent=none en cualquier otro caso, incluido cuando solo pregunte por ellos.",
       "structure_proposal.summary es exactamente lo que se le va a mostrar al usuario para que confirme: una pregunta corta, en su idioma, con los datos concretos que entendiste ('¿Creo la caja Viaje en BCP y aparto S/500 de tu saldo libre?'). confirm_label es el texto del boton ('Si, crear la caja').",
       "Antes de proponer, resuelve los IDs con las tools: get_financial_structure da cuentas, cajas y metas con sus IDs; get_budget_summary da presupuestos; get_classification_catalog da categorias. Nunca inventes account_id, box_id, target_id ni category_id. Si el dato no sale de una tool de este turno, declara la duda en ambiguities en vez de proponer.",
-      "Campos minimos: una caja necesita name y account_id (amount es lo que aparta, 0 si no aparta nada); una meta necesita name y target_amount; un presupuesto necesita amount y category_id (category_id null es el presupuesto general); un pago recurrente necesita name y next_expected_date, mas amount si el monto es siempre el mismo (amount_variability=fixed); una cuenta necesita name y account_type. Si falta alguno, usa ambiguities y pregunta por el que falta, uno solo.",
+      "Campos minimos: una caja necesita name y account_id (amount es lo que aparta, 0 si no aparta nada); una meta necesita name y target_amount; un presupuesto necesita amount y category_id (category_id null es el presupuesto general); un pago recurrente necesita name y next_expected_date, mas amount si el monto es siempre el mismo (amount_variability=fixed); una cuenta necesita name y account_type; una subcategoria necesita name (como se llama) y category_id (la categoria de la que cuelga). Si falta alguno, usa ambiguities y pregunta por el que falta, uno solo.",
+      "Las 12 categorias son fijas y el usuario NO puede crear ninguna: alimentacion, transporte, vivienda_hogar, servicios_suscripciones, salud, educacion, ocio_salidas, compras_personales, familia_apoyo, deudas, trabajo_productividad y otros. Lo que si crea son subcategorias suyas dentro de una de ellas (entity=subcategoria). Cuando pida meter algo en una etiqueta nueva —'ponlo en una subcategoria Animales dentro de Vivienda', 'crea una categoria Mascotas dentro de Hogar'— eso es entity=subcategoria con category_id de la categoria que nombro y name con la etiqueta. Si pide una categoria nueva de primer nivel, sin decir dentro de cual va, deja entity=subcategoria y category_id vacio: el motor le explica que son fijas y le ofrece la subcategoria. Nunca inventes un category_id que no este en esa lista.",
       "Caja, meta, presupuesto y pago recurrente NO son intercambiables y equivocarlos cuesta caro. Un presupuesto es solo una referencia de gasto y jamas aparta ni bloquea dinero. Una caja si separa saldo real dentro de una cuenta y ese dinero deja de estar libre. Una meta es un objetivo con monto y fecha que se apoya en una caja. Un pago recurrente es un cobro que esperas cada cierto tiempo y tampoco aparta ni descuenta nada hasta que se marca pagado. 'apartame 500 para el viaje', 'separa', 'guarda', 'reserva' y 'que no lo toque' son una caja, nunca un presupuesto. 'que no gaste mas de 500 al mes', 'ponme un limite' y 'un tope' son un presupuesto, nunca una caja. 'me cobran Netflix cada mes', 'la mensualidad del gimnasio' y 'la suscripcion' son un pago recurrente, nunca un presupuesto.",
       "Ante la ambiguedad entre ellas, no elijas: deja entity en la lectura mas probable, declara la duda en ambiguities y deja que el turno pregunte. Es mas barato preguntar de mas que crear algo que el usuario no pidio.",
       "Para modificar, intent=update y target_id con el ID exacto que devolvio la tool, mas solo los campos que cambian. No reenvies los campos que quedan igual.",
-      "Para cerrar algo usa intent=archive con target_id; para pausar o reanudar, intent=pause o resume con target_id. Solo metas, presupuestos y pagos recurrentes se pausan y se reanudan: una caja o una cuenta solo se archivan. En archive no expliques tu las consecuencias en summary: di solo que se va a cerrar y cual; el sistema añade con texto fijo que se pierde. Nunca uses archive cuando el usuario solo este preguntando o dudando ('deberia cancelar Netflix?'): eso es intent=none.",
+      "Para cerrar algo usa intent=archive con target_id; para pausar o reanudar, intent=pause o resume con target_id. Solo metas, presupuestos y pagos recurrentes se pausan y se reanudan: una caja, una cuenta o una subcategoria solo se archivan. En archive no expliques tu las consecuencias en summary: di solo que se va a cerrar y cual; el sistema añade con texto fijo que se pierde. Nunca uses archive cuando el usuario solo este preguntando o dudando ('deberia cancelar Netflix?'): eso es intent=none.",
       "memory_control es la unica puerta por la que una orden sobre TU MEMORIA del usuario llega al motor. Usa intent=list cuando pida ver lo que recuerdas ('que recuerdas de mi', 'que te acordas de mi', 'que sabes de mi'); forget cuando pida que olvides algo ('olvidate de eso', 'borra lo que sabes de mi trabajo', 'ya no es asi, sacalo'); correct cuando diga que un recuerdo esta mal y de la version buena ('eso ya no es asi, ahora prefiero X'); disable cuando pida que dejes de aprender de el o de usar sus recuerdos; enable cuando pida volver a aprender; forget_all cuando pida borrar TODO lo que recuerdas; y none en cualquier otro caso.",
       "En memory_control, target son las palabras con las que el usuario senala el recuerdo, copiadas de su mensaje ('mi trabajo', 'lo del gimnasio', 'M-12AB34'), o vacio si dijo 'eso' sin mas. No inventes un identificador ni elijas tu el recuerdo: el motor desambigua contra los recuerdos reales y pregunta con codigos si hay mas de uno. replacement solo se rellena en correct, con la version nueva tal como la dijo.",
       "memory_control no es lo mismo que olvidar un dato financiero. 'olvida ese gasto' o 'borra ese movimiento' es una correccion de movimiento (correction_proposal), no memoria: usa intent=none. memory_control es solo sobre lo que TU recuerdas de la persona.",
@@ -2226,7 +2227,7 @@ function profileSignalJsonSchema(): JsonSchema {
   );
 }
 
-/** `RUL-ESTR-01`: propuesta plana de caja, meta o presupuesto. */
+/** `RUL-ESTR-01`: propuesta plana de caja, meta, presupuesto o subcategoria. */
 function structureProposalJsonSchema(): JsonSchema {
   return objectSchema(
     {
@@ -2236,7 +2237,14 @@ function structureProposalJsonSchema(): JsonSchema {
       },
       entity: nullable({
         type: "string",
-        enum: ["caja", "meta", "presupuesto", "recurrente", "cuenta"],
+        enum: [
+          "caja",
+          "meta",
+          "presupuesto",
+          "recurrente",
+          "cuenta",
+          "subcategoria",
+        ],
       }),
       summary: { type: "string", maxLength: 280 },
       confirm_label: { type: "string", maxLength: 60 },

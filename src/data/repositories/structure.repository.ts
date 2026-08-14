@@ -43,7 +43,11 @@ export type StructureAuditEntityType =
   | "goal"
   | "budget"
   | "recurring_rule"
-  | "account";
+  | "account"
+  // Mismo `entity_type` que escribe `appendClassificationAudit` para la
+  // pantalla de Configuracion: una subcategoria creada hablando y otra creada
+  // desde la pantalla tienen que ser la misma fila de auditoria leida igual.
+  | "user_subcategory";
 
 /**
  * Acciones que admite `movement_audit_action_known` (`006`, ampliada en

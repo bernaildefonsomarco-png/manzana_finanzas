@@ -123,6 +123,7 @@ export function entityLabel(entity: StructureEntity): string {
   if (entity === "meta") return "meta";
   if (entity === "presupuesto") return "presupuesto";
   if (entity === "cuenta") return "cuenta";
+  if (entity === "subcategoria") return "subcategoría";
   return "pago recurrente";
 }
 

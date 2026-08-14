@@ -66,7 +66,7 @@ export type TurnResponsePlannerInput = {
   captureDraftResolution?: CaptureDraftResolutionResult;
   correctionProposal?: CorrectionAgentOutput;
   correctionResolution?: CorrectionResolutionResult;
-  /** Borrador de caja, meta o presupuesto que este turno propone (`RUL-ESTR-03`). */
+  /** Borrador de cualquiera de las `STRUCTURE_ENTITIES` que este turno propone (`RUL-ESTR-03`). */
   structureProposal?: StructureProposal;
   /** Lectura ambigua caja/meta/presupuesto: se pregunta, no se escribe (`RUL-PRES-01`). */
   structureAmbiguityQuestion?: string;

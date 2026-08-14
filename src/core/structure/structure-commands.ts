@@ -38,13 +38,29 @@ import { BUDGET_KINDS, BUDGET_PERIOD_KINDS } from "@/core/budgets";
  * mueve plata.
  */
 
-/** Las entidades de estructura que el asistente puede escribir. */
+/**
+ * Las entidades de estructura que el asistente puede escribir.
+ *
+ * `subcategoria` entra aqui y **no** como superficie nueva a proposito. Crear
+ * una subcategoria hablando necesita exactamente lo que esta tuberia ya
+ * resuelve —propuesta, confirmacion explicita, idempotencia, caducidad y
+ * deshacer (`RUL-ESTR-01`, `RUL-ESTR-03`)— y montarla aparte habria duplicado
+ * las cuatro. Ademas hereda gratis los avisos de `ERR-ASI-01`: el "no pude" y
+ * el "eso no lo hice en este turno" que `response-planner` ya compone para
+ * `structure_proposal`.
+ *
+ * La **categoria** no esta ni lo estara: las 12 son un enum fijo del dominio
+ * (`CATEGORY_IDS`, sembradas en `003_categories_tags.sql`) y ni la pantalla ni
+ * la API dejan crear una. Lo que la persona si crea es la subcategoria que
+ * cuelga de una de ellas (`user_subcategories`).
+ */
 export const STRUCTURE_ENTITIES = [
   "caja",
   "meta",
   "presupuesto",
   "recurrente",
   "cuenta",
+  "subcategoria",
 ] as const;
 export type StructureEntity = (typeof STRUCTURE_ENTITIES)[number];
 
@@ -307,6 +323,44 @@ export type AccountLifecyclePayload = z.infer<
   typeof AccountLifecyclePayloadSchema
 >;
 
+// --- Subcategoria ---------------------------------------------------------
+
+/**
+ * `RUL-CAT`: una subcategoria cuelga siempre de una de las 12 categorias
+ * canonicas. No hay subcategoria suelta ni subcategoria de subcategoria, y por
+ * eso `category_id` es obligatorio y sale del enum, no de texto libre.
+ *
+ * El minimo de dos caracteres no es decorativo: es el mismo `LabelSchema` que
+ * exige `ClassificationCommandSchema`, el esquema con el que la escritura se
+ * valida de verdad. Con un minimo mas laxo aqui, el borrador se propondria, el
+ * usuario lo confirmaria y la escritura moriria despues del "si".
+ */
+export const SubcategoryLabelSchema = z.string().trim().min(2).max(80);
+
+export const CreateSubcategoryPayloadSchema = z.object({
+  category_id: z.enum(CATEGORY_IDS),
+  label: SubcategoryLabelSchema,
+});
+export type CreateSubcategoryPayload = z.infer<
+  typeof CreateSubcategoryPayloadSchema
+>;
+
+/** Lo unico que se cambia de una subcategoria es como se llama. */
+export const UpdateSubcategoryPayloadSchema = z.object({
+  subcategory_id: z.string().uuid(),
+  label: SubcategoryLabelSchema,
+});
+export type UpdateSubcategoryPayload = z.infer<
+  typeof UpdateSubcategoryPayloadSchema
+>;
+
+export const SubcategoryLifecyclePayloadSchema = z.object({
+  subcategory_id: z.string().uuid(),
+});
+export type SubcategoryLifecyclePayload = z.infer<
+  typeof SubcategoryLifecyclePayloadSchema
+>;
+
 // --- Comando --------------------------------------------------------------
 
 const CommandEnvelopeShape = {
@@ -423,6 +477,19 @@ export const ArchiveAccountCommandSchema = structureCommand(
   AccountLifecyclePayloadSchema,
 );
 
+export const CreateSubcategoryCommandSchema = structureCommand(
+  "CreateSubcategoryCommand",
+  CreateSubcategoryPayloadSchema,
+);
+export const UpdateSubcategoryCommandSchema = structureCommand(
+  "UpdateSubcategoryCommand",
+  UpdateSubcategoryPayloadSchema,
+);
+export const ArchiveSubcategoryCommandSchema = structureCommand(
+  "ArchiveSubcategoryCommand",
+  SubcategoryLifecyclePayloadSchema,
+);
+
 export const StructureCommandSchema = z.discriminatedUnion("type", [
   CreateBoxCommandSchema,
   UpdateBoxCommandSchema,
@@ -445,6 +512,9 @@ export const StructureCommandSchema = z.discriminatedUnion("type", [
   CreateAccountCommandSchema,
   UpdateAccountCommandSchema,
   ArchiveAccountCommandSchema,
+  CreateSubcategoryCommandSchema,
+  UpdateSubcategoryCommandSchema,
+  ArchiveSubcategoryCommandSchema,
 ]);
 export type StructureCommand = z.infer<typeof StructureCommandSchema>;
 
@@ -481,6 +551,9 @@ const COMMAND_SHAPE: Record<
   CreateAccountCommand: { entity: "cuenta", operation: "create" },
   UpdateAccountCommand: { entity: "cuenta", operation: "update" },
   ArchiveAccountCommand: { entity: "cuenta", operation: "archive" },
+  CreateSubcategoryCommand: { entity: "subcategoria", operation: "create" },
+  UpdateSubcategoryCommand: { entity: "subcategoria", operation: "update" },
+  ArchiveSubcategoryCommand: { entity: "subcategoria", operation: "archive" },
 };
 
 export const STRUCTURE_COMMAND_TYPES = Object.keys(COMMAND_SHAPE) as [

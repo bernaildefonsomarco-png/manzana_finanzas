@@ -1,3 +1,4 @@
+import { CATEGORY_LABELS } from "@/shared/copy/category-copy";
 import type { StructureEntity } from "./structure-commands";
 
 /**
@@ -27,7 +28,15 @@ export type StructureIntentReading =
       kind: "ambiguous";
       candidates: StructureEntity[];
       evidence: string[];
-    };
+    }
+  /**
+   * `ERR-ASI-01`: la persona pidio crear o cambiar una **categoria**, y eso el
+   * motor no lo hace ni lo hara. Es una lectura propia y no un `none` porque
+   * las dos terminan distinto: `none` deja seguir el turno en silencio —que es
+   * exactamente el fallo que este modulo existe para cerrar— y esta obliga a
+   * decirlo con todas las letras y a ofrecer la subcategoria, que si se puede.
+   */
+  | { kind: "unsupported"; reason: "category_is_fixed"; evidence: string[] };
 
 /** Verbos que significan apartar dinero de verdad: eso es una caja. */
 const SENALES_DE_CAJA = [
@@ -112,6 +121,114 @@ const SENALES_DE_CUENTA = [
   "billetera",
   "banco nuevo",
 ];
+
+/**
+ * Senales de subcategoria: la etiqueta propia que cuelga de una de las 12
+ * categorias. La palabra es larga y sin sinonimos reales, asi que a diferencia
+ * de "cuenta" no compite con nada.
+ *
+ * "categoria" **no** esta en esta lista y no es un descuido: pedir una
+ * categoria nueva no es pedir una subcategoria, es pedir algo que no existe, y
+ * se lee aparte en `SENALES_DE_CATEGORIA`.
+ */
+const SENALES_DE_SUBCATEGORIA = [
+  "subcategoria",
+  "sub categoria",
+  "subrubro",
+];
+
+/**
+ * La palabra "categoria" a secas. Solo sirve para poder **negar** con nombre
+ * propio (`ERR-ASI-01`), igual que `forget_all` en `memory_control`.
+ */
+const PATRON_DE_CATEGORIA = "(?:categorias?|rubros?)";
+
+/**
+ * Verbos con los que se pide **algo que no habia**. Es un subconjunto estrecho
+ * de `SENALES_DE_ESCRITURA` a proposito: "cambia la categoria de ese gasto"
+ * tambien es una escritura, pero es una correccion de un movimiento y su
+ * camino es `correction_proposal`. Contestar ahi que las categorias son fijas
+ * seria negar algo que el motor si hace.
+ */
+const SENALES_DE_CREACION = [
+  "crea",
+  "crear",
+  "creame",
+  "cree",
+  "creo",
+  "arma",
+  "armar",
+  "abre",
+  "abrir",
+  "agrega",
+  "agregar",
+  "anade",
+  "anadir",
+  "haz",
+  "hacer",
+  "inventa",
+  "inventar",
+  "quiero",
+  "necesito",
+  "pon",
+  "poner",
+  "ponme",
+];
+
+/**
+ * "categoria" precedida o seguida de un determinante que la vuelve algo que
+ * todavia no existe. Es la linea que separa el pedido imposible de los
+ * normales: "una categoria nueva" pide una que no hay, mientras que "la
+ * categoria de ese gasto" o "en la categoria comida" apuntan a una de las 12
+ * que ya estan.
+ *
+ * Los dos `\b` son los que dejan fuera a la subcategoria, que si se puede
+ * crear: dentro de "subcategoria" no hay limite de palabra antes de
+ * "categoria", porque la "b" que la precede tambien es caracter de palabra.
+ * Sin ellos, la frase que si se puede atender —"ponlo en una subcategoria
+ * nueva"— acabaria contestando que no se puede.
+ */
+const CATEGORIA_QUE_NO_EXISTE = new RegExp(
+  `\\b(?:una|otra|nueva|nuevas)\\s+(?:nueva\\s+)?${PATRON_DE_CATEGORIA}\\b` +
+    `|\\b${PATRON_DE_CATEGORIA}\\s+(?:nueva|nuevas)\\b`,
+);
+
+/**
+ * Devuelve la evidencia de que la persona pidio una categoria **nueva**, o
+ * `null` si no lo pidio. Exige las dos mitades —un verbo de creacion y un
+ * determinante que la haga inexistente— porque cada una por su cuenta produce
+ * falsos positivos caros: el verbo solo confunde "agrega este gasto a la
+ * categoria comida", y el determinante solo confunde "cual es una categoria
+ * que uso poco".
+ */
+function leerCategoriaNueva(texto: string): string[] | null {
+  const pideCrear = SENALES_DE_CREACION.some((senal) => contiene(texto, senal));
+  if (!pideCrear) return null;
+
+  const match = CATEGORIA_QUE_NO_EXISTE.exec(texto);
+  return match ? [match[0]] : null;
+}
+
+/**
+ * `ERR-ASI-01`: la respuesta al pedido que el motor no puede atender. Dice el
+ * limite, lo enumera —para que no haya que adivinar cuales son las 12— y
+ * ofrece lo unico que si se puede hacer, que ademas suele ser lo que la
+ * persona queria de verdad.
+ *
+ * El texto no lo redacta el modelo, por la misma razon que en `RUL-ESTR-05`:
+ * un "no puedo" que el modelo suaviza o adorna deja a la persona creyendo que
+ * quizas si.
+ */
+export function composeCategoryIsFixedAnswer(): string {
+  const nombres = Object.values(CATEGORY_LABELS);
+  const enumeradas = `${nombres.slice(0, -1).join(", ")} y ${nombres[nombres.length - 1]}`;
+  return (
+    "No puedo crear categorías: son 12 fijas y no se añaden ni se quitan. " +
+    `Las que hay son ${enumeradas}. ` +
+    "Lo que sí puedo crear es una subcategoría tuya dentro de una de ellas. " +
+    "Dime cómo la llamamos y dentro de cuál va, y te la preparo."
+  );
+}
 
 /** Verbos de escritura: sin uno de estos, el turno no pide crear nada. */
 const SENALES_DE_ESCRITURA = [
@@ -215,6 +332,10 @@ export function readStructureIntent(text: string): StructureIntentReading {
       entity: "cuenta",
       evidencia: coincidencias(normalizado, SENALES_DE_CUENTA),
     },
+    {
+      entity: "subcategoria",
+      evidencia: coincidencias(normalizado, SENALES_DE_SUBCATEGORIA),
+    },
   ];
 
   // Nombrar una entidad no es pedirla: en "crea una caja para esa meta" la
@@ -228,6 +349,21 @@ export function readStructureIntent(text: string): StructureIntentReading {
   const candidatos = evidenciaPorEntidad
     .filter((item) => esObjetivo(normalizado, item.evidencia))
     .map((item) => item.entity);
+
+  // `ERR-ASI-01`: pedir una **categoria** nueva se lee antes que nada, porque
+  // es lo unico de este modulo que termina en un "no". Se lee solo cuando la
+  // frase no habla ya de una subcategoria: "crea una subcategoria dentro de la
+  // categoria Vivienda" nombra las dos y pide la que si existe.
+  const categoriaNueva = candidatos.includes("subcategoria")
+    ? null
+    : leerCategoriaNueva(normalizado);
+  if (categoriaNueva) {
+    return {
+      kind: "unsupported",
+      reason: "category_is_fixed",
+      evidence: categoriaNueva,
+    };
+  }
 
   if (candidatos.length === 0) {
     // Sin ninguna senal de dominio no hay nada que clasificar aqui, aunque el
@@ -265,6 +401,9 @@ export function structureProposalConflictsWithIntent(params: {
 }): boolean {
   const { reading, proposedEntity } = params;
   if (reading.kind === "none") return false;
+  // Un pedido de categoria nueva no lo resuelve este guardarrail: lo contesta
+  // el compilador con el "no puedo" y su alternativa, antes de llegar aqui.
+  if (reading.kind === "unsupported") return false;
   if (reading.kind === "ambiguous") {
     // Ambigua: la propuesta no puede resolverla por su cuenta.
     return true;
@@ -282,6 +421,7 @@ const QUE_ES_CADA_UNA: Record<StructureEntity, string> = {
   presupuesto: "un presupuesto solo es una referencia de gasto y no toca tu saldo",
   recurrente: "un pago recurrente es algo que esperas pagar cada cierto tiempo, y tampoco aparta nada",
   cuenta: "una cuenta es dónde vive tu dinero",
+  subcategoria: "una subcategoría es una etiqueta tuya dentro de una de las 12 categorías, y no toca ningún saldo",
 };
 
 /** Pregunta que se le hace al usuario cuando la lectura no es unica. */
@@ -321,6 +461,7 @@ function articuloIndefinido(entity: StructureEntity): string {
   if (entity === "presupuesto") return "un presupuesto";
   if (entity === "recurrente") return "un pago recurrente";
   if (entity === "cuenta") return "una cuenta";
+  if (entity === "subcategoria") return "una subcategoría";
   return entity === "caja" ? "una caja" : "una meta";
 }
 

@@ -7,12 +7,14 @@ import {
   CreateBudgetPayloadSchema,
   CreateGoalPayloadSchema,
   CreateRecurringPayloadSchema,
+  CreateSubcategoryPayloadSchema,
   isDestructiveStructureOperation,
   UpdateAccountPayloadSchema,
   UpdateBoxPayloadSchema,
   UpdateBudgetPayloadSchema,
   UpdateGoalPayloadSchema,
   UpdateRecurringPayloadSchema,
+  UpdateSubcategoryPayloadSchema,
   type StructureEntity,
   type StructureOperation,
 } from "./structure-commands";
@@ -21,6 +23,7 @@ import {
   type StructureProposal,
 } from "./structure-proposal";
 import {
+  composeCategoryIsFixedAnswer,
   composeStructureAmbiguityQuestion,
   readStructureIntent,
   structureProposalConflictsWithIntent,
@@ -72,6 +75,28 @@ export function compileStructureProposal(input: {
 }): CompiledStructureProposal {
   const request = input.request ?? null;
   const reading = readStructureIntent(input.userText);
+
+  // `ERR-ASI-01`: lo primero que se resuelve es lo que el motor **no** puede
+  // hacer. Va antes que todo lo demas porque el peor final posible de este
+  // turno no es equivocar la entidad: es callar. Sin esta rama, "crea una
+  // categoria Animales" salia por el `kind: "none"` de mas abajo y el turno
+  // seguia como si nadie hubiera pedido nada.
+  //
+  // La unica salida es que el modelo haya entendido lo mismo que el dominio:
+  // una categoria nueva "dentro de" otra es una **subcategoria**, y entonces
+  // si hay algo que proponer en vez de un "no".
+  if (reading.kind === "unsupported") {
+    const proponeSubcategoria =
+      request?.entity === "subcategoria" &&
+      request.intent !== "none" &&
+      Boolean(request.category_id);
+    if (!proponeSubcategoria) {
+      return {
+        kind: "needs_clarification",
+        question: composeCategoryIsFixedAnswer(),
+      };
+    }
+  }
 
   if (!request || request.intent === "none" || !request.entity) {
     // El modelo no propuso nada, pero el mensaje si pedia estructura de forma
@@ -231,6 +256,9 @@ function buildPayload(input: {
   if (entity === "meta") return buildGoalPayload(request, operation);
   if (entity === "presupuesto") return buildBudgetPayload(request, operation);
   if (entity === "recurrente") return buildRecurringPayload(request, operation);
+  if (entity === "subcategoria") {
+    return buildSubcategoryPayload(request, operation);
+  }
   return buildAccountPayload(request, operation);
 }
 
@@ -240,6 +268,7 @@ function targetFieldFor(entity: StructureEntity): string {
   if (entity === "meta") return "goal_id";
   if (entity === "presupuesto") return "budget_id";
   if (entity === "cuenta") return "account_id";
+  if (entity === "subcategoria") return "subcategory_id";
   return "recurring_rule_id";
 }
 
@@ -396,6 +425,34 @@ function buildAccountPayload(
   );
 }
 
+/**
+ * La subcategoria es la unica entidad de estructura que no lleva dinero
+ * encima: su payload entero son dos datos, como se llama y de que categoria
+ * cuelga. `category_id` viaja como texto libre desde el modelo y aqui lo
+ * estrecha `CATEGORY_IDS`, asi que un id inventado —o el nombre de una
+ * categoria que no existe— no propone nada y acaba preguntando.
+ */
+function buildSubcategoryPayload(
+  request: StructureProposalRequest,
+  operation: StructureOperation,
+): Record<string, unknown> | null {
+  if (operation === "create") {
+    return parsedOrNull(
+      CreateSubcategoryPayloadSchema.safeParse({
+        category_id: request.category_id,
+        label: request.name,
+      }),
+    );
+  }
+
+  return parsedOrNull(
+    UpdateSubcategoryPayloadSchema.safeParse({
+      subcategory_id: request.target_id,
+      label: request.name,
+    }),
+  );
+}
+
 function parsedOrNull(
   result: { success: true; data: unknown } | { success: false },
 ): Record<string, unknown> | null {
@@ -419,6 +476,13 @@ function composeUnsupportedOperationQuestion(
   entity: StructureEntity,
   operation: StructureOperation,
 ): string {
+  // Una subcategoria tiene las tres operaciones que se pueden pedir sobre
+  // ella, asi que lo unico que puede faltarle es pausarla o reanudarla, que no
+  // significan nada: no genera ocurrencias ni mide un periodo.
+  if (entity === "subcategoria") {
+    return "Una subcategoría no se pausa: o la dejas como está, o la archivo y deja de aparecer para movimientos nuevos. ¿Qué prefieres?";
+  }
+
   const verbo = operation === "pause" ? "pausar" : "reanudar";
   if (entity === "caja") {
     return `Una caja no se puede ${verbo}: o la dejas como está, o la cierro y te devuelvo el dinero a lo libre. ¿Qué prefieres?`;
@@ -434,6 +498,12 @@ function composeMissingDataQuestion(
   operation: StructureOperation,
 ): string {
   if (operation === "archive") {
+    // Una subcategoria no "tiene" nada dentro: los movimientos que la usan
+    // siguen apuntando a ella. Preguntarlo con la frase de las demas prometeria
+    // una consecuencia que no existe.
+    if (entity === "subcategoria") {
+      return "¿Cuál subcategoría quieres archivar? Dime cuál y te digo qué pasa con los movimientos que ya la usan.";
+    }
     return `¿Cuál ${nombreDe(entity)} quieres cerrar? Dime cuál y te digo qué pasa con lo que tiene antes de tocar nada.`;
   }
   if (operation === "pause" || operation === "resume") {
@@ -450,9 +520,15 @@ function composeMissingDataQuestion(
     if (entity === "cuenta") {
       return "¿Cuál cuenta quieres cambiar, y qué le cambio?";
     }
+    if (entity === "subcategoria") {
+      return "¿Cuál subcategoría quieres renombrar, y cómo la dejo?";
+    }
     return "¿Cuál pago recurrente quieres cambiar, y qué le cambio?";
   }
 
+  if (entity === "subcategoria") {
+    return "Para crear la subcategoría necesito cómo se llama y dentro de cuál de las 12 categorías va. ¿Me los dices?";
+  }
   if (entity === "caja") {
     return "Para crear la caja necesito el nombre y de qué cuenta sale el dinero. ¿Me los dices?";
   }
@@ -470,6 +546,7 @@ function composeMissingDataQuestion(
 
 function nombreDe(entity: StructureEntity): string {
   if (entity === "recurrente") return "pago recurrente";
+  if (entity === "subcategoria") return "subcategoría";
   return entity;
 }
 

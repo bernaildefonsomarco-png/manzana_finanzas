@@ -42,6 +42,11 @@ import {
   updateRecurringFromCommand,
 } from "./recurring-executor";
 import {
+  archiveSubcategoryFromCommand,
+  createSubcategoryFromCommand,
+  updateSubcategoryFromCommand,
+} from "./subcategory-executor";
+import {
   entityForCommandType,
   isDestructiveStructureOperation,
   operationForCommandType,
@@ -164,6 +169,12 @@ export async function executeStructureCommand(params: {
         return await updateAccountFromCommand(params.client, command);
       case "ArchiveAccountCommand":
         return await archiveAccountFromCommand(params.client, command);
+      case "CreateSubcategoryCommand":
+        return await createSubcategoryFromCommand(params.client, command);
+      case "UpdateSubcategoryCommand":
+        return await updateSubcategoryFromCommand(params.client, command);
+      case "ArchiveSubcategoryCommand":
+        return await archiveSubcategoryFromCommand(params.client, command);
     }
   } catch (error) {
     return failureFromError({ error, entity, operation, command });
@@ -178,6 +189,11 @@ export async function executeStructureCommand(params: {
  *  - cualquier cambio sobre una regla recurrente es `recurring_activation`,
  *    porque cambia el comportamiento futuro del sistema;
  *  - el resto es una escritura financiera normal.
+ *
+ * Una subcategoria no mueve ni un centavo, pero cae en la misma clasificacion
+ * que las demas a proposito: el gate no mide dinero, mide que la escritura
+ * quede anotada con su actor, su confirmacion explicita y su nivel. Inventarle
+ * una clase propia solo para bajarle el riesgo la sacaria de ese rastro.
  */
 function actionKindFor(
   entity: StructureEntity,

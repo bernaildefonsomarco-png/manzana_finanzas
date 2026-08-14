@@ -348,6 +348,214 @@ describe("cuentas", () => {
   });
 });
 
+describe("subcategorías: lo que sí se puede crear dentro de una categoría", () => {
+  const SUBCATEGORY_ID = "00000000-0000-4000-8000-00000000000b";
+
+  function subcategoryRequest(
+    overrides: Partial<StructureProposalRequest> = {},
+  ): StructureProposalRequest {
+    return request({
+      entity: "subcategoria",
+      name: "Animales",
+      category_id: "vivienda_hogar",
+      amount: null,
+      account_id: null,
+      box_type: null,
+      summary: "¿Creo la subcategoría Animales dentro de Vivienda / Hogar?",
+      confirm_label: "Sí, créala",
+      ...overrides,
+    });
+  }
+
+  it("crear una subcategoría dentro de una categoría se convierte en borrador confirmable", () => {
+    const compiled = compileStructureProposal({
+      request: subcategoryRequest(),
+      userText:
+        "ese gasto de comida de gatos ponlo dentro de una nueva subcategoria llamada Animales dentro de Vivienda",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("proposal");
+    if (compiled.kind !== "proposal") return;
+    expect(compiled.proposal).toMatchObject({
+      entity: "subcategoria",
+      operation: "create",
+      command_type: "CreateSubcategoryCommand",
+    });
+    expect(compiled.proposal.payload).toEqual({
+      category_id: "vivienda_hogar",
+      label: "Animales",
+    });
+  });
+
+  it("sin decir dentro de cuál va, pregunta en vez de crear una suelta", () => {
+    // Una subcategoría sin categoría madre no existe en el dominio: la
+    // columna `category_id` de `user_subcategories` no admite nulos.
+    const compiled = compileStructureProposal({
+      request: subcategoryRequest({ category_id: null }),
+      userText: "crea una subcategoria Animales",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("needs_clarification");
+    if (compiled.kind !== "needs_clarification") return;
+    expect(compiled.question).toContain("dentro de cuál de las 12 categorías");
+  });
+
+  it("una categoría inventada no se propone: no está entre las 12", () => {
+    const compiled = compileStructureProposal({
+      request: subcategoryRequest({ category_id: "mascotas" }),
+      userText: "crea una subcategoria Animales en mascotas",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("needs_clarification");
+  });
+
+  it("renombrar una subcategoría necesita su id y el nombre nuevo", () => {
+    const compiled = compileStructureProposal({
+      request: subcategoryRequest({
+        intent: "update",
+        target_id: SUBCATEGORY_ID,
+        name: "Mascotas",
+        category_id: null,
+        summary: "¿Le cambio el nombre a Mascotas?",
+      }),
+      userText: "renombra la subcategoria Animales a Mascotas",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("proposal");
+    if (compiled.kind !== "proposal") return;
+    expect(compiled.proposal.command_type).toBe("UpdateSubcategoryCommand");
+    expect(compiled.proposal.payload).toEqual({
+      subcategory_id: SUBCATEGORY_ID,
+      label: "Mascotas",
+    });
+  });
+
+  it("archivarla avisa de que los movimientos que ya la usan no cambian", () => {
+    const compiled = compileStructureProposal({
+      request: subcategoryRequest({
+        intent: "archive",
+        target_id: SUBCATEGORY_ID,
+        confidence: 0.95,
+        summary: "¿Archivo la subcategoría Animales?",
+      }),
+      userText: "archiva la subcategoria Animales",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("proposal");
+    if (compiled.kind !== "proposal") return;
+    expect(compiled.proposal.command_type).toBe("ArchiveSubcategoryCommand");
+    expect(compiled.proposal.payload).toEqual({
+      subcategory_id: SUBCATEGORY_ID,
+    });
+    expect(compiled.proposal.summary).toContain("conservan su referencia");
+  });
+
+  it("una subcategoría no se pausa, y se dice en vez de traducirlo a otra cosa", () => {
+    const compiled = compileStructureProposal({
+      request: subcategoryRequest({
+        intent: "pause",
+        target_id: SUBCATEGORY_ID,
+        summary: "¿Pauso esa subcategoría?",
+      }),
+      userText: "pausa la subcategoria Animales",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("needs_clarification");
+    if (compiled.kind !== "needs_clarification") return;
+    expect(compiled.question).toContain("no se pausa");
+  });
+});
+
+describe("ERR-ASI-01: pedir una categoría nueva se contesta, nunca se calla", () => {
+  it("dice que son fijas, las nombra y ofrece la subcategoría", () => {
+    // El peor final posible de este turno no es equivocar la entidad: es que
+    // la persona se quede creyendo que se creó algo que no existe.
+    const compiled = compileStructureProposal({
+      request: request({ intent: "none", entity: null }),
+      userText: "crea una categoria nueva que se llame Mascotas",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("needs_clarification");
+    if (compiled.kind !== "needs_clarification") return;
+    expect(compiled.question).toContain("No puedo crear categorías");
+    expect(compiled.question).toContain("Vivienda / Hogar");
+    expect(compiled.question).toContain("subcategoría");
+  });
+
+  it("contesta igual aunque el modelo proponga una subcategoría sin categoría madre", () => {
+    // Sin `category_id` no hay nada que crear, y la respuesta honesta no es
+    // "¿dentro de cuál?" sino explicar por qué la de primer nivel no existe.
+    const compiled = compileStructureProposal({
+      request: request({
+        entity: "subcategoria",
+        name: "Mascotas",
+        category_id: null,
+        amount: null,
+        account_id: null,
+        box_type: null,
+      }),
+      userText: "quiero una categoria nueva para Mascotas",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("needs_clarification");
+    if (compiled.kind !== "needs_clarification") return;
+    expect(compiled.question).toContain("No puedo crear categorías");
+  });
+
+  it("cuando la persona dijo dentro de cuál, se propone la subcategoría en vez del «no»", () => {
+    // "una categoría nueva llamada Animales dentro de Vivienda" es, en el
+    // modelo de dominio, una subcategoría. Negarlo sería negar algo que sí se
+    // puede hacer.
+    const compiled = compileStructureProposal({
+      request: request({
+        entity: "subcategoria",
+        name: "Animales",
+        category_id: "vivienda_hogar",
+        amount: null,
+        account_id: null,
+        box_type: null,
+        summary: "¿Creo la subcategoría Animales dentro de Vivienda / Hogar?",
+      }),
+      userText: "crea una categoria nueva llamada Animales dentro de Vivienda",
+      now: NOW,
+    });
+
+    expect(compiled.kind).toBe("proposal");
+    if (compiled.kind !== "proposal") return;
+    expect(compiled.proposal.command_type).toBe("CreateSubcategoryCommand");
+  });
+
+  it("cambiar la categoría de un gasto no es pedir una categoría nueva", () => {
+    // Eso es una corrección de movimiento y tiene su propio camino. Contestar
+    // aquí que las categorías son fijas negaría algo que el motor sí hace.
+    const compiled = compileStructureProposal({
+      request: request({ intent: "none", entity: null }),
+      userText: "cambia la categoria de ese gasto a transporte",
+      now: NOW,
+    });
+
+    expect(compiled).toEqual({ kind: "none" });
+  });
+
+  it("clasificar un gasto dentro de una categoría existente tampoco lo es", () => {
+    const compiled = compileStructureProposal({
+      request: request({ intent: "none", entity: null }),
+      userText: "pon ese gasto en la categoria transporte",
+      now: NOW,
+    });
+
+    expect(compiled).toEqual({ kind: "none" });
+  });
+});
+
 describe("RUL-ESTR-05: cerrar algo se confirma diciendo qué se pierde", () => {
   const CAJA_ID = "00000000-0000-4000-8000-000000000009";
 

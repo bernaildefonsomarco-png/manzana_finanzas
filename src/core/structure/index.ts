@@ -20,6 +20,9 @@ export {
   CreateAccountPayloadSchema,
   UpdateAccountPayloadSchema,
   AccountLifecyclePayloadSchema,
+  CreateSubcategoryPayloadSchema,
+  UpdateSubcategoryPayloadSchema,
+  SubcategoryLifecyclePayloadSchema,
   commandTypeFor,
   entityForCommandType,
   isDestructiveStructureOperation,
@@ -46,6 +49,7 @@ export {
 export { describeStructureLoss } from "./structure-consequences";
 
 export {
+  composeCategoryIsFixedAnswer,
   composeStructureAmbiguityQuestion,
   readStructureIntent,
   structureProposalConflictsWithIntent,

@@ -151,6 +151,52 @@ export async function insertSubcategory(
   return data as UserSubcategory;
 }
 
+/**
+ * Busca la subcategoria activa del usuario que ya ocupa esa etiqueta dentro de
+ * esa categoria. Es la lectura previa de la escritura conversacional
+ * (`RUL-ESTR-03`): la constraint `user_subcategories_unique_label` de `003` ya
+ * impide el duplicado, pero solo sabe fallar. Preguntar antes permite
+ * distinguir el reenvio del mismo boton —que es "eso ya estaba hecho"— de un
+ * choque de verdad, que es otra cosa que contar.
+ *
+ * Compara por `normalized_label` y no por `label` porque esa es la columna que
+ * la unicidad mira: "Animales", "animales" y "ANIMALES" son la misma.
+ */
+export async function findSubcategoryByLabel(
+  client: Client,
+  input: { userId: string; categoryId: CategoryId; label: string },
+): Promise<UserSubcategory | null> {
+  const { data, error } = await client
+    .from("user_subcategories")
+    .select("*")
+    .eq("user_id", input.userId)
+    .eq("category_id", input.categoryId)
+    .eq("normalized_label", normalizeClassificationKey(input.label))
+    .is("deleted_at", null)
+    .limit(1);
+
+  if (error) throw error;
+  return ((data ?? []) as UserSubcategory[])[0] ?? null;
+}
+
+/** Una subcategoria activa del usuario por su id, o `null` si no es suya. */
+export async function getSubcategoryById(
+  client: Client,
+  userId: string,
+  id: string,
+): Promise<UserSubcategory | null> {
+  const { data, error } = await client
+    .from("user_subcategories")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("id", id)
+    .is("deleted_at", null)
+    .limit(1);
+
+  if (error) throw error;
+  return ((data ?? []) as UserSubcategory[])[0] ?? null;
+}
+
 export async function updateSubcategory(
   client: Client,
   input: { userId: string; id: string; label?: string; archive?: boolean },

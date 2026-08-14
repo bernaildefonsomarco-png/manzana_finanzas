@@ -23,6 +23,12 @@ import type { StructureEntity } from "./structure-commands";
  *    `deleted_at` y deja de mostrarlo. El historial no se borra.
  *  - **recurrente**: `cancelRecurringRule`, que deja de generar ocurrencias
  *    futuras. Lo ya pagado sigue en el historial.
+ *  - **subcategoria**: `updateSubcategory` con `archive`, que marca
+ *    `deleted_at`, igual que `DELETE /api/v1/subcategories/[id]`. Los
+ *    movimientos que ya la usan **conservan su referencia**: la frase repite
+ *    palabra por palabra lo que dice el dialogo de Configuracion
+ *    (`SCR-CAT-02`), para que archivar hablando y archivar por pantalla no
+ *    prometan cosas distintas.
  */
 const QUE_SE_PIERDE: Record<StructureEntity, string> = {
   caja:
@@ -35,6 +41,8 @@ const QUE_SE_PIERDE: Record<StructureEntity, string> = {
     "Ojo con esto: al cerrar el presupuesto dejas de tener ese límite de referencia y desaparece del periodo. Tus gastos y tu saldo no cambian.",
   recurrente:
     "Ojo con esto: al cancelar el pago recurrente dejo de avisarte y de esperar sus próximos cobros. Lo ya pagado se conserva, pero si vuelve a cobrarte, ya no lo voy a estar esperando.",
+  subcategoria:
+    "Ojo con esto: al archivar la subcategoría ya no vas a poder elegirla para movimientos nuevos. Los movimientos que ya la usan conservan su referencia y no cambian.",
 };
 
 /** Frase deterministica de lo que se pierde al cerrar esta estructura. */
