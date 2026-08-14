@@ -7,6 +7,23 @@ import type {
   RecurringRule,
 } from "@/shared/types/domain";
 import { ApiClientError, type ApiResponse } from "@/features/movements/movements-api";
+import { clientIdempotencyKey } from "@/shared/api/http-client";
+
+/**
+ * `14` §7 / `AC-API-05`: toda escritura viaja con `Idempotency-Key`. Este
+ * fichero era el unico cliente de escritura que no la mandaba, y las dos rutas
+ * que la exigen —`confirm` y `batch-confirm`— respondian 400 siempre: se podia
+ * descartar un pendiente pero nunca confirmarlo.
+ *
+ * Va en las cinco escrituras, no solo en las dos que hoy la validan, para que
+ * anadir la puerta en otra ruta no vuelva a romper su cliente en silencio.
+ */
+function writeHeaders(action: string): HeadersInit {
+  return {
+    "content-type": "application/json",
+    "idempotency-key": clientIdempotencyKey(action),
+  };
+}
 
 export type PendingSummaryPatch = Partial<PendingItem["normalized_summary"]>;
 export type PendingActionPatch = {
@@ -109,9 +126,7 @@ export async function updatePendingItem(
   const response = await fetch(`/api/v1/pending/${pendingItemId}`, {
     method: "PATCH",
     credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: writeHeaders("pending-update"),
     body: JSON.stringify({
       normalized_summary: normalizedSummary,
       ...(proposedAction ? { proposed_action: proposedAction } : {}),
@@ -146,9 +161,7 @@ export async function confirmPendingItem(
   const response = await fetch(`/api/v1/pending/${pendingItemId}/confirm`, {
     method: "POST",
     credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: writeHeaders("pending-confirm"),
     body: JSON.stringify({
       confirm_duplicate: options.confirmDuplicate ?? false,
     }),
@@ -192,7 +205,7 @@ export async function batchConfirmPendingItems(
   const response = await fetch("/api/v1/pending/batch-confirm", {
     method: "POST",
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
+    headers: writeHeaders("pending-batch-confirm"),
     body: JSON.stringify({ pending_item_ids: pendingItemIds }),
   });
   const payload = (await response.json()) as ApiResponse<{
@@ -235,7 +248,7 @@ export async function batchDiscardPendingItems(
   const response = await fetch("/api/v1/pending/batch-discard", {
     method: "POST",
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
+    headers: writeHeaders("pending-batch-discard"),
     body: JSON.stringify({
       pending_item_ids: pendingItemIds,
       reason: "dashboard_batch_discard",
@@ -269,9 +282,7 @@ export async function discardPendingItem(
   const response = await fetch(`/api/v1/pending/${pendingItemId}/discard`, {
     method: "POST",
     credentials: "same-origin",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers: writeHeaders("pending-discard"),
     body: JSON.stringify({ reason }),
   });
   const payload = (await response.json()) as ApiResponse<{
