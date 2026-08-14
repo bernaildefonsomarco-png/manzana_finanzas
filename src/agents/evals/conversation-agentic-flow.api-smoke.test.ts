@@ -694,6 +694,7 @@ function correctionContext(message: string): CorrectionContextPack {
       { id: "transporte", label: "Transporte", is_sensitive: false },
       { id: "otros", label: "Otros", is_sensitive: false },
     ],
+    subcategories: [],
     active_conversation_state: {
       last_response_summary: "Se enumeraron desayuno y taxi.",
       continuity_hint: "El taxi fue el ultimo movimiento mencionado y creado.",

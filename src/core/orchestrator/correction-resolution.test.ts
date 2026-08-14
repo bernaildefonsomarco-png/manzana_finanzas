@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ConversationWorkingSet } from "@/agents/conversation-agent/types";
 import type { Database } from "@/data/supabase/types";
-import type { CategoryId, Movement } from "@/shared/types/domain";
+import type {
+  CategoryId,
+  Movement,
+  UserSubcategory,
+} from "@/shared/types/domain";
 import {
   CORRECTION_CANCEL_COMMAND_ID,
   maybeResolveCorrection,
@@ -13,6 +17,8 @@ import {
 
 const mocks = vi.hoisted(() => ({
   getMovementById: vi.fn(),
+  getSubcategoryById: vi.fn(),
+  dispatch: vi.fn(),
 }));
 
 vi.mock("@/data/repositories/movements.repository", () => ({
@@ -20,6 +26,20 @@ vi.mock("@/data/repositories/movements.repository", () => ({
     getMovementById = mocks.getMovementById;
   },
 }));
+
+vi.mock("@/data/repositories/classification.repository", () => ({
+  getSubcategoryById: mocks.getSubcategoryById,
+}));
+
+vi.mock("@/core/finance", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/core/finance")>();
+  return {
+    ...actual,
+    CommandDispatcher: class {
+      dispatch = mocks.dispatch;
+    },
+  };
+});
 
 const MOVEMENT_ID = "00000000-0000-4000-8000-000000000010";
 const ACCOUNT_ID = "00000000-0000-4000-8000-000000000021";
@@ -374,5 +394,142 @@ describe("la categoria se nombra como la nombra el catalogo", () => {
     expect(result.kind).toBe("applied");
     if (result.kind !== "applied") return;
     expect(result.summary).toContain("Alimentación");
+  });
+});
+
+/**
+ * `RUL-CAT`: mover un movimiento ya registrado a una subcategoria suya.
+ *
+ * La lectura de la subcategoria **filtrando por el usuario del turno** es la
+ * frontera (`SEG-04`): el id llega dentro del texto de un comando, y un texto
+ * de comando no es una credencial. Sin ese filtro, un id ajeno —reenviado,
+ * adivinado o heredado de otro hilo— habria enlazado el gasto de esta persona
+ * con la etiqueta privada de otra.
+ */
+const SUBCATEGORY_ID = "00000000-0000-4000-8000-0000000000d1";
+
+function subcategoriaDeVivienda(
+  overrides: Partial<UserSubcategory> = {},
+): UserSubcategory {
+  return {
+    id: SUBCATEGORY_ID,
+    user_id: USER_ID,
+    category_id: "vivienda_hogar",
+    label: "Animales",
+    normalized_label: "animales",
+    created_by: "user",
+    created_at: "2026-08-09T14:00:00.000Z",
+    updated_at: "2026-08-09T14:00:00.000Z",
+    deleted_at: null,
+    metadata: {},
+    ...overrides,
+  };
+}
+
+async function resolveSubcategoryCorrection() {
+  return maybeResolveCorrection({
+    client,
+    userId: USER_ID,
+    text: `corr:subcategory:${MOVEMENT_ID}:${SUBCATEGORY_ID}`,
+    traceId: "00000000-0000-4000-8000-0000000000a2",
+  });
+}
+
+describe("mover un movimiento a una subcategoria", () => {
+  beforeEach(() => {
+    mocks.getMovementById.mockReset();
+    mocks.getSubcategoryById.mockReset();
+    mocks.dispatch.mockReset();
+  });
+
+  it("parsea el comando del boton con el id de la subcategoria", () => {
+    expect(
+      parseCorrectionCommandText(
+        `corr:subcategory:${MOVEMENT_ID}:${SUBCATEGORY_ID}`,
+      ),
+    ).toEqual({
+      kind: "subcategory",
+      command_id: `corr:subcategory:${MOVEMENT_ID}:${SUBCATEGORY_ID}`,
+      movement_id: MOVEMENT_ID,
+      subcategory_id: SUBCATEGORY_ID,
+    });
+  });
+
+  it("rechaza un comando cuya subcategoria no es un id", () => {
+    // El nombre no sirve como identificador: se renombra, y el boton se pulsa
+    // turnos despues.
+    expect(
+      parseCorrectionCommandText(`corr:subcategory:${MOVEMENT_ID}:animales`),
+    ).toBeNull();
+  });
+
+  it("escribe la subcategoria y su categoria madre, y lo cuenta con las dos", async () => {
+    mocks.getMovementById.mockResolvedValue(movement());
+    mocks.getSubcategoryById.mockResolvedValue(subcategoriaDeVivienda());
+    mocks.dispatch.mockResolvedValue({
+      type: "movement_corrected",
+      movement: movement({ subcategory_id: SUBCATEGORY_ID }),
+    });
+
+    const result = await resolveSubcategoryCorrection();
+
+    expect(result.kind).toBe("applied");
+    if (result.kind !== "applied") return;
+    expect(result.summary).toBe(
+      "Comida de los gatos S/45.00 a Animales, dentro de Vivienda / Hogar",
+    );
+    expect(mocks.dispatch).toHaveBeenCalledTimes(1);
+    const command = mocks.dispatch.mock.calls[0]?.[0] as {
+      payload: { corrected_fields: Record<string, unknown> };
+    };
+    expect(command.payload.corrected_fields).toMatchObject({
+      category_id: "vivienda_hogar",
+      subcategory_id: SUBCATEGORY_ID,
+    });
+  });
+
+  it("no vuelve a escribir si el movimiento ya estaba ahi", async () => {
+    mocks.getMovementById.mockResolvedValue(
+      movement({ subcategory_id: SUBCATEGORY_ID }),
+    );
+    mocks.getSubcategoryById.mockResolvedValue(subcategoriaDeVivienda());
+
+    const result = await resolveSubcategoryCorrection();
+
+    expect(result).toMatchObject({ kind: "applied", reason: "already_applied" });
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("SEG-04: una subcategoria que no es suya no mueve nada", async () => {
+    mocks.getMovementById.mockResolvedValue(movement());
+    // `getSubcategoryById` filtra por `user_id`: la de otra persona no existe
+    // desde aqui, exactamente igual que una inventada.
+    mocks.getSubcategoryById.mockResolvedValue(null);
+
+    const result = await resolveSubcategoryCorrection();
+
+    expect(result).toMatchObject({
+      kind: "failed",
+      reason: "reference_not_found",
+      error_code: "SUBCATEGORY_NOT_FOUND",
+    });
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("SEG-04: la lectura de la subcategoria se hace con el usuario del turno", async () => {
+    mocks.getMovementById.mockResolvedValue(movement());
+    mocks.getSubcategoryById.mockResolvedValue(subcategoriaDeVivienda());
+    mocks.dispatch.mockResolvedValue({
+      type: "movement_corrected",
+      movement: movement({ subcategory_id: SUBCATEGORY_ID }),
+    });
+
+    await resolveSubcategoryCorrection();
+
+    expect(mocks.getSubcategoryById).toHaveBeenCalledWith(
+      client,
+      USER_ID,
+      SUBCATEGORY_ID,
+    );
   });
 });

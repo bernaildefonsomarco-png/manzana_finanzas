@@ -220,6 +220,7 @@ function buildCorrectionContext(
         is_default: account.is_default,
       })),
     categories: context.data_context.categories,
+    subcategories: context.data_context.subcategories,
     active_conversation_state: {
       last_response_summary:
         context.conversation_context.active_conversation_state
@@ -278,6 +279,13 @@ function toSemanticCorrection(
       first?.correction_type === "category"
         ? first.corrected_fields?.category_id ?? null
         : null,
+    // La subcategoria viaja por id y no por nombre: es lo unico que sigue
+    // senalando la misma etiqueta si la persona la renombra entre turnos.
+    target_subcategory_id:
+      first?.correction_type === "subcategory"
+        ? first.corrected_fields?.subcategory_id ?? null
+        : null,
+    target_subcategory_label: null,
     target_account_id:
       first?.correction_type === "account"
         ? first.corrected_fields?.account_origin_id ??

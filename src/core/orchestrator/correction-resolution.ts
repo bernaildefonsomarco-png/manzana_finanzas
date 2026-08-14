@@ -6,6 +6,7 @@ import {
   buildAmountCorrectionPatch,
   buildCategoryCorrectionPatch,
   buildLoanCorrectionPatch,
+  buildSubcategoryCorrectionPatch,
   restorePersonNameFromSlug,
 } from "@/agents/correction-agent";
 import { CommandDispatcher } from "@/core/finance";
@@ -17,6 +18,7 @@ import {
 } from "@/core/risk/system-action-gate";
 import { getAccountById } from "@/data/repositories/accounts.repository";
 import { getCategoryById } from "@/data/repositories/categories.repository";
+import { getSubcategoryById } from "@/data/repositories/classification.repository";
 import { getCategoryLabel } from "@/shared/copy/category-copy";
 import {
   SupabaseFinancialCoreRepository,
@@ -32,6 +34,7 @@ import {
   type CategoryId,
   type Movement,
   type MovementType,
+  type UserSubcategory,
 } from "@/shared/types/domain";
 
 type Client = SupabaseClient<Database>;
@@ -62,6 +65,18 @@ export type ParsedCorrectionCommand =
       command_id: string;
       movement_id: string;
       category_id: CategoryId;
+    }
+  /**
+   * `RUL-CAT`: mover un movimiento ya registrado a una subcategoria suya. La
+   * categoria madre no viaja en el comando porque no la elige quien pulsa el
+   * boton: sale de la propia subcategoria al resolverla, que ademas es la
+   * unica lectura que confirma que sigue siendo de esta persona (`SEG-04`).
+   */
+  | {
+      kind: "subcategory";
+      command_id: string;
+      movement_id: string;
+      subcategory_id: string;
     }
   | {
       kind: "account_origin" | "account_destination";
@@ -193,6 +208,15 @@ export function parseCorrectionCommandText(
       command_id: text,
       movement_id: movementId,
       category_id: payload,
+    };
+  }
+
+  if (action === "subcategory" && isUuid(payload)) {
+    return {
+      kind: "subcategory",
+      command_id: text,
+      movement_id: movementId,
+      subcategory_id: payload,
     };
   }
 
@@ -487,6 +511,35 @@ export async function maybeResolveCorrection(params: {
     };
   }
 
+  /**
+   * `SEG-04`: la subcategoria se lee **filtrando por el usuario de este
+   * turno**, y esa lectura es la que autoriza el cambio. El id llega dentro de
+   * un texto de comando que el turno anterior compuso, pero un turno no es una
+   * credencial: sin este filtro, un id ajeno —reenviado, adivinado o heredado
+   * de otro hilo— habria enlazado el gasto de esta persona con la etiqueta
+   * privada de otra. `getSubcategoryById` devuelve `null` tanto si la
+   * subcategoria no existe como si no es suya, que desde fuera es lo mismo.
+   */
+  const subcategory =
+    command.kind === "subcategory"
+      ? await getSubcategoryById(
+          params.client,
+          params.userId,
+          command.subcategory_id
+        )
+      : null;
+
+  if (command.kind === "subcategory" && !subcategory) {
+    return {
+      kind: "failed",
+      reason: "reference_not_found",
+      command,
+      movement: null,
+      idempotent: false,
+      error_code: "SUBCATEGORY_NOT_FOUND",
+    };
+  }
+
   if (isAlreadyApplied(existing, command)) {
     return {
       kind: "applied",
@@ -494,11 +547,11 @@ export async function maybeResolveCorrection(params: {
       command,
       movement: existing,
       idempotent: true,
-      summary: buildAppliedSummary(command, existing),
+      summary: buildAppliedSummary(command, existing, subcategory),
     };
   }
 
-  const appliedSummary = buildAppliedSummary(command, existing);
+  const appliedSummary = buildAppliedSummary(command, existing, subcategory);
 
   try {
     assertSystemActionAllowed({
@@ -537,7 +590,12 @@ export async function maybeResolveCorrection(params: {
       };
     }
 
-    const patch = await buildPatchForCommand(params.client, params.userId, command);
+    const patch = await buildPatchForCommand(
+      params.client,
+      params.userId,
+      command,
+      subcategory
+    );
     const result = await dispatcher.dispatch({
       type: "CorrectMovementCommand",
       command_id: randomUUID(),
@@ -611,8 +669,20 @@ export function summarizeCorrectionMovement(
 async function buildPatchForCommand(
   client: Client,
   userId: string,
-  command: Exclude<ExecutableCorrectionCommand, { kind: "delete" }>
+  command: Exclude<ExecutableCorrectionCommand, { kind: "delete" }>,
+  /** Ya resuelta y ya comprobada como suya; nunca se vuelve a leer aqui. */
+  subcategory: UserSubcategory | null
 ): Promise<MovementPatch> {
+  if (command.kind === "subcategory") {
+    if (!subcategory) throw new CorrectionReferenceError("SUBCATEGORY_NOT_FOUND");
+    return buildSubcategoryCorrectionPatch({
+      subcategoryId: subcategory.id,
+      subcategoryLabel: subcategory.label,
+      categoryId: subcategory.category_id,
+      categoryLabel: categoryLabelOf(subcategory.category_id),
+    });
+  }
+
   if (command.kind === "loan_to" || command.kind === "loan_from") {
     return buildLoanCorrectionPatch({
       targetType: command.target_type,
@@ -653,9 +723,19 @@ async function buildPatchForCommand(
 
 function buildAppliedSummary(
   command: ExecutableCorrectionCommand,
-  movement: Movement
+  movement: Movement,
+  subcategory: UserSubcategory | null
 ): string {
   const movementLabel = summarizeCorrectionMovement(movement);
+
+  if (command.kind === "subcategory") {
+    // La subcategoria se nombra siempre con su categoria detras porque el
+    // nombre solo no situa nada: "Animales" puede colgar de Vivienda / Hogar o
+    // de Salud, y la persona necesita ver donde quedo.
+    return subcategory
+      ? `${movementLabel} a ${subcategory.label}, dentro de ${categoryLabelOf(subcategory.category_id)}`
+      : `${movementLabel} a esa subcategoría`;
+  }
 
   if (command.kind === "loan_to" || command.kind === "loan_from") {
     const target =
@@ -700,6 +780,10 @@ function isAlreadyApplied(
     return movement.category_id === command.category_id;
   }
 
+  if (command.kind === "subcategory") {
+    return movement.subcategory_id === command.subcategory_id;
+  }
+
   if (command.kind === "account_origin" || command.kind === "account_destination") {
     return movement[command.account_field] === command.account_id;
   }
@@ -710,7 +794,12 @@ function isAlreadyApplied(
 function correctionReasonForCommand(
   command: Exclude<ExecutableCorrectionCommand, { kind: "delete" }>
 ): "user_correction" | "classification_fix" | "account_fix" {
-  if (command.kind === "category" || command.kind === "loan_to" || command.kind === "loan_from") {
+  if (
+    command.kind === "category" ||
+    command.kind === "subcategory" ||
+    command.kind === "loan_to" ||
+    command.kind === "loan_from"
+  ) {
     return "classification_fix";
   }
 
@@ -767,7 +856,7 @@ function isUuid(value: string): boolean {
 }
 
 class CorrectionReferenceError extends Error {
-  constructor(readonly code: "ACCOUNT_NOT_FOUND") {
+  constructor(readonly code: "ACCOUNT_NOT_FOUND" | "SUBCATEGORY_NOT_FOUND") {
     super(code);
   }
 }

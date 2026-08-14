@@ -69,6 +69,7 @@ import {
   isCorrectionLikeText,
   type CorrectionAgentOutput,
   type CorrectionMovementCandidate,
+  type CorrectionSubcategoryCandidate,
 } from "@/agents/correction-agent";
 import {
   ConversationalExecutiveAgent,
@@ -1321,6 +1322,7 @@ export class FinancialOrchestrator {
         text,
         channel,
         timezone: dataContextPack.timezone,
+        subcategories: dataContextPack.subcategories,
       });
       const correctionAgentResult =
         initialOrchestrationPlanning?.executive != null
@@ -5412,6 +5414,12 @@ export class FinancialOrchestrator {
     text: string;
     channel: Channel;
     timezone: string;
+    /**
+     * `RUL-CAT`: el catalogo propio de subcategorias. Llega prestado del
+     * Context Pack de datos, que ya lo leyo en este mismo turno, en vez de
+     * repetir la consulta: es exactamente la misma lista del mismo usuario.
+     */
+    subcategories: CorrectionSubcategoryCandidate[];
   }) {
     const userId = params.externalEvent.user_id!;
     const [recentMovements, accounts, categories, activeState, recentChanges] =
@@ -5457,6 +5465,7 @@ export class FinancialOrchestrator {
         label: category.label,
         is_sensitive: category.is_sensitive,
       })),
+      subcategories: params.subcategories,
       active_conversation_state: {
         last_response_summary: activeState?.last_result_summary ?? null,
         continuity_hint: activeState?.continuity_hint ?? null,

@@ -16,8 +16,11 @@ import type {
   CorrectionCommand,
   CorrectionContextPack,
   CorrectionMovementCandidate,
+  CorrectionSubcategoryCandidate,
   SemanticCorrectionInterpretation,
+  SubcategoryClarification,
 } from "./types";
+import { getCategoryLabel } from "@/shared/copy/category-copy";
 import { SemanticCorrectionInterpretationSchema } from "./types";
 
 const CORRECTION_WINDOW_MINUTES = 15;
@@ -39,6 +42,19 @@ type CorrectionTarget =
     }
   | {
       kind: "category";
+      categoryId: CategoryId;
+      categoryLabel: string;
+      targetLabel: string;
+    }
+  /**
+   * Mover un movimiento ya registrado a una subcategoria suya. Lleva tambien
+   * la categoria de la que cuelga porque el movimiento se corrige entero: una
+   * subcategoria sin su categoria madre deja la fila incoherente (`RUL-CAT`).
+   */
+  | {
+      kind: "subcategory";
+      subcategoryId: string;
+      subcategoryLabel: string;
       categoryId: CategoryId;
       categoryLabel: string;
       targetLabel: string;
@@ -271,8 +287,8 @@ export function compileSemanticCorrection(
     };
   }
 
-  const target = semanticTarget(contextPack, interpretation);
-  if (!target) {
+  const resolution = semanticTarget(contextPack, interpretation);
+  if (!resolution) {
     return {
       kind: "needs_clarification",
       reason: "ambiguous_reference",
@@ -281,6 +297,12 @@ export function compileSemanticCorrection(
         "Entendi que quieres corregir algo, pero falta un dato seguro para preparar el cambio.",
     };
   }
+
+  if (resolution.kind === "subcategory_clarification") {
+    return subcategoryClarificationOutput(resolution.clarification);
+  }
+
+  const target = resolution.target;
 
   const commands = candidates.map((movement) =>
     buildCorrectionCommandForTarget({
@@ -320,15 +342,38 @@ function isEligibleCorrectionCandidate(
   );
 }
 
+/**
+ * `ERR-ASI-01`: cuando el problema es la subcategoria, el turno lo dice con esa
+ * palabra en vez de esconderlo en "no pude elegir un movimiento". La confianza
+ * queda por debajo del umbral de accion a proposito: esto no ejecuta nada.
+ */
+function subcategoryClarificationOutput(
+  clarification: SubcategoryClarification
+): CorrectionAgentOutput {
+  return {
+    kind: "needs_clarification",
+    reason:
+      clarification.kind === "not_found"
+        ? "subcategory_not_found"
+        : "ambiguous_subcategory",
+    confidence: 0.6,
+    safe_explanation:
+      clarification.kind === "not_found"
+        ? `No existe una subcategoria llamada "${clarification.label}".`
+        : `"${clarification.label}" existe en mas de una categoria.`,
+    subcategory_clarification: clarification,
+  };
+}
+
 function semanticTarget(
   contextPack: CorrectionContextPack,
   interpretation: SemanticCorrectionInterpretation
-): CorrectionTarget | null {
+): CorrectionTargetResolution | null {
   if (
     interpretation.operation === "delete" &&
     interpretation.correction_type === "delete"
   ) {
-    return { kind: "delete", targetLabel: "eliminar este movimiento" };
+    return asTarget({ kind: "delete", targetLabel: "eliminar este movimiento" });
   }
 
   if (
@@ -343,11 +388,15 @@ function semanticTarget(
     interpretation.target_amount !== null
   ) {
     const amount = roundToTwoDecimals(interpretation.target_amount);
-    return {
+    return asTarget({
       kind: "amount",
       amount,
       targetLabel: `monto ${formatMoney(amount, "PEN")}`,
-    };
+    });
+  }
+
+  if (interpretation.correction_type === "subcategory") {
+    return semanticSubcategoryTarget(contextPack, interpretation);
   }
 
   if (
@@ -358,12 +407,12 @@ function semanticTarget(
       (candidate) => candidate.id === interpretation.target_category_id
     );
     if (!category) return null;
-    return {
+    return asTarget({
       kind: "category",
       categoryId: category.id,
       categoryLabel: category.label,
       targetLabel: `categoria ${category.label}`,
-    };
+    });
   }
 
   if (
@@ -374,11 +423,11 @@ function semanticTarget(
       (candidate) => candidate.id === interpretation.target_account_id
     );
     if (!account) return null;
-    return {
+    return asTarget({
       kind: "account",
       account,
       targetLabel: `cuenta ${account.name}`,
-    };
+    });
   }
 
   if (
@@ -388,7 +437,7 @@ function semanticTarget(
     interpretation.related_person_name
   ) {
     const relatedPersonName = interpretation.related_person_name.trim();
-    return {
+    return asTarget({
       kind: "loan",
       targetType: interpretation.target_movement_type,
       relatedPersonName,
@@ -396,23 +445,81 @@ function semanticTarget(
         interpretation.target_movement_type === "prestamo_dado"
           ? `prestamo a ${relatedPersonName}`
           : `prestamo de ${relatedPersonName}`,
-    };
+    });
   }
 
   return null;
 }
 
+/**
+ * El modelo puede senalar la subcategoria por id o solo repetir el nombre que
+ * oyo. En los dos casos manda el Context Pack: un id que no este en la lista
+ * **no se usa** —seria escribir sobre una etiqueta que este turno no leyo, y
+ * podria no ser de esta persona (`SEG-04`)— y un nombre se resuelve contra el
+ * catalogo propio con las mismas reglas que el camino local.
+ */
+function semanticSubcategoryTarget(
+  contextPack: CorrectionContextPack,
+  interpretation: SemanticCorrectionInterpretation
+): CorrectionTargetResolution | null {
+  const spokenLabel = interpretation.target_subcategory_label?.trim() ?? null;
+
+  if (interpretation.target_subcategory_id) {
+    const known = contextPack.subcategories.find(
+      (candidate) => candidate.id === interpretation.target_subcategory_id
+    );
+    if (known) return asTarget(subcategoryTarget(known));
+    if (!spokenLabel) return null;
+  }
+
+  if (!spokenLabel) return null;
+
+  const homonyms = contextPack.subcategories.filter(
+    (candidate) =>
+      normalize(candidate.label) === normalize(spokenLabel) ||
+      containsPhrase(normalize(spokenLabel), normalize(candidate.label))
+  );
+
+  if (homonyms.length === 0) {
+    return {
+      kind: "subcategory_clarification",
+      clarification: { kind: "not_found", label: spokenLabel },
+    };
+  }
+
+  if (homonyms.length > 1) {
+    return {
+      kind: "subcategory_clarification",
+      clarification: {
+        kind: "ambiguous",
+        label: homonyms[0]!.label,
+        category_labels: homonyms.map((candidate) =>
+          categoryLabelOf(candidate.category_id)
+        ),
+      },
+    };
+  }
+
+  return asTarget(subcategoryTarget(homonyms[0]!));
+}
+
 export function proposeCorrection(
   contextPack: CorrectionContextPack
 ): CorrectionAgentOutput {
-  const target = extractCorrectionTarget(contextPack);
-  if (!target) {
+  const resolution = extractCorrectionTarget(contextPack);
+  if (!resolution) {
     return {
       kind: "not_correction",
       reason: "message_not_supported",
       confidence: 0.1,
     };
   }
+
+  if (resolution.kind === "subcategory_clarification") {
+    return subcategoryClarificationOutput(resolution.clarification);
+  }
+
+  const target = resolution.target;
 
   if (target.kind === "account" && contextPack.accounts.length === 0) {
     return {
@@ -583,6 +690,35 @@ export function buildCategoryCorrectionPatch(params: {
   };
 }
 
+/**
+ * Mover un movimiento a una subcategoria escribe **las dos** columnas: la
+ * subcategoria y la categoria de la que cuelga. Escribir solo la primera
+ * dejaria un gasto de "Alimentacion" apuntando a una etiqueta de "Vivienda /
+ * Hogar", que es justo la incoherencia que `commit_movement_classification`
+ * rechaza en la pantalla (`SUBCATEGORY_NOT_FOUND` cuando `category_id` no
+ * coincide). Por el mismo motivo `buildCategoryCorrectionPatch` limpia la
+ * subcategoria: cambiar de categoria invalida la etiqueta anterior.
+ */
+export function buildSubcategoryCorrectionPatch(params: {
+  subcategoryId: string;
+  subcategoryLabel: string;
+  categoryId: CategoryId;
+  categoryLabel: string;
+}): MovementPatch {
+  return {
+    category_id: params.categoryId,
+    subcategory_id: params.subcategoryId,
+    metadata: {
+      generated_by: "correction_agent",
+      correction_target_type: "subcategory",
+      corrected_category_id: params.categoryId,
+      corrected_category_label: params.categoryLabel,
+      corrected_subcategory_id: params.subcategoryId,
+      corrected_subcategory_label: params.subcategoryLabel,
+    },
+  };
+}
+
 export function buildAccountCorrectionPatch(params: {
   accountId: string;
   accountName: string;
@@ -606,7 +742,11 @@ export function buildAccountCorrectionPatch(params: {
 export function isCorrectionLikeText(value: string): boolean {
   const text = normalize(value);
   if (!text) return false;
-  return /\b(no fue|no era|fue|era|eran|fueron|corrige|corregir|correccion|cambia|cambiar|monto|categoria|cuenta|tarjeta|efectivo|prestamo|preste|me presto|borra|borralo|elimina|eliminalo|anula|anulalo|quita|quitalo|cancela|cancelalo|descarta|descartar|descartalo|deshaz|deshacer|deshazlo|olvida|olvidalo)\b/.test(
+  // "ponlo en Animales" no lleva ningun verbo de correccion clasico y sin
+  // embargo pide exactamente eso: cambiar como quedo clasificado algo que ya
+  // esta registrado. Sin estos verbos el turno se iba por el camino de
+  // captura y respondia "no encontre algo reciente para registrar".
+  return /\b(no fue|no era|fue|era|eran|fueron|corrige|corregir|correccion|cambia|cambiar|monto|categoria|subcategoria|cuenta|tarjeta|efectivo|prestamo|preste|me presto|ponlo|ponla|metelo|metela|muevelo|muevela|pasalo|pasala|mandalo|mandala|clasificalo|clasificala|borra|borralo|elimina|eliminalo|anula|anulalo|quita|quitalo|cancela|cancelalo|descarta|descartar|descartalo|deshaz|deshacer|deshazlo|olvida|olvidalo)\b/.test(
     text
   );
 }
@@ -653,6 +793,14 @@ function buildCorrectionCommandForTarget(params: {
       categoryId: target.categoryId,
       categoryLabel: target.categoryLabel,
       targetLabel: target.targetLabel,
+      userCorrectionText: params.userCorrectionText,
+    });
+  }
+
+  if (target.kind === "subcategory") {
+    return buildSubcategoryCorrectionCommand({
+      movement,
+      target,
       userCorrectionText: params.userCorrectionText,
     });
   }
@@ -730,6 +878,39 @@ function buildCategoryCorrectionCommand(params: {
   };
 }
 
+function buildSubcategoryCorrectionCommand(params: {
+  movement: CorrectionMovementCandidate;
+  target: Extract<CorrectionTarget, { kind: "subcategory" }>;
+  userCorrectionText: string;
+}): CorrectionCommand {
+  const movementLabel = buildMovementLabel(params.movement);
+  const { target } = params;
+
+  return {
+    // El id de la subcategoria viaja entero en el comando y no su nombre: el
+    // boton se pulsa turnos despues, y para entonces la etiqueta puede
+    // haberse renombrado. El id es lo unico que sigue senalando lo mismo.
+    command_id: `corr:subcategory:${params.movement.id}:${target.subcategoryId}`,
+    movement_id: params.movement.id,
+    operation: "patch",
+    correction_type: "subcategory",
+    corrected_fields: buildSubcategoryCorrectionPatch({
+      subcategoryId: target.subcategoryId,
+      subcategoryLabel: target.subcategoryLabel,
+      categoryId: target.categoryId,
+      categoryLabel: target.categoryLabel,
+    }),
+    delete_mode: null,
+    user_correction_text: params.userCorrectionText,
+    summary: `Mover a ${target.subcategoryLabel}`,
+    button_title: truncateButtonTitle(movementLabel),
+    movement_label: movementLabel,
+    target_label: target.targetLabel,
+    target_type: null,
+    related_person_name: null,
+  };
+}
+
 function buildAccountCorrectionCommand(params: {
   movement: CorrectionMovementCandidate;
   account: CorrectionAccountCandidate;
@@ -784,12 +965,25 @@ function buildDeleteCorrectionCommand(params: {
   };
 }
 
+/**
+ * Lo que el mensaje pide corregir, o —cuando lo pide sobre una subcategoria
+ * que no se puede resolver— por que no se puede. Ese segundo caso no es "no
+ * entendi": es "entendi, y esto es lo que pasa", y se contesta con nombre
+ * propio en vez de caer en la aclaracion generica.
+ */
+type CorrectionTargetResolution =
+  | { kind: "target"; target: CorrectionTarget }
+  | {
+      kind: "subcategory_clarification";
+      clarification: SubcategoryClarification;
+    };
+
 function extractCorrectionTarget(
   contextPack: CorrectionContextPack
-): CorrectionTarget | null {
+): CorrectionTargetResolution | null {
   const loanTarget = extractLoanCorrectionTarget(contextPack.original_message);
   if (loanTarget) {
-    return {
+    return asTarget({
       kind: "loan",
       targetType: loanTarget.type,
       relatedPersonName: loanTarget.relatedPersonName,
@@ -797,28 +991,171 @@ function extractCorrectionTarget(
         loanTarget.type === "prestamo_dado"
           ? `prestamo a ${loanTarget.relatedPersonName}`
           : `prestamo de ${loanTarget.relatedPersonName}`,
-    };
+    });
   }
 
   const amountTarget = extractAmountCorrectionTarget(contextPack.original_message);
-  if (amountTarget) return amountTarget;
+  if (amountTarget) return asTarget(amountTarget);
+
+  // La subcategoria va **antes** que la categoria porque es la lectura mas
+  // especifica de la misma frase: "ponlo en Mascotas" nombra una etiqueta
+  // propia de la persona, y solo si ninguna coincide tiene sentido leer esa
+  // palabra como una de las 12 categorias del catalogo.
+  const subcategoryResolution = extractSubcategoryCorrectionTarget(
+    contextPack.original_message,
+    contextPack.subcategories,
+    contextPack.categories
+  );
+  if (subcategoryResolution) return subcategoryResolution;
 
   const categoryTarget = extractCategoryCorrectionTarget(
     contextPack.original_message,
     contextPack.categories
   );
-  if (categoryTarget) return categoryTarget;
+  if (categoryTarget) return asTarget(categoryTarget);
 
   const accountTarget = extractAccountCorrectionTarget(
     contextPack.original_message,
     contextPack.accounts
   );
-  if (accountTarget) return accountTarget;
+  if (accountTarget) return asTarget(accountTarget);
 
   const deleteTarget = extractDeleteCorrectionTarget(contextPack.original_message);
-  if (deleteTarget) return deleteTarget;
+  if (deleteTarget) return asTarget(deleteTarget);
 
   return null;
+}
+
+function asTarget(target: CorrectionTarget): CorrectionTargetResolution {
+  return { kind: "target", target };
+}
+
+/**
+ * Verbos con los que se pide mover algo ya registrado a un sitio: "ponlo en",
+ * "metelo en", "muevelo a", "pasalo a". La preposicion es obligatoria porque
+ * sin ella "cambia" tambien abre correcciones de monto y de cuenta, y este
+ * extractor corre antes que aquellos.
+ */
+const SUBCATEGORY_ASSIGNMENT_CUE =
+  /\b(?:ponlo|ponla|pon|metelo|metela|mete|meter|muevelo|muevela|mueve|mover|mandalo|mandala|manda|pasalo|pasala|pasa|clasificalo|clasificala|clasifica|cambialo|cambiala|cambia|va|van|guardalo|guardala)\s+(?:en|a|al|para|dentro\s+de)\s+(?:la\s+|el\s+|los\s+|las\s+)?(?:sub\s?categoria\s+(?:de\s+)?)?(.+)$/;
+
+/** "en la subcategoria Animales", sin verbo de movimiento delante. */
+const SUBCATEGORY_NOUN_CUE =
+  /\bsub\s?categoria\s+(?:de\s+)?(?:la\s+|el\s+)?(.+)$/;
+
+/**
+ * Resuelve "ponlo en Animales" contra el catalogo propio de la persona.
+ *
+ * Devuelve `null` —y no una aclaracion— cuando el nombre que sigue al verbo es
+ * una de las 12 categorias: ahi la frase no habla de ninguna subcategoria y le
+ * toca a `extractCategoryCorrectionTarget`. Decir "no tienes esa
+ * subcategoria" ante "ponlo en transporte" seria contestar una pregunta que
+ * nadie hizo.
+ */
+function extractSubcategoryCorrectionTarget(
+  value: string,
+  subcategories: CorrectionSubcategoryCandidate[],
+  categories: CorrectionCategoryCandidate[]
+): CorrectionTargetResolution | null {
+  const text = normalize(value);
+  if (!text) return null;
+
+  const spokenName =
+    text.match(SUBCATEGORY_ASSIGNMENT_CUE)?.[1] ??
+    text.match(SUBCATEGORY_NOUN_CUE)?.[1];
+  if (!spokenName) return null;
+
+  const named = subcategories.filter((subcategory) =>
+    containsPhrase(text, normalize(subcategory.label))
+  );
+
+  if (named.length === 0) {
+    // Sin coincidencia propia, la frase puede seguir hablando de una categoria
+    // canonica. Si es asi, este extractor se aparta en silencio.
+    if (matchesKnownCategory(spokenName, categories)) return null;
+    return {
+      kind: "subcategory_clarification",
+      clarification: {
+        kind: "not_found",
+        label: titleCasePersonName(spokenName.trim()),
+      },
+    };
+  }
+
+  // La mencion mas larga gana: entre "Animales" y "Animales de granja", la
+  // segunda es la que la persona dijo entera.
+  const longest = named.reduce((best, candidate) =>
+    candidate.label.length > best.label.length ? candidate : best
+  );
+  const homonyms = named.filter(
+    (candidate) => candidate.normalized_label === longest.normalized_label
+  );
+
+  const disambiguated =
+    homonyms.length > 1
+      ? homonyms.filter((candidate) =>
+          containsPhrase(text, normalize(categoryLabelOf(candidate.category_id)))
+        )
+      : homonyms;
+
+  if (disambiguated.length !== 1) {
+    return {
+      kind: "subcategory_clarification",
+      clarification: {
+        kind: "ambiguous",
+        label: longest.label,
+        category_labels: homonyms.map((candidate) =>
+          categoryLabelOf(candidate.category_id)
+        ),
+      },
+    };
+  }
+
+  return asTarget(subcategoryTarget(disambiguated[0]!));
+}
+
+function subcategoryTarget(
+  subcategory: CorrectionSubcategoryCandidate
+): CorrectionTarget {
+  const categoryLabel = categoryLabelOf(subcategory.category_id);
+  return {
+    kind: "subcategory",
+    subcategoryId: subcategory.id,
+    subcategoryLabel: subcategory.label,
+    categoryId: subcategory.category_id,
+    categoryLabel,
+    targetLabel: `${subcategory.label}, dentro de ${categoryLabel}`,
+  };
+}
+
+/**
+ * La categoria se nombra siempre como la nombra el catalogo —"Vivienda /
+ * Hogar"— y nunca con su id. `getCategoryLabel` solo devuelve `null` con la
+ * cadena vacia, que el tipo `CategoryId` ya impide.
+ */
+function categoryLabelOf(categoryId: CategoryId): string {
+  return getCategoryLabel(categoryId) ?? categoryId;
+}
+
+function matchesKnownCategory(
+  spokenName: string,
+  categories: CorrectionCategoryCandidate[]
+): boolean {
+  const text = normalize(spokenName);
+  if (!text) return false;
+
+  const knownCategories = new Map(
+    categories.map((category) => [category.id, category])
+  );
+  return (Object.entries(CATEGORY_SYNONYMS) as Array<[CategoryId, string[]]>).some(
+    ([categoryId, synonyms]) => {
+      const label =
+        knownCategories.get(categoryId)?.label ?? categoryLabelOf(categoryId);
+      return [label, ...synonyms]
+        .map(normalize)
+        .some((phrase) => phrase !== "" && containsPhrase(text, phrase));
+    }
+  );
 }
 
 function extractLoanCorrectionTarget(

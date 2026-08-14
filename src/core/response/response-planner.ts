@@ -2061,13 +2061,57 @@ function composeCorrectionClarificationText(
   >
 ): string {
   const movementsUrl = buildDashboardDeepLink("movements");
+  const subcategoryText = composeSubcategoryClarificationText(correctionProposal);
   const base =
-    correctionProposal.kind === "unsupported"
+    subcategoryText ??
+    (correctionProposal.kind === "unsupported"
       ? "Te entendí, pero esa corrección todavía necesita revisión manual antes de tocar dinero."
-      : "Te entendí, pero no pude elegir un movimiento con seguridad.";
+      : "Te entendí, pero no pude elegir un movimiento con seguridad.");
 
-  if (!movementsUrl) return base;
+  // Una subcategoría que no existe o que está repetida se resuelve hablando,
+  // no en la pantalla de Movimientos: el enlace ahí sobra y desvía.
+  if (!movementsUrl || subcategoryText) return base;
   return `${base}\nPuedes revisarlo desde Movimientos: ${movementsUrl}`;
+}
+
+/**
+ * `ERR-ASI-01`: cuando el problema tiene nombre, se dice el nombre. "No pude
+ * elegir un movimiento" ante "ponlo en Animales" sería mentir por omisión: el
+ * movimiento estaba claro; lo que no estaba era la subcategoría.
+ *
+ * `RUL-CAT`: la subcategoría no se crea sola para salir del paso. Se ofrece
+ * crearla, que es la superficie conversacional que ya existe (`RUL-ESTR-01`),
+ * y hasta que la persona lo confirme no se toca nada.
+ */
+function composeSubcategoryClarificationText(
+  correctionProposal: Extract<
+    CorrectionAgentOutput,
+    { kind: "no_candidate" | "needs_clarification" | "unsupported" }
+  >
+): string | null {
+  if (correctionProposal.kind !== "needs_clarification") return null;
+  const clarification = correctionProposal.subcategory_clarification;
+  if (!clarification) return null;
+
+  if (clarification.kind === "not_found") {
+    return (
+      `No tienes una subcategoría "${clarification.label}", así que no moví nada. ` +
+      `Si quieres, dime en qué categoría la creo y después te muevo el movimiento ahí.`
+    );
+  }
+
+  const ejemplo = clarification.category_labels[0] ?? "esa categoría";
+  return (
+    `Tienes "${clarification.label}" en ${joinWithY(clarification.category_labels)}, ` +
+    `así que no moví nada para no elegir por ti. Nómbrame la categoría y lo llevo: ` +
+    `"ponlo en ${clarification.label} de ${ejemplo}".`
+  );
+}
+
+/** "A, B y C" — la enumeración natural en español, sin coma antes de la "y". */
+function joinWithY(values: string[]): string {
+  if (values.length <= 1) return values[0] ?? "";
+  return `${values.slice(0, -1).join(", ")} y ${values[values.length - 1]}`;
 }
 
 /**

@@ -9,6 +9,7 @@ import type { SemanticCorrectionInterpretation } from "./types";
 import type {
   CorrectionContextPack,
   CorrectionMovementCandidate,
+  CorrectionSubcategoryCandidate,
 } from "./types";
 
 function movement(
@@ -64,6 +65,7 @@ function context(
       { id: "transporte", label: "Transporte", is_sensitive: false },
       { id: "otros", label: "Otros", is_sensitive: false },
     ],
+    subcategories: [],
     active_conversation_state: {
       last_response_summary: null,
       continuity_hint: null,
@@ -245,6 +247,15 @@ describe("CorrectionAgent", () => {
     });
   });
 
+  it("reconoce mover algo a un sitio como posible correccion segura", () => {
+    // Sin estos verbos, "ponlo en Animales" no llegaba al agente de
+    // correcciones: caia en el camino de captura y contestaba "no encontre
+    // algo reciente para registrar", que es lo contrario de lo que pasaba.
+    expect(isCorrectionLikeText("ponlo en Animales")).toBe(true);
+    expect(isCorrectionLikeText("metelo en la subcategoria de gatos")).toBe(true);
+    expect(isCorrectionLikeText("muevelo a Mascotas")).toBe(true);
+  });
+
   it("reconoce descartes contextuales como posible correccion segura", () => {
     expect(isCorrectionLikeText("descartalo")).toBe(true);
     expect(isCorrectionLikeText("deshaz eso")).toBe(true);
@@ -281,6 +292,8 @@ describe("CorrectionAgent", () => {
         candidate_movement_ids: ["00000000-0000-4000-8000-000000000010"],
         target_amount: null,
         target_category_id: null,
+        target_subcategory_id: null,
+        target_subcategory_label: null,
         target_account_id: null,
         target_movement_type: null,
         related_person_name: null,
@@ -322,6 +335,8 @@ describe("CorrectionAgent", () => {
         candidate_movement_ids: ["00000000-0000-4000-8000-000000000099"],
         target_amount: null,
         target_category_id: null,
+        target_subcategory_id: null,
+        target_subcategory_label: null,
         target_account_id: null,
         target_movement_type: null,
         related_person_name: null,
@@ -386,3 +401,130 @@ function semanticRuntime(
     },
   };
 }
+
+/**
+ * `RUL-CAT`: una subcategoria cuelga siempre de una de las 12 categorias y es
+ * propia de cada persona. Mover ahi un movimiento ya registrado es una
+ * correccion de como quedo clasificado —igual que cambiarle la categoria— y
+ * por eso vive en esta superficie y no en una nueva.
+ *
+ * El caso real que lo motiva: la persona creo "Animales" dentro de "Vivienda /
+ * Hogar" y quiere meter ahi la comida de sus gatos, que ya estaba guardada.
+ */
+const ANIMALES_VIVIENDA = "00000000-0000-4000-8000-0000000000c1";
+const ANIMALES_SALUD = "00000000-0000-4000-8000-0000000000c2";
+
+function subcategoria(
+  overrides: Partial<CorrectionSubcategoryCandidate> = {}
+): CorrectionSubcategoryCandidate {
+  return {
+    id: ANIMALES_VIVIENDA,
+    category_id: "vivienda_hogar",
+    label: "Animales",
+    normalized_label: "animales",
+    ...overrides,
+  };
+}
+
+function moverAUnaSubcategoria(
+  message: string,
+  subcategories: CorrectionSubcategoryCandidate[]
+) {
+  return new CorrectionAgent().propose(
+    context({
+      original_message: message,
+      subcategories,
+      recent_movements: [
+        movement({ description: "comida de los gatos", amount: 45 }),
+      ],
+    }),
+    "trace-subcategoria"
+  );
+}
+
+describe("mover un movimiento a una subcategoria hablando", () => {
+  it("propone el cambio cuando el nombre existe y es unico", async () => {
+    const result = await moverAUnaSubcategoria("ponlo en Animales", [
+      subcategoria(),
+    ]);
+
+    expect(result.output).toMatchObject({
+      kind: "requires_confirmation",
+      command: {
+        command_id: `corr:subcategory:00000000-0000-4000-8000-000000000010:${ANIMALES_VIVIENDA}`,
+        operation: "patch",
+        correction_type: "subcategory",
+        target_label: "Animales, dentro de Vivienda / Hogar",
+        corrected_fields: {
+          // La categoria madre se escribe junto con la subcategoria: dejar el
+          // gasto en "Alimentación" apuntando a una etiqueta de "Vivienda /
+          // Hogar" seria justo la incoherencia que la pantalla rechaza.
+          category_id: "vivienda_hogar",
+          subcategory_id: ANIMALES_VIVIENDA,
+        },
+      },
+    });
+  });
+
+  it("dice que esa subcategoria no existe en vez de elegir la mas parecida", async () => {
+    const result = await moverAUnaSubcategoria("ponlo en Animales", [
+      subcategoria({
+        id: "00000000-0000-4000-8000-0000000000c9",
+        label: "Mascotas",
+        normalized_label: "mascotas",
+      }),
+    ]);
+
+    expect(result.output).toMatchObject({
+      kind: "needs_clarification",
+      reason: "subcategory_not_found",
+      subcategory_clarification: { kind: "not_found", label: "Animales" },
+    });
+  });
+
+  it("no elige por la persona cuando ese nombre cuelga de dos categorias", async () => {
+    const result = await moverAUnaSubcategoria("ponlo en Animales", [
+      subcategoria(),
+      subcategoria({ id: ANIMALES_SALUD, category_id: "salud" }),
+    ]);
+
+    expect(result.output).toMatchObject({
+      kind: "needs_clarification",
+      reason: "ambiguous_subcategory",
+      subcategory_clarification: {
+        kind: "ambiguous",
+        label: "Animales",
+        category_labels: ["Vivienda / Hogar", "Salud"],
+      },
+    });
+  });
+
+  it("nombrar la categoria deshace la ambiguedad en el turno siguiente", async () => {
+    const result = await moverAUnaSubcategoria(
+      "ponlo en Animales de Vivienda / Hogar",
+      [subcategoria(), subcategoria({ id: ANIMALES_SALUD, category_id: "salud" })]
+    );
+
+    expect(result.output).toMatchObject({
+      kind: "requires_confirmation",
+      command: {
+        command_id: `corr:subcategory:00000000-0000-4000-8000-000000000010:${ANIMALES_VIVIENDA}`,
+      },
+    });
+  });
+
+  it("no confunde una categoria canonica con una subcategoria que falta", async () => {
+    // "cambia a transporte" nombra una de las 12 categorias, no una etiqueta
+    // propia: contestar "no tienes esa subcategoria" seria responder algo que
+    // nadie pregunto. Este extractor corre antes que el de categoria, asi que
+    // apartarse a tiempo es responsabilidad suya.
+    const result = await moverAUnaSubcategoria("cambia a transporte", [
+      subcategoria(),
+    ]);
+
+    expect(result.output).toMatchObject({
+      kind: "requires_confirmation",
+      command: { correction_type: "category" },
+    });
+  });
+});

@@ -38,6 +38,15 @@ export type CorrectionContextPack = {
   recent_movements: CorrectionMovementCandidate[];
   accounts: CorrectionAccountCandidate[];
   categories: CorrectionCategoryCandidate[];
+  /**
+   * Las subcategorias activas de esta persona, que son las unicas que existen:
+   * a diferencia de las 12 categorias, `user_subcategories` es un catalogo
+   * propio de cada uno (`RUL-CAT`). Viajan aqui porque el agente compila
+   * siempre contra ids del Context Pack: asi "ponlo en Animales" se resuelve
+   * contra lo que la persona tiene de verdad, y nunca contra un id inventado
+   * ni contra la etiqueta de otra cuenta (`SEG-04`).
+   */
+  subcategories: CorrectionSubcategoryCandidate[];
   active_conversation_state: {
     last_response_summary: string | null;
     continuity_hint: string | null;
@@ -66,12 +75,20 @@ export type CorrectionCategoryCandidate = {
   is_sensitive: boolean;
 };
 
+export type CorrectionSubcategoryCandidate = {
+  id: string;
+  category_id: CategoryId;
+  label: string;
+  normalized_label: string;
+};
+
 export type CorrectionCommandOperation = "patch" | "delete";
 
 export type CorrectionCommandType =
   | "loan"
   | "amount"
   | "category"
+  | "subcategory"
   | "account"
   | "delete";
 
@@ -90,6 +107,11 @@ export type CorrectionCommand = {
   target_type: MovementType | null;
   related_person_name: string | null;
 };
+
+export type SubcategoryClarification =
+  | { kind: "not_found"; label: string }
+  /** Etiquetas de las categorias donde ese mismo nombre existe. */
+  | { kind: "ambiguous"; label: string; category_labels: string[] };
 
 export type CorrectionAgentOutput =
   | {
@@ -111,9 +133,29 @@ export type CorrectionAgentOutput =
     }
   | {
       kind: "needs_clarification";
-      reason: "too_many_candidates" | "ambiguous_reference";
+      reason:
+        | "too_many_candidates"
+        | "ambiguous_reference"
+        /**
+         * La persona nombro una subcategoria que no tiene. No se crea sola ni
+         * se elige "la mas parecida": se le dice cual nombro y se le ofrece
+         * crearla, que es la superficie que ya existe (`RUL-ESTR-01`).
+         */
+        | "subcategory_not_found"
+        /**
+         * Ese nombre existe colgando de dos categorias distintas ("Animales"
+         * en Vivienda / Hogar y en Salud). Elegir una seria adivinar sobre el
+         * dinero de alguien.
+         */
+        | "ambiguous_subcategory";
       confidence: number;
       safe_explanation: string;
+      /**
+       * Los datos con los que el planificador nombra el problema con
+       * honestidad. Van estructurados y no como frase hecha porque la copia
+       * que ve la persona la redacta el nucleo, nunca el modelo.
+       */
+      subcategory_clarification?: SubcategoryClarification;
     }
   | {
       kind: "requires_confirmation";
@@ -156,6 +198,7 @@ export const SemanticCorrectionInterpretationSchema = z.object({
     "loan",
     "amount",
     "category",
+    "subcategory",
     "account",
     "delete",
     "unsupported",
@@ -164,6 +207,27 @@ export const SemanticCorrectionInterpretationSchema = z.object({
   candidate_movement_ids: z.array(z.string().uuid()).max(3),
   target_amount: z.number().positive().nullable(),
   target_category_id: z.enum(CATEGORY_IDS).nullable(),
+  /**
+   * Id de una subcategoria **del Context Pack**. Nullable con `default` para
+   * que un estado o fixture anterior a esta correccion siga validando: la
+   * ausencia es "este turno no habla de ninguna subcategoria".
+   *
+   * El modelo no puede inventarlo: `compileSemanticCorrection` lo busca en
+   * `subcategories` y, si no esta, no compila ningun comando (`SEG-04`).
+   */
+  target_subcategory_id: z.string().uuid().nullable().default(null),
+  /**
+   * El nombre tal cual lo dijo la persona, para poder contestarle con esa
+   * misma palabra cuando la subcategoria no existe. Sin esto, el unico "no la
+   * tengo" posible seria generico.
+   */
+  target_subcategory_label: z
+    .string()
+    .trim()
+    .min(1)
+    .max(80)
+    .nullable()
+    .default(null),
   target_account_id: z.string().uuid().nullable(),
   target_movement_type: z.enum(MOVEMENT_TYPES).nullable(),
   related_person_name: z.string().min(1).max(120).nullable(),
