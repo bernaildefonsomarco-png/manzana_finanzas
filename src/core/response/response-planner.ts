@@ -168,6 +168,17 @@ export type TurnResponsePlannerInput = {
    */
   unhonoredActionIntents?: ExecutiveActionSurface[];
   /**
+   * `ERR-ASI-01`: todo lo que el ejecutivo entendio que la persona pedia en
+   * este turno. El motor atiende **una** superficie por turno —la cadena de
+   * ramas es excluyente a proposito—, asi que el planificador resta la que
+   * acaba de componer y avisa de las que quedaron sin atender.
+   *
+   * No es lo mismo que `unhonoredActionIntents`. Alli no ocurrio nada y el
+   * aviso puede cerrar con "No cambie nada"; aqui si ocurrio otra cosa, y ese
+   * mismo cierre seria mentira.
+   */
+  requestedActionIntents?: ExecutiveActionSurface[];
+  /**
    * `WEB-D298`/`40` §3: el ejecutivo entendio que se pedia una accion pero le
    * falta un dato para hacerla bien. Se pregunta en vez de actuar y en vez de
    * callar: preguntar de mas es barato, actuar de mas no lo es, y dejarlo caer
@@ -218,9 +229,13 @@ export function planTurnBlocks(input: TurnResponsePlannerInput): PlanTurnBlocksR
 
   const productResponse = buildProductResponse(input);
   if (productResponse) {
-    const blocks = appendSupplementalAnswer(
-      toBlocks(productResponse),
-      input.supplementalConversationAnswer
+    const blocks = appendPostponedActionNotice(
+      appendSupplementalAnswer(
+        toBlocks(productResponse),
+        input.supplementalConversationAnswer
+      ),
+      input,
+      productResponse.reason
     );
     return {
       blocks: verifyBlocks(blocks),
@@ -462,14 +477,125 @@ const UNHONORED_ACTION_NOTICES: Partial<
     view: "settings",
   },
   structure_proposal: {
-    text: "Entendí que querías cambiar una caja, meta o presupuesto, pero no pude prepararlo ahora mismo. No cambié nada.",
+    // Nombra las seis de `STRUCTURE_ENTITIES`, no tres: `recurrente` y `cuenta`
+    // ya faltaban, y `subcategoria` se sumó después. Un aviso que no nombra lo
+    // que la persona pidió la deja sin saber si era lo suyo lo que no ocurrió.
+    text: "Entendí que querías cambiar una caja, meta, presupuesto, pago recurrente, cuenta o subcategoría, pero no pude prepararlo ahora mismo. No cambié nada.",
     view: "money",
   },
   light_action: {
     text: "Entendí lo que me pediste, pero no pude hacerlo ahora mismo. No cambié nada.",
     view: "upcoming",
   },
+  // Las tres de abajo faltaban, y su ausencia era justo el peor silencio
+  // posible: sin entrada en este mapa, `buildUnhonoredActionResponse` devuelve
+  // `null`, `presentUnhonoredActionTurn` devuelve `null` y el turno sigue como
+  // si nadie hubiera pedido nada. Callar que no se movió dinero, que no se tocó
+  // una deuda o que no se restauró un movimiento es exactamente lo que
+  // `ERR-ASI-01` prohíbe.
+  debt_action: {
+    text: "Entendí que querías cambiar algo de una deuda, pero no pude prepararlo ahora mismo. No cambié nada.",
+    view: "debts",
+  },
+  money_action: {
+    text: "Entendí que querías mover dinero, pero no pude prepararlo ahora mismo. No moví nada.",
+    view: "money",
+  },
+  movement_action: {
+    text: "Entendí que querías cambiar un movimiento, pero no pude prepararlo ahora mismo. No cambié nada.",
+    view: "movements",
+  },
 };
+
+/**
+ * `ERR-ASI-01`: lo que la persona pidió y este turno dejó sin atender, porque
+ * atendió otra cosa. Es una frase por superficie, en segunda persona y en el
+ * mismo registro que el resto del producto.
+ *
+ * `profile_signal` no está aquí por lo mismo que no está en
+ * `UNHONORED_ACTION_NOTICES`: no es un pedido de la persona.
+ */
+const POSTPONED_ACTION_LABELS: Partial<Record<ExecutiveActionSurface, string>> = {
+  memory_control: "cambiar algo de lo que recuerdo de ti",
+  preference_change: "cambiar tus avisos",
+  structure_proposal:
+    "cambiar una caja, meta, presupuesto, pago recurrente, cuenta o subcategoría",
+  light_action: "otra cosa más",
+  debt_action: "cambiar algo de una deuda",
+  money_action: "mover dinero",
+  movement_action: "cambiar un movimiento",
+};
+
+/**
+ * De qué superficie habla la respuesta que este turno acaba de componer. Se
+ * deduce del `reason` porque es el único dato que ya distingue las ramas entre
+ * sí; el prefijo `movement_action_` no colisiona con `movement_created` ni con
+ * `movements_created`, que no son acciones sobre un movimiento existente.
+ */
+const SURFACE_BY_REASON_PREFIX: ReadonlyArray<
+  readonly [string, ExecutiveActionSurface]
+> = [
+  ["memory_", "memory_control"],
+  ["preference_", "preference_change"],
+  ["structure_", "structure_proposal"],
+  ["light_action_", "light_action"],
+  ["debt_action_", "debt_action"],
+  ["money_action_", "money_action"],
+  ["movement_action_", "movement_action"],
+];
+
+function attendedSurface(
+  reason: ProductResponseReason,
+): ExecutiveActionSurface | null {
+  const match = SURFACE_BY_REASON_PREFIX.find(([prefix]) =>
+    reason.startsWith(prefix),
+  );
+  return match ? match[1] : null;
+}
+
+/**
+ * `ERR-ASI-01`: el turno hizo una cosa y la persona había pedido dos. Decirlo
+ * es la diferencia entre un límite y un engaño.
+ *
+ * Va como bloque aparte y no concatenado al primero —al revés que
+ * `appendSupplementalAnswer`— justamente por el motivo que aquella documenta:
+ * cuando el turno termina en tarjeta, meter texto dentro de la propuesta
+ * confunde qué se está confirmando. Un bloque propio nombra lo que quedó
+ * fuera sin tocar la pregunta que espera respuesta.
+ */
+function appendPostponedActionNotice(
+  blocks: Block[],
+  input: TurnResponsePlannerInput,
+  reason: ProductResponseReason,
+): Block[] {
+  // Un turno que ya está diciendo "no pude" o "me falta un dato" no necesita
+  // que además le cuenten lo que no hizo: es lo mismo, dicho dos veces.
+  if (reason === "executive_action_not_honored") return blocks;
+  if (reason === "action_needs_clarification") return blocks;
+  if (blocks.length === 0) return blocks;
+
+  const attended = attendedSurface(reason);
+  const labels = (input.requestedActionIntents ?? [])
+    .filter((surface) => surface !== attended)
+    .map((surface) => POSTPONED_ACTION_LABELS[surface])
+    .filter((label): label is string => label !== undefined);
+
+  const unique = [...new Set(labels)];
+  if (unique.length === 0) return blocks;
+
+  const enumerated =
+    unique.length === 1
+      ? unique[0]
+      : `${unique.slice(0, -1).join(", ")} y ${unique[unique.length - 1]}`;
+
+  return [
+    ...blocks,
+    {
+      kind: "texto",
+      text: `También me pediste ${enumerated}. Eso no lo hice en este turno: dímelo otra vez y lo preparo.`,
+    },
+  ];
+}
 
 function buildUnhonoredActionResponse(
   input: TurnResponsePlannerInput,

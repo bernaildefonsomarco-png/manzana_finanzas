@@ -101,7 +101,7 @@ export class TurnPlanUnavailableError extends Error {
 }
 
 /** Los cinco modulos que la persona si pidio en este turno. */
-function requestedActionSurfaces(
+export function requestedActionSurfaces(
   intent: ExecutiveActionIntent,
 ): ExecutiveActionSurface[] {
   const surfaces: ExecutiveActionSurface[] = [];

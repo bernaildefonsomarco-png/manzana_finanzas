@@ -129,6 +129,7 @@ import { resolveTurnThreadKey } from "@/core/conversation/thread-scope";
 import { ToolGateway } from "@/core/conversation/tool-gateway";
 import { buildTurnWorkspace } from "@/core/conversation/turn-workspace";
 import {
+  requestedActionSurfaces,
   TurnCoordinator,
   TurnPlanUnavailableError,
   type CoordinatedTurnPlan,
@@ -260,6 +261,26 @@ type PlannedTurn = {
   trace: OrchestrationPlanningTrace | null;
   lostActionIntents: ExecutiveActionSurface[];
 };
+
+/**
+ * `ERR-ASI-01`: todo lo que la persona pidio en este turno, para que el
+ * planificador pueda restar la superficie que la rama ganadora atendio y
+ * nombrar las demas.
+ *
+ * La cadena de ramas de `handleTurn` es excluyente a proposito —cada `return`
+ * tiene su motivo escrito al lado—, pero excluir no es lo mismo que callar:
+ * hasta ahora, pedir dos cosas en un mensaje hacia desaparecer la segunda sin
+ * rastro. `profile_signal` queda fuera por lo mismo que no tiene aviso: no es
+ * un pedido de la persona sino algo que el motor creyo notar sobre ella.
+ */
+function requestedActionIntentsOf(
+  planning: OrchestrationPlanningTrace | null,
+): ExecutiveActionSurface[] {
+  if (!planning) return [];
+  return requestedActionSurfaces(planning.actionIntent).filter(
+    (surface) => surface !== "profile_signal",
+  );
+}
 type MixedConversationTrace = {
   contextPack: ConversationContextPack;
   result: Awaited<ReturnType<ConversationAgent["answer"]>>;
@@ -1873,6 +1894,7 @@ export class FinancialOrchestrator {
         : compiled.kind === "needs_clarification"
           ? { debtActionQuestion: compiled.question }
           : { debtActionUnavailableText: limiteText ?? undefined }),
+      requestedActionIntents: requestedActionIntentsOf(params.planning),
     });
     const presented = await this.presentTurn(plan, {
       turnInput: params.turnInput,
@@ -2251,6 +2273,7 @@ export class FinancialOrchestrator {
         : compiled.kind === "needs_clarification"
           ? { moneyActionQuestion: compiled.question }
           : { moneyActionUnavailableText: limiteText ?? undefined }),
+      requestedActionIntents: requestedActionIntentsOf(params.planning),
     });
     const presented = await this.presentTurn(plan, {
       turnInput: params.turnInput,
@@ -2604,6 +2627,7 @@ export class FinancialOrchestrator {
         : compiled.kind === "needs_clarification"
           ? { movementActionQuestion: compiled.question }
           : { movementActionUnavailableText: limiteText ?? undefined }),
+      requestedActionIntents: requestedActionIntentsOf(params.planning),
     });
     const presented = await this.presentTurn(plan, {
       turnInput: params.turnInput,
@@ -3094,6 +3118,7 @@ export class FinancialOrchestrator {
         result,
         previousWorkingSet: params.previousWorkingSet,
         skipEnhancement: params.planning?.executiveRan ?? false,
+        requestedActionIntents: requestedActionIntentsOf(params.planning),
       });
     } catch (error) {
       // `WEB-D298`: aqui se caia el peor silencio del motor. Este `catch` cubre
@@ -3356,6 +3381,7 @@ export class FinancialOrchestrator {
       dataAgentIntent: "conversation",
       conversationTurnState: params.conversationTurnState,
       lightActionText: result.text,
+      requestedActionIntents: requestedActionIntentsOf(params.planning),
     });
     const presented = await this.presentTurn(plan, {
       turnInput: params.turnInput,
@@ -3674,6 +3700,7 @@ export class FinancialOrchestrator {
       preferenceAction: proposal.command,
       orchestratorReason: "accepted_with_preference_confirmation",
       skipEnhancement: params.planning?.executiveRan ?? false,
+      requestedActionIntents: requestedActionIntentsOf(params.planning),
       remember: {
         channel: params.channel,
         threadKey: params.threadKey,
@@ -3706,6 +3733,8 @@ export class FinancialOrchestrator {
     preferenceAction: string;
     orchestratorReason: TurnOrchestrationResult["reason"];
     skipEnhancement?: boolean;
+    /** `ERR-ASI-01`: lo demas que este mismo turno pidio y no se atendio. */
+    requestedActionIntents?: ExecutiveActionSurface[];
     remember: {
       channel: Channel;
       threadKey: string;
@@ -3731,6 +3760,7 @@ export class FinancialOrchestrator {
       dataAgentIntent: "conversation",
       conversationTurnState: params.conversationTurnState,
       ...(proposal ? { preferenceProposal: proposal } : { preferenceText: text }),
+      requestedActionIntents: params.requestedActionIntents ?? [],
     });
     const presented = await this.presentTurn(plan, {
       turnInput: params.turnInput,
@@ -4092,6 +4122,8 @@ export class FinancialOrchestrator {
     result: MemoryControlResult;
     previousWorkingSet: ConversationWorkingSet | null;
     skipEnhancement?: boolean;
+    /** `ERR-ASI-01`: lo demas que este mismo turno pidio y no se atendio. */
+    requestedActionIntents?: ExecutiveActionSurface[];
   }): Promise<TurnOrchestrationResult> {
     const result = params.result;
     const isProposal = result.proposal != null;
@@ -4109,6 +4141,7 @@ export class FinancialOrchestrator {
         ? "accepted_with_memory_confirmation"
         : "accepted_with_memory_control",
       skipEnhancement: params.skipEnhancement,
+      requestedActionIntents: params.requestedActionIntents,
       remember: {
         channel: params.channel,
         threadKey: params.threadKey,
@@ -4147,6 +4180,8 @@ export class FinancialOrchestrator {
     affectedMemoryIds: string[];
     orchestratorReason: TurnOrchestrationResult["reason"];
     skipEnhancement?: boolean;
+    /** `ERR-ASI-01`: lo demas que este mismo turno pidio y no se atendio. */
+    requestedActionIntents?: ExecutiveActionSurface[];
     remember: {
       channel: Channel;
       threadKey: string;
@@ -4173,6 +4208,7 @@ export class FinancialOrchestrator {
       dataAgentIntent: "conversation",
       conversationTurnState: params.conversationTurnState,
       ...(proposal ? { memoryProposal: proposal } : { memoryControlText: text }),
+      requestedActionIntents: params.requestedActionIntents ?? [],
     });
     const presented = await this.presentTurn(plan, {
       turnInput: params.turnInput,
@@ -4263,6 +4299,7 @@ export class FinancialOrchestrator {
       ...(compiled.kind === "proposal"
         ? { structureProposal: compiled.proposal }
         : { structureAmbiguityQuestion: compiled.question }),
+      requestedActionIntents: requestedActionIntentsOf(params.planning),
     });
     const presented = await this.presentTurn(plan, {
       turnInput: params.turnInput,
