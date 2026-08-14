@@ -1,26 +1,19 @@
 import type { BudgetPeriodKind } from "@/core/budgets";
-import type { CategoryId } from "@/shared/types/domain";
+import { CATEGORY_LABELS } from "@/shared/copy/category-copy";
+import { CATEGORY_IDS, type CategoryId } from "@/shared/types/domain";
 
-export const CATEGORY_OPTIONS: Array<{ id: CategoryId; label: string }> = [
-  { id: "alimentacion", label: "Alimentación" },
-  { id: "transporte", label: "Transporte" },
-  { id: "vivienda_hogar", label: "Vivienda y hogar" },
-  { id: "servicios_suscripciones", label: "Servicios y suscripciones" },
-  { id: "salud", label: "Salud" },
-  { id: "educacion", label: "Educación" },
-  { id: "ocio_salidas", label: "Ocio y salidas" },
-  { id: "compras_personales", label: "Compras personales" },
-  { id: "familia_apoyo", label: "Familia y apoyo" },
-  { id: "deudas", label: "Deudas" },
-  { id: "trabajo_productividad", label: "Trabajo y productividad" },
-  { id: "otros", label: "Otros" },
-];
+/**
+ * Las mismas 12 categorías del canon, en forma de lista para los `<select>`
+ * de presupuestos y de clasificación en lote. El orden es el de
+ * `CATEGORY_IDS`, que replica el `sort_order` del seed: la lista se deriva
+ * en vez de reescribirse a mano para que el desplegable no pueda llamar a
+ * una categoría distinto que el resto de la app.
+ */
+export const CATEGORY_OPTIONS: Array<{ id: CategoryId; label: string }> =
+  CATEGORY_IDS.map((id) => ({ id, label: CATEGORY_LABELS[id] }));
 
 export function categoryLabel(categoryId: CategoryId) {
-  return (
-    CATEGORY_OPTIONS.find((category) => category.id === categoryId)?.label ??
-    categoryId
-  );
+  return CATEGORY_LABELS[categoryId] ?? categoryId;
 }
 
 export function parsePeriodKind(value: string | null): BudgetPeriodKind {

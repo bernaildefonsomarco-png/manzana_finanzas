@@ -21,7 +21,7 @@ import {
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { useDiscreetMode } from "@/shared/privacy/discreet-mode-context";
 import { ApiClientError } from "@/features/movements/movements-api";
-import { categoryLabels } from "@/features/movements/movement-view-model";
+import { CATEGORY_LABELS } from "@/shared/copy/category-copy";
 import { Button } from "@/ui/primitivas/button";
 import { cn } from "@/ui/primitivas/cn";
 import { FieldShell, Input, Select } from "@/ui/primitivas/field";
@@ -49,7 +49,7 @@ import {
 } from "./pending-api";
 import { toPendingViewItem, type PendingViewItem } from "./pending-view-model";
 
-const categoryOptions = Object.entries(categoryLabels) as Array<
+const categoryOptions = Object.entries(CATEGORY_LABELS) as Array<
   [CategoryId, string]
 >;
 

@@ -89,11 +89,11 @@ import type {
   SuggestedCandidateViewModel,
   UpcomingViewItem,
 } from "./upcoming-types";
+import { CATEGORY_LABELS } from "@/shared/copy/category-copy";
 import { buildUpcomingSummaryProvenance } from "./upcoming-provenance";
 import {
   amountVariabilityLabels,
   buildUpcomingViewModel,
-  categoryLabels,
   formatFullDate,
   formatUpcomingMoney,
   frequencyLabels,
@@ -1130,7 +1130,7 @@ function RecurringEditorDialog({
                 onChange={(event) => setCategoryId(event.target.value)}
               >
                 <option value="">Sin clasificar</option>
-                {Object.entries(categoryLabels).map(([value, label]) => (
+                {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
                   <option key={value} value={value}>
                     {label}
                   </option>

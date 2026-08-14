@@ -1,10 +1,10 @@
 import type {
-  CategoryId,
   Movement,
   MovementSource,
   MovementStatus,
   MovementType,
 } from "@/shared/types/domain";
+import { CATEGORY_LABELS } from "@/shared/copy/category-copy";
 
 export type MovementViewItem = {
   id: string;
@@ -20,21 +20,6 @@ export type MovementViewItem = {
   sourceLabel: string;
   status: MovementStatus;
   requiresReview: boolean;
-};
-
-export const categoryLabels: Record<CategoryId, string> = {
-  alimentacion: "Alimentación",
-  transporte: "Transporte",
-  vivienda_hogar: "Vivienda / Hogar",
-  servicios_suscripciones: "Servicios / Suscripciones",
-  salud: "Salud",
-  educacion: "Educación",
-  ocio_salidas: "Ocio / Salidas",
-  compras_personales: "Compras personales",
-  familia_apoyo: "Familia / Apoyo",
-  deudas: "Deudas",
-  trabajo_productividad: "Trabajo / Productividad",
-  otros: "Otros",
 };
 
 export const movementTypeLabels: Record<MovementType, string> = {
@@ -71,7 +56,7 @@ export function toMovementViewItem(movement: Movement): MovementViewItem {
     title,
     description: formatMovementDate(movement.occurred_at),
     categoryLabel: movement.category_id
-      ? categoryLabels[movement.category_id]
+      ? CATEGORY_LABELS[movement.category_id]
       : "Sin categoría",
     type: movement.type,
     typeLabel: movementTypeLabels[movement.type],

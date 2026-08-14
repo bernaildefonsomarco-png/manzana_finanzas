@@ -158,6 +158,28 @@ describe("buildAdvancedInsightDrafts", () => {
     expect(drafts.some((draft) => draft.type === "learning_progress")).toBe(false);
   });
 
+  // El titular nombra la categoria con la misma etiqueta que la persona ve en
+  // Movimientos y en la tarjeta del asistente (`src/shared/copy/category-copy`,
+  // que replica el seed de `categories.label`). El motor tenia su propia copia
+  // y decia "Vivienda y hogar": la misma categoria con dos nombres segun la
+  // pantalla.
+  it("nombra la categoria con la etiqueta del canon, no con una variante local", () => {
+    const movements = [
+      ...Array.from({ length: 7 }, (_, index) =>
+        movement(10 + index, 20, "vivienda_hogar", { account_origin_id: "a" }),
+      ),
+      ...Array.from({ length: 3 }, (_, index) =>
+        movement(10 + index, 10, "transporte", { account_origin_id: "a" }),
+      ),
+    ];
+
+    const concentration = buildAdvancedInsightDrafts({ movements, now }).find(
+      (draft) => draft.type === "category_concentration",
+    );
+
+    expect(concentration?.title).toContain("Vivienda / Hogar");
+  });
+
   it("genera refuerzo positivo con dos semanas comparables", () => {
     const current = Array.from({ length: 10 }, (_, index) =>
       movement(12 + (index % 7), 8, "alimentacion", { account_origin_id: "a" }),

@@ -47,21 +47,6 @@ export const amountVariabilityLabels: Record<
   variable: "Monto variable",
 };
 
-export const categoryLabels: Record<CategoryId, string> = {
-  alimentacion: "Alimentación",
-  transporte: "Transporte",
-  vivienda_hogar: "Vivienda y hogar",
-  servicios_suscripciones: "Servicios y suscripciones",
-  salud: "Salud",
-  educacion: "Educación",
-  ocio_salidas: "Ocio y salidas",
-  compras_personales: "Compras personales",
-  familia_apoyo: "Familia y apoyo",
-  deudas: "Deudas",
-  trabajo_productividad: "Trabajo y productividad",
-  otros: "Otros",
-};
-
 export type UpcomingViewModel = {
   sections: UpcomingSections;
   summary: UpcomingSummary;

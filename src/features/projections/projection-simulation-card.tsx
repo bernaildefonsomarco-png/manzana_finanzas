@@ -9,7 +9,8 @@ import { Card } from "@/ui/primitivas/card";
 import { FieldShell, Input, Select } from "@/ui/primitivas/field";
 import { MoneyText } from "@/ui/primitivas/money";
 import { buildMovementPrefillHref } from "@/shared/movements/movement-prefill";
-import { CATEGORY_IDS, type CategoryId } from "@/shared/types/domain";
+import { CATEGORY_LABELS, getCategoryLabel } from "@/shared/copy/category-copy";
+import { CATEGORY_IDS } from "@/shared/types/domain";
 import { simulateExpense } from "./projections-api";
 import type {
   ExpenseSimulationView,
@@ -203,20 +204,5 @@ function SimulationResult({
 }
 
 function categoryLabel(categoryId: string) {
-  return CATEGORY_LABELS[categoryId as CategoryId] ?? categoryId;
+  return getCategoryLabel(categoryId) ?? categoryId;
 }
-
-const CATEGORY_LABELS: Record<CategoryId, string> = {
-  alimentacion: "Alimentación",
-  transporte: "Transporte",
-  vivienda_hogar: "Vivienda / Hogar",
-  servicios_suscripciones: "Servicios / Suscripciones",
-  salud: "Salud",
-  educacion: "Educación",
-  ocio_salidas: "Ocio / Salidas",
-  compras_personales: "Compras personales",
-  familia_apoyo: "Familia / Apoyo",
-  deudas: "Deudas",
-  trabajo_productividad: "Trabajo / Productividad",
-  otros: "Otros",
-};

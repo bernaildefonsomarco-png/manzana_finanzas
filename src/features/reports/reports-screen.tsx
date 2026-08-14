@@ -5,7 +5,8 @@ import { useEffect, useState } from "react";
 import { AppShell, type AppView } from "@/features/app-shell/app-shell";
 import { EmptyState, ErrorState, LoadingBlock } from "@/ui/primitivas/states";
 import { MoneyWithProvenance } from "@/ui/domain/money-with-provenance";
-import { CATEGORY_LABELS, EXCLUSION_LABELS, loadReportCategoryProvenance, loadReportTotalProvenance } from "./report-provenance";
+import { getCategoryLabel } from "@/shared/copy/category-copy";
+import { EXCLUSION_LABELS, loadReportCategoryProvenance, loadReportTotalProvenance } from "./report-provenance";
 import { currentMonthValue, getReportPeriod, type ReportPeriod } from "./reports-api";
 
 type Props = { onSignOut?: () => void; onNavigate?: (view: AppView) => void };
@@ -100,7 +101,7 @@ export function ReportsScreen(props: Props) {
                 </thead>
                 <tbody>
                   {period.byCategory.map((c) => {
-                    const label = c.category_id ? (CATEGORY_LABELS[c.category_id] ?? c.category_id) : "Sin categoría";
+                    const label = getCategoryLabel(c.category_id) ?? "Sin categoría";
                     return (
                       <tr key={c.category_id ?? "sin_categoria"} className="border-b border-border last:border-0">
                         <td className="py-2 text-text">{label}</td>

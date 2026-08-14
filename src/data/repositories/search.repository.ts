@@ -3,24 +3,14 @@ import type { Database } from "@/data/supabase/types";
 import type { CategoryId } from "@/shared/types/domain";
 import type { ParsedQuery } from "@/core/search/query-parser";
 import type { MovementStatus } from "@/shared/types/domain";
+// 38 §4.3: entidades pequeñas se buscan por nombre con ILIKE, no se indexan.
+// El nombre buscable es el mismo que la persona ve en pantalla, así que sale
+// del canon de `@/shared/copy/category-copy` y no de una copia local: si
+// divergiera, buscar "Vivienda / Hogar" no encontraría la categoría que la
+// tabla `categories` sirve con ese mismo texto.
+import { CATEGORY_LABELS } from "@/shared/copy/category-copy";
 
 type Client = SupabaseClient<Database>;
-
-// 38 §4.3: entidades pequeñas se buscan por nombre con ILIKE, no se indexan.
-const CATEGORY_LABELS: Record<CategoryId, string> = {
-  alimentacion: "Alimentación",
-  transporte: "Transporte",
-  vivienda_hogar: "Vivienda y hogar",
-  servicios_suscripciones: "Servicios y suscripciones",
-  salud: "Salud",
-  educacion: "Educación",
-  ocio_salidas: "Ocio y salidas",
-  compras_personales: "Compras personales",
-  familia_apoyo: "Familia y apoyo",
-  deudas: "Deudas",
-  trabajo_productividad: "Trabajo y productividad",
-  otros: "Otros",
-};
 
 export type SearchMovementResult = {
   id: string;

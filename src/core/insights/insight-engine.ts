@@ -12,6 +12,7 @@ import type {
   Tag,
 } from "@/shared/types/domain";
 import { calculateMoneyLayers } from "@/core/finance/money-layers";
+import { CATEGORY_LABELS } from "@/shared/copy/category-copy";
 
 export type InsightCurrency = "PEN" | "USD";
 
@@ -134,21 +135,6 @@ const spendTypes = new Set<Movement["type"]>([
   "pago_recurrente",
   "pago_deuda",
 ]);
-
-const categoryLabels: Record<CategoryId, string> = {
-  alimentacion: "Alimentacion",
-  transporte: "Transporte",
-  vivienda_hogar: "Vivienda y hogar",
-  servicios_suscripciones: "Servicios y suscripciones",
-  salud: "Salud",
-  educacion: "Educacion",
-  ocio_salidas: "Ocio y salidas",
-  compras_personales: "Compras personales",
-  familia_apoyo: "Familia y apoyo",
-  deudas: "Deudas",
-  trabajo_productividad: "Trabajo y productividad",
-  otros: "Otros",
-};
 
 export function buildAdvancedInsightDrafts(
   input: InsightEngineInput,
@@ -1225,7 +1211,7 @@ function buildCategoryConcentrationInsight(input: {
     return null;
   }
 
-  const label = categoryLabels[categoryId];
+  const label = CATEGORY_LABELS[categoryId];
   const confidence = clamp(
     0.58 + Math.min(categoryMovements.length, 10) * 0.025 + share * 0.18,
     0,
@@ -1470,7 +1456,7 @@ function buildAnomalyInsight(input: {
   if (!best) return null;
 
   const categoryId = best.movement.category_id as CategoryId;
-  const label = categoryLabels[categoryId];
+  const label = CATEGORY_LABELS[categoryId];
   const confidence = clamp(0.65 + Math.min(best.baseline.length, 12) * 0.018, 0, 0.92);
   return {
     type: "anomaly",

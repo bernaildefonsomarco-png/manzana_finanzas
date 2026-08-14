@@ -1,4 +1,5 @@
 import { listMovementsFiltered } from "@/features/movements/movements-api";
+import { getCategoryLabel } from "@/shared/copy/category-copy";
 import type { Movement } from "@/shared/types/domain";
 import type { ProvenanceData, ProvenanceNotCountedItem, ProvenanceRow } from "@/ui/domain/provenance-panel";
 import type { ReportPeriod } from "./reports-api";
@@ -8,21 +9,6 @@ import type { ReportPeriod } from "./reports-api";
 // agregación que produjo el total (`computeReportPeriod`); las filas nunca
 // se recalculan aquí, solo se filtran a los IDs que el motor ya contó, para
 // que la cifra y su desglose no puedan desalinearse (`RUL-REP-01`).
-
-export const CATEGORY_LABELS: Record<string, string> = {
-  alimentacion: "Alimentación",
-  transporte: "Transporte",
-  vivienda_hogar: "Vivienda y hogar",
-  servicios_suscripciones: "Servicios y suscripciones",
-  salud: "Salud",
-  educacion: "Educación",
-  ocio_salidas: "Ocio y salidas",
-  compras_personales: "Compras personales",
-  familia_apoyo: "Familia y apoyo",
-  deudas: "Deudas",
-  trabajo_productividad: "Trabajo y productividad",
-  otros: "Otros",
-};
 
 export const EXCLUSION_LABELS: Record<string, string> = {
   transferencia: "transferencias entre tus cuentas",
@@ -45,7 +31,7 @@ function toRows(movements: Movement[]): ProvenanceRow[] {
     .sort((a, b) => b.occurred_at.localeCompare(a.occurred_at))
     .map((m) => ({
       id: m.id,
-      label: m.merchant || m.description || (m.category_id ? CATEGORY_LABELS[m.category_id] : null) || "Movimiento",
+      label: m.merchant || m.description || getCategoryLabel(m.category_id) || "Movimiento",
       detail: new Date(m.occurred_at).toLocaleDateString("es-PE", { day: "2-digit", month: "short" }),
       amount: m.amount,
       href: `/movimientos/${m.id}`,
@@ -93,7 +79,7 @@ export async function loadReportCategoryProvenance(
     category_id: category.category_id ?? undefined,
     limit: Math.max(category.movement_count, 1),
   });
-  const label = category.category_id ? (CATEGORY_LABELS[category.category_id] ?? category.category_id) : "Sin categoría";
+  const label = getCategoryLabel(category.category_id) ?? "Sin categoría";
 
   return {
     title: `De dónde sale este S/${category.total.toFixed(2)} de ${label}`,
